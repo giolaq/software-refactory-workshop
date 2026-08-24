@@ -267,7 +267,7 @@ Proof:
   reproduce and close the Live Project publication race observed after GitHub
   had accepted all nine TETHER Issues and Project items.
 - Local release audit: PASS for `workshop-v1.1.0`.
-- Clean Standard Rehearsal: PASS for plan `410326debec4`, five Tickets, Evidence
+- Clean Standard Rehearsal: PASS for plan `635403b4882a`, five Tickets, Evidence
   Packet, and healthy Monitor.
 - Historical disposable Live delivery/recovery smoke: PASS against the former
   `giolaq/test1` Project #8, Issue #11, and PR #12. The first supervisor reply stayed within its
@@ -369,7 +369,7 @@ PASS
 Local release audit: PASS (workshop-v1.1.0)
 
 ./factory/factory release-check --rehearsal
-Standard Rehearsal PASS (410326debec4, 5 tickets, Evidence Packet, Monitor healthy)
+Standard Rehearsal PASS (635403b4882a, 5 tickets, Evidence Packet, Monitor healthy)
 
 ./factory/factory release-check --live-smoke --live-agent codex --confirm-disposable-repo
 Codex delivery + deterministic review-rework GitHub smoke PASS (Project #12, Issue #12, PR #13, Evidence Packet, remote recovery PASS)
