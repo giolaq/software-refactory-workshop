@@ -149,9 +149,12 @@ test("attendee page stays within its copy budget", async () => {
   assert.match(source, /screenshots\/github-project-board\.jpg/);
   assert.match(source, /agent_capabilities\.my-agent/);
   assert.match(source, /gh repo create YOUR-REPOSITORY --private/);
-  assert.match(source, /Start with the TableStory workshop code/);
+  assert.match(source, /Seed the guided Pocket Cinema starter/);
   assert.match(source, /For a greenfield product/);
   assert.match(source, /agents create code from PRD-derived tickets/);
+  assert.match(source, /factory source and workshop documentation stay in the control checkout/);
+  assert.match(source, /Retry ticket publication/);
+  assert.match(source, /issues already marked for that plan are reused instead of duplicated/);
   assert.match(source, /factory bootstrap-workshop --repo/);
   assert.doesNotMatch(source, /git push workshop main factory-baseline/);
   assert.doesNotMatch(source, /--template giolaq\/software-refactory-workshop/);

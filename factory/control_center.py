@@ -395,7 +395,13 @@ class ControlCenter:
         )
         prd_ready = bool(prd.get("saved")) or bool(planning)
         plan_complete = planning.get("status") in {"awaiting_alignment_approval", "alignment_approved", "published"}
-        tickets_approved = bool(approvals.get("alignment"))
+        tickets_approved = (
+            planning.get("status") == "published"
+            or (
+                planning.get("mode") != "live"
+                and bool(approvals.get("alignment"))
+            )
+        )
         delivery_done = bool(tickets) and all(ticket.get("status") == "Done" for ticket in tickets)
         evidence_done = any(item.get("name") == "manifest.json" for item in evidence)
         completed = [

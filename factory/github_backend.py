@@ -255,8 +255,30 @@ class GitHubBackend:
                 "--data-type", "SINGLE_SELECT", "--single-select-options", ",".join(STATES), "--format", "json",
             )
         if [o["name"] for o in field.get("options", [])] != STATES:
-            self._set_status_options(field["id"], field.get("options", []))
-            fields = self.json("project", "field-list", self.project_number, "--owner", self.owner, "--format", "json").get("fields", [])
+            try:
+                self._set_status_options(field["id"], field.get("options", []))
+            except GitHubError as mutation_error:
+                # GitHub can apply this GraphQL write and still return a 502.
+                # Verify the desired state before treating the write as failed.
+                try:
+                    verified = self.json(
+                        "project", "field-list", self.project_number,
+                        "--owner", self.owner, "--format", "json",
+                    ).get("fields", [])
+                except GitHubError:
+                    raise mutation_error
+                current = next(
+                    (item for item in verified if item.get("name") == "Status"),
+                    None,
+                )
+                if not current or [o["name"] for o in current.get("options", [])] != STATES:
+                    raise mutation_error
+                fields = verified
+            else:
+                fields = self.json(
+                    "project", "field-list", self.project_number,
+                    "--owner", self.owner, "--format", "json",
+                ).get("fields", [])
             field = next(f for f in fields if f.get("name") == "Status")
         self.field_id = field["id"]
         self.options = {o["name"]: o["id"] for o in field["options"]}

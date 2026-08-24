@@ -16,6 +16,34 @@ def completed(returncode=0, stdout="", stderr=""):
 
 
 class GitHubReviewTests(unittest.TestCase):
+    def test_project_status_write_recovers_when_github_applies_it_before_a_502(self):
+        backend = GitHubBackend(Path.cwd(), project_number=13)
+        backend.owner = "attendee"
+        old_options = [{"id": "old", "name": "Todo"}]
+        current_options = [
+            {"id": f"option-{index}", "name": name}
+            for index, name in enumerate([
+                "Backlog", "Ready", "In Progress", "QA Review",
+                "Verifying", "In Review", "Done", "Blocked",
+            ])
+        ]
+        backend.json = mock.Mock(side_effect=[
+            {"projects": [{"number": 13, "id": "project-13"}]},
+            {"fields": [{"id": "status-field", "name": "Status", "options": old_options}]},
+            {"fields": [{"id": "status-field", "name": "Status", "options": current_options}]},
+        ])
+        backend._set_status_options = mock.Mock(
+            side_effect=GitHubError("502 Bad Gateway"),
+        )
+
+        backend.ensure_project()
+
+        self.assertEqual(backend.project_id, "project-13")
+        self.assertEqual(set(backend.options), {
+            "Backlog", "Ready", "In Progress", "QA Review",
+            "Verifying", "In Review", "Done", "Blocked",
+        })
+
     def test_project_load_ignores_unrelated_repository_issues(self):
         backend = GitHubBackend(Path.cwd(), project_number=5)
         backend.owner, backend.name = "giolaq", "test1"

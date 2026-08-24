@@ -321,7 +321,9 @@ function renderPlanning(planning) {
   $("#continue-plan").disabled = running || !planning.can_continue;
   $("#continue-plan").textContent = planning.presentation?.continue_label || "Run remaining experts";
   $("#continue-plan").title = planning.requires_decisions ? "Answer the blocked expert's questions below." : "";
-  $("#publish-plan").disabled = running || planning.status !== "awaiting_alignment_approval";
+  const canPublish = ["awaiting_alignment_approval", "alignment_approved"].includes(planning.status);
+  $("#publish-plan").disabled = running || !canPublish;
+  $("#publish-plan").textContent = planning.status === "alignment_approved" ? "Retry ticket publication" : "Create tickets";
 }
 
 function renderExpertPanel(item) {
@@ -404,7 +406,12 @@ function renderPlanningGate(item, planning) {
   $("#artifact-content").textContent = item.id === "product_review_gate" ? "Approve only when the problem, users, behavior, scope, and evidence are clear." : item.id === "alignment_gate" ? "Approve only when requirements trace to architecture, program design, tickets, and QA evidence." : "Approve only when this exact expert artifact respects its upstream contract and the approved Factory Charter.";
   $("#open-artifact").hidden = true;
   const approved = item.status === "approved";
-  if (approved) {
+  const publicationPending = (
+    item.id === "alignment_gate"
+    && planning.status === "alignment_approved"
+    && mode() === "live"
+  );
+  if (approved && !publicationPending) {
     $("#approval-panel").innerHTML = `<span class="section-label">Human gate</span><h2>${esc(item.title)}</h2><div class="safety-note"><b>Approved</b><p>This decision and its artifact hashes are recorded in the plan manifest.</p></div>`;
     return;
   }
@@ -413,7 +420,11 @@ function renderPlanningGate(item, planning) {
     $("#revise-product").addEventListener("click", () => action("revise-product", { feedback: $("#product-feedback").value }));
     $("#approve-product").addEventListener("click", () => action("approve-product"));
   } else if (item.id === "alignment_gate") {
-    $("#approval-panel").innerHTML = `<span class="section-label">Human gate</span><h2>Alignment</h2><p>Publishing creates the approved vertical slices as ${mode() === "live" ? "GitHub issues" : "local rehearsal tickets"}.</p><div class="approval-card"><label>New GitHub Project title<input id="project-title" value="TableStory Workshop" ${mode() === "live" ? "" : "disabled"}></label><div class="approval-actions"><button class="button button-primary" type="button" id="approve-alignment">Approve and create tickets</button></div></div>`;
+    const heading = publicationPending ? "Retry ticket publication" : "Approve and create tickets";
+    const detail = publicationPending
+      ? "Alignment is already approved. Retrying reuses any plan-marked GitHub issues and completes the interrupted publication."
+      : `Publishing creates the approved vertical slices as ${mode() === "live" ? "GitHub issues" : "local rehearsal tickets"}.`;
+    $("#approval-panel").innerHTML = `<span class="section-label">Human gate</span><h2>Alignment</h2><p>${detail}</p><div class="approval-card"><label>New GitHub Project title<input id="project-title" value="TableStory Workshop" ${mode() === "live" ? "" : "disabled"}></label><div class="approval-actions"><button class="button button-primary" type="button" id="approve-alignment">${heading}</button></div></div>`;
     $("#approve-alignment").addEventListener("click", () => action("publish-plan", { project_title: $("#project-title").value }));
   } else {
     const title = item.stage === "system_architecture" ? "System Architecture" : "Program Design";

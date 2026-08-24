@@ -6,8 +6,12 @@ import json
 import re
 import shutil
 import subprocess
-from dataclasses import dataclass
+import tempfile
+from dataclasses import dataclass, replace
 from pathlib import Path
+
+from factory_charter import FactoryCharter
+from project_contract import DEFAULT_TEST_PATTERNS, ProjectContract
 
 
 OWNER = r"[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})"
@@ -154,7 +158,7 @@ def bootstrap_empty_workshop_repository(
     *,
     runner=None,
 ) -> dict:
-    """Populate an empty remote and managed checkout from a workshop checkout."""
+    """Publish only the guided product workpiece to an empty attendee repository."""
     repo = repo.resolve()
     source = source.resolve()
     if repo == source:
@@ -163,25 +167,6 @@ def bootstrap_empty_workshop_repository(
         raise GitHubRepositoryError(f"Attendee checkout is not a Git repository: {repo}")
     if not (source / ".git").exists():
         raise GitHubRepositoryError(f"Workshop source is not a Git repository: {source}")
-    required = (
-        "factory/factory",
-        "factory.project.toml",
-        "factory.charter.toml",
-        "demo-app/app.py",
-    )
-    missing = [
-        path for path in required
-        if _run(["git", "cat-file", "-e", f"HEAD:{path}"], source, runner=runner).returncode
-    ]
-    if missing:
-        raise GitHubRepositoryError(
-            "Workshop source is missing required committed files: " + ", ".join(missing)
-        )
-    source_head = _run(
-        ["git", "rev-parse", "--verify", "HEAD"], source, runner=runner,
-    )
-    if source_head.returncode or not source_head.stdout.strip():
-        raise GitHubRepositoryError("Workshop source has no commit to publish.")
     baseline = _run(
         ["git", "rev-parse", "--verify", "refs/tags/factory-baseline^{commit}"],
         source,
@@ -190,6 +175,24 @@ def bootstrap_empty_workshop_repository(
     if baseline.returncode or not baseline.stdout.strip():
         raise GitHubRepositoryError(
             "Workshop source is missing factory-baseline. Run ./setup_demo.sh first."
+        )
+    baseline_commit = baseline.stdout.strip()
+    required = (
+        "demo-app/app.py",
+        "demo-app/package.json",
+        "demo-app/requirements.txt",
+    )
+    missing = [
+        path for path in required
+        if _run(
+            ["git", "cat-file", "-e", f"{baseline_commit}:{path}"],
+            source,
+            runner=runner,
+        ).returncode
+    ]
+    if missing:
+        raise GitHubRepositoryError(
+            "Workshop baseline is missing required product files: " + ", ".join(missing)
         )
 
     local_head = _run(["git", "rev-parse", "--verify", "HEAD"], repo, runner=runner)
@@ -228,21 +231,126 @@ def bootstrap_empty_workshop_repository(
         )
     if remote_refs.stdout.strip():
         raise GitHubRepositoryError(
-            "The GitHub repository is not empty. Workshop bootstrap was not applied."
+            "The GitHub repository is not empty. Guided starter bootstrap was not applied."
         )
 
-    pushed = _run(
-        [
-            "git", "push", remote.stdout.strip(),
-            "HEAD:refs/heads/main",
-            "refs/tags/factory-baseline:refs/tags/factory-baseline",
-        ],
-        source,
-        runner=runner,
-    )
+    with tempfile.TemporaryDirectory(prefix="factory-product-") as directory:
+        staging = Path(directory)
+        initialized = _run(["git", "init", "-q", "-b", "main"], staging, runner=runner)
+        if initialized.returncode:
+            raise GitHubRepositoryError(
+                initialized.stderr.strip() or "Could not initialize the product snapshot."
+            )
+        fetched_source = _run(
+            ["git", "fetch", "--no-tags", str(source), baseline_commit],
+            staging,
+            runner=runner,
+        )
+        if fetched_source.returncode:
+            raise GitHubRepositoryError(
+                fetched_source.stderr.strip() or "Could not read the guided product baseline."
+            )
+        checked_out_product = _run(
+            ["git", "checkout", "FETCH_HEAD", "--", "demo-app"],
+            staging,
+            runner=runner,
+        )
+        if checked_out_product.returncode:
+            raise GitHubRepositoryError(
+                checked_out_product.stderr.strip() or "Could not extract the guided product workpiece."
+            )
+
+        (staging / ".gitignore").write_text(
+            ".factory/\n__pycache__/\n*.py[cod]\n.pytest_cache/\n.DS_Store\n"
+        )
+        detected = ProjectContract.detect(staging, name="Pocket Cinema")
+        contract = replace(
+            detected,
+            source_roots=("demo-app",),
+            protected_paths=(".github/workflows",),
+            required_tools=("git", "python3", "node"),
+            setup_commands=("{python} -m pip install -r demo-app/requirements.txt",),
+            ports=(5000,),
+            test_roots=("demo-app/tests", "demo-app/static/tests"),
+            test_file_patterns=DEFAULT_TEST_PATTERNS,
+            gates=(
+                {
+                    "name": "api-tests",
+                    "cmd": "{python} -m pytest -q demo-app/tests",
+                    "required": True,
+                    "level": "full",
+                },
+                {
+                    "name": "ui-logic-tests",
+                    "cmd": "node --test demo-app/static/tests/*.test.js",
+                    "required": True,
+                    "level": "full",
+                },
+                {
+                    "name": "python-compile",
+                    "cmd": "{python} -m compileall -q demo-app",
+                    "required": False,
+                    "level": "fast",
+                },
+                {
+                    "name": "repository-integrity",
+                    "cmd": "git diff --check",
+                    "required": True,
+                    "level": "deep",
+                },
+            ),
+            reset_command=(),
+        )
+        contract.write()
+        FactoryCharter.draft(staging, contract).write()
+        added = _run(
+            [
+                "git", "add", "--",
+                ".gitignore", "demo-app", "factory.project.toml", "factory.charter.toml",
+            ],
+            staging,
+            runner=runner,
+        )
+        if added.returncode:
+            raise GitHubRepositoryError(
+                added.stderr.strip() or "Could not stage the guided product snapshot."
+            )
+        committed = _run(
+            [
+                "git",
+                "-c", "user.name=Software Factory",
+                "-c", "user.email=factory@example.invalid",
+                "commit", "-q", "-m", "chore: initialize guided product workpiece",
+            ],
+            staging,
+            runner=runner,
+        )
+        if committed.returncode:
+            raise GitHubRepositoryError(
+                committed.stderr.strip() or "Could not commit the guided product snapshot."
+            )
+        product_commit = _run(
+            ["git", "rev-parse", "--verify", "HEAD"], staging, runner=runner,
+        ).stdout.strip()
+        tagged = _run(
+            ["git", "tag", "factory-baseline", product_commit], staging, runner=runner,
+        )
+        if tagged.returncode:
+            raise GitHubRepositoryError(
+                tagged.stderr.strip() or "Could not tag the guided product baseline."
+            )
+        pushed = _run(
+            [
+                "git", "push", remote.stdout.strip(),
+                "HEAD:refs/heads/main",
+                "refs/tags/factory-baseline:refs/tags/factory-baseline",
+            ],
+            staging,
+            runner=runner,
+        )
     if pushed.returncode:
         raise GitHubRepositoryError(
-            pushed.stderr.strip() or pushed.stdout.strip() or "Could not publish workshop code."
+            pushed.stderr.strip() or pushed.stdout.strip() or "Could not publish starter product code."
         )
     fetched = _run(
         [
@@ -255,7 +363,7 @@ def bootstrap_empty_workshop_repository(
     )
     if fetched.returncode:
         raise GitHubRepositoryError(
-            fetched.stderr.strip() or fetched.stdout.strip() or "Could not fetch workshop code."
+            fetched.stderr.strip() or fetched.stdout.strip() or "Could not fetch starter product code."
         )
     checked_out = _run(
         ["git", "checkout", "-B", "main", "--track", "origin/main"],
@@ -270,8 +378,8 @@ def bootstrap_empty_workshop_repository(
     return {
         "path": str(repo),
         "branch": "main",
-        "commit": source_head.stdout.strip(),
-        "baseline": baseline.stdout.strip(),
+        "commit": product_commit,
+        "baseline": product_commit,
     }
 
 

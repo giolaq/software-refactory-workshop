@@ -3268,7 +3268,7 @@ def parser():
     checkout.add_argument("--workspace-root", required=True)
     bootstrap = sub.add_parser(
         "bootstrap-workshop",
-        help="populate an empty attendee repository from a local workshop checkout",
+        help="seed an empty attendee repository with only the guided starter product",
     )
     bootstrap.add_argument("--repo", required=True)
     bootstrap.add_argument("--source", required=True)
@@ -3492,7 +3492,7 @@ def main():
             bootstrapped = bootstrap_empty_workshop_repository(
                 repo, Path(args.source),
             )
-            print(f"Empty repository populated: {bootstrapped['path']}")
+            print(f"Guided starter product published: {bootstrapped['path']}")
             print(f"  Branch: {bootstrapped['branch']}")
             print(f"  Commit: {bootstrapped['commit']}")
             print(f"  Baseline: {bootstrapped['baseline']}")

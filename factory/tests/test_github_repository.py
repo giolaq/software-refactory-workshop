@@ -16,6 +16,8 @@ from github_repository import (
     managed_checkout_path,
     parse_github_repository,
 )
+from factory_charter import FactoryCharter
+from project_contract import ProjectContract
 
 
 def completed(command, returncode=0, stdout="", stderr=""):
@@ -98,7 +100,7 @@ class GitHubRepositoryTests(unittest.TestCase):
         self.assertEqual(result["action"], "cloned")
         self.assertIn(["gh", "repo", "clone", "attendee/demo", str(expected)], calls)
 
-    def test_bootstrap_populates_an_empty_repository_with_workshop_history_and_baseline(self):
+    def test_bootstrap_populates_only_the_guided_product_workpiece(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             source = root / "source"
@@ -110,9 +112,14 @@ class GitHubRepositoryTests(unittest.TestCase):
             git(source, "config", "user.email", "factory@example.test")
             for relative in (
                 "factory/factory",
+                "factory/README.md",
                 "factory.project.toml",
                 "factory.charter.toml",
                 "demo-app/app.py",
+                "demo-app/package.json",
+                "demo-app/requirements.txt",
+                "workshop-guide/README.md",
+                "README.md",
             ):
                 path = source / relative
                 path.parent.mkdir(parents=True, exist_ok=True)
@@ -130,16 +137,44 @@ class GitHubRepositoryTests(unittest.TestCase):
 
             result = bootstrap_empty_workshop_repository(target, source)
 
-            self.assertEqual(result["commit"], source_head)
-            self.assertEqual(git(target, "rev-parse", "HEAD"), source_head)
-            self.assertEqual(git(target, "rev-parse", "factory-baseline"), source_head)
+            self.assertNotEqual(result["commit"], source_head)
+            self.assertEqual(git(target, "rev-parse", "HEAD"), result["commit"])
+            self.assertEqual(git(target, "rev-parse", "factory-baseline"), result["commit"])
             self.assertEqual(git(target, "status", "--porcelain"), "")
             self.assertTrue((target / "demo-app/app.py").is_file())
             self.assertTrue(local_config.is_file())
             self.assertEqual(
-                git(root, "--git-dir", str(remote), "rev-parse", "refs/heads/main"),
-                source_head,
+                set(git(target, "ls-tree", "-r", "--name-only", "HEAD").splitlines()),
+                {
+                    ".gitignore",
+                    "demo-app/app.py",
+                    "demo-app/package.json",
+                    "demo-app/requirements.txt",
+                    "factory.charter.toml",
+                    "factory.project.toml",
+                },
             )
+            self.assertFalse((target / "factory").exists())
+            self.assertFalse((target / "workshop-guide").exists())
+            self.assertFalse((target / "README.md").exists())
+            contract = ProjectContract.load(target, require=True)
+            self.assertEqual(contract.source_roots, ("demo-app",))
+            self.assertEqual(contract.test_roots, ("demo-app/tests", "demo-app/static/tests"))
+            self.assertFalse(FactoryCharter.load(target).approved)
+            self.assertEqual(
+                git(root, "--git-dir", str(remote), "rev-parse", "refs/heads/main"),
+                result["commit"],
+            )
+            self.assertEqual(
+                git(root, "--git-dir", str(remote), "rev-parse", "refs/tags/factory-baseline"),
+                result["commit"],
+            )
+            source_history = subprocess.run(
+                ["git", "--git-dir", str(remote), "cat-file", "-e", f"{source_head}^{{commit}}"],
+                text=True,
+                capture_output=True,
+            )
+            self.assertNotEqual(source_history.returncode, 0)
 
     def test_bootstrap_refuses_a_repository_that_already_has_a_commit(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -156,6 +191,8 @@ class GitHubRepositoryTests(unittest.TestCase):
                 "factory.project.toml",
                 "factory.charter.toml",
                 "demo-app/app.py",
+                "demo-app/package.json",
+                "demo-app/requirements.txt",
             ):
                 path = source / relative
                 path.parent.mkdir(parents=True, exist_ok=True)
@@ -187,6 +224,8 @@ class GitHubRepositoryTests(unittest.TestCase):
                 "factory.project.toml",
                 "factory.charter.toml",
                 "demo-app/app.py",
+                "demo-app/package.json",
+                "demo-app/requirements.txt",
             ):
                 path = source / relative
                 path.parent.mkdir(parents=True, exist_ok=True)

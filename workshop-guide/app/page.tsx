@@ -484,7 +484,7 @@ cd software-refactory-control
 ./setup_demo.sh --scenario recipe-rebrand
 gh repo create YOUR-REPOSITORY --private`}</CodeBlock>
           <Callout type="tip" title="Choose the repository starting point">
-            <p>For a greenfield product, connect an empty repository and leave <strong>Start with the TableStory workshop code</strong> unchecked; the factory publishes only its reviewed governance first, then agents create code from PRD-derived tickets. Check it for the guided TableStory exercise. For an existing project, connect its URL and leave it unchecked.</p>
+            <p>For a greenfield product, connect an empty repository and leave <strong>Seed the guided Pocket Cinema starter</strong> unchecked; the factory publishes only its reviewed governance first, then agents create code from PRD-derived tickets. Check it for the guided TableStory exercise: only the starter product is published, while factory source and workshop documentation stay in the control checkout. For an existing project, connect its URL and leave it unchecked.</p>
           </Callout>
           {track === "live" ? <Callout type="note" title="Using an existing project instead?">
             <p>Keep the factory checkout separate. Run the commands below from it, review the generated contract, then continue in the Control Center. The guided steps that mention Pocket Cinema apply only to the workshop repository.</p>
@@ -506,7 +506,7 @@ git -C /path/to/your-project push origin HEAD
             <ol>
               <li>Wait for <code>Factory Control Center: http://127.0.0.1:5050</code>.</li>
               <li>Your browser should open automatically. If it does not, open <a href="http://127.0.0.1:5050">127.0.0.1:5050</a> yourself.</li>
-              {track === "live" ? <li>Open <strong>Connect</strong>, choose <strong>Live</strong>, and paste <code>https://github.com/YOUR-NAME/YOUR-REPOSITORY</code>. Leave <strong>Start with the TableStory workshop code</strong> unchecked for a greenfield product or existing project; check it only for the guided exercise. Then save.</li> : null}
+              {track === "live" ? <li>Open <strong>Connect</strong>, choose <strong>Live</strong>, and paste <code>https://github.com/YOUR-NAME/YOUR-REPOSITORY</code>. Leave <strong>Seed the guided Pocket Cinema starter</strong> unchecked for a greenfield product or existing project; check it only for the guided exercise. Then save.</li> : null}
               <li>Leave this terminal running for the workshop. Press <code>Ctrl+C</code> only when you want to stop the Control Center.</li>
             </ol>
           </div>
@@ -838,6 +838,7 @@ agent = "my-agent"`}</CodeBlock>
             <details><summary>Claude asks for an OpenAI API key</summary><p>Your selected adapter is still the OpenAI preset. Run <code>./factory/factory configure --preset claude-workshop</code>, confirm Claude is authenticated, then rerun doctor.</p></details>
             <details><summary>A ticket is blocked</summary><p>Open its event history and agent log. Fix the recorded cause, then run <code>./factory/factory retry ISSUE_NUMBER</code>.</p></details>
             <details><summary>Retry blocked expert repeats the same error</summary><p>Open the failed expert&apos;s recovery card. For validation, select <strong>Apply correction and continue</strong>; the factory sends the rejected artifact and exact validator message to the expert. For a session or rate limit, select <strong>Fix with Codex</strong> (or another configured adapter). After the same process failure occurs twice, the Control Center disables same-adapter retry and keeps the completed upstream artifacts. If the PRD, Project Contract, or Factory Charter changed, select <strong>Restart planning safely</strong>.</p></details>
+            <details><summary>Ticket publication failed after alignment approval</summary><p>Open <strong>Planning</strong> and select <strong>Retry ticket publication</strong>. The approved plan is preserved, and issues already marked for that plan are reused instead of duplicated. From the terminal, rerun the same <code>factory approve PLAN_ID --yes --project-number N</code> command shown by the failed operation.</p></details>
             <details><summary>NEEDS YOU says dispatch is paused</summary><p>The human queue reached its Charter limit. Open the oldest linked decision. Approve, reject, answer, or merge it; dispatch resumes when the queue falls below the limit.</p></details>
             <details><summary>A remote claim belongs to an abandoned run</summary><p>Confirm the owner is no longer running. Open the blocked Ticket and select <strong>Release abandoned claim</strong>. Local reset never releases a remote claim.</p></details>
             <details><summary>The Control Center reports a deadlock</summary><p>One or more dependency chains form a cycle. Edit issue dependencies so at least one ticket can start, then rerun the factory.</p></details>

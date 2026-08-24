@@ -259,6 +259,8 @@ def _normalized_state(
         })
     elif status == "awaiting_alignment_approval" and not approvals.get("alignment"):
         state.update({"kind": "alignment_approval"})
+    elif status == "alignment_approved" and planning.get("mode") == "live":
+        state.update({"kind": "publication_pending"})
     elif status in {"alignment_approved", "published"}:
         state.update({"kind": "complete"})
     elif not approvals.get("product"):
@@ -336,6 +338,16 @@ def _decision(state: dict) -> dict | None:
             "planning": "alignment_gate",
             "queue_status": "Alignment Review",
             "queue_kind": "approval",
+        }
+    if kind == "publication_pending":
+        return {
+            "kind": "publication",
+            "title": "Publish approved tickets",
+            "text": "Alignment is recorded, but ticket publication has not completed.",
+            "view": "planning",
+            "planning": "alignment_gate",
+            "queue_status": "Ticket publication",
+            "queue_kind": "",
         }
     return None
 
@@ -428,6 +440,21 @@ def _journey(state: dict) -> dict:
                 "view": "planning",
             },
         }
+    if kind == "publication_pending":
+        return {
+            "phase_index": 3,
+            "state": "attention",
+            "headline": "Approved tickets still need publication",
+            "detail": (
+                "Alignment is safely recorded. Retry publication; existing plan-marked "
+                "GitHub issues are reused instead of duplicated."
+            ),
+            "next": {
+                "label": "Retry ticket publication",
+                "detail": "Open Planning and resume the duplicate-safe GitHub publication.",
+                "view": "planning",
+            },
+        }
     stage_approvals = {
         "system_architecture_approval": "System Architecture",
         "program_design_approval": "Program Design",
@@ -500,6 +527,7 @@ def planning_presentation(
         "program_design_approval": "Review Program Design",
         "product_approval": "Review Product Review",
         "alignment_approval": "Review alignment",
+        "publication_pending": "Retry ticket publication",
         "complete": "Planning complete",
         "product_running": "Continue planning",
     }

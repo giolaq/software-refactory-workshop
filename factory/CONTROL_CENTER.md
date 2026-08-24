@@ -150,9 +150,11 @@ before preflight. The factory never rewrites the factory source checkout's
 default repository.
 
 For the guided TableStory exercise, create an empty GitHub repository and check
-**Start with the TableStory workshop code** when saving. The
-Control Center fails closed unless the remote has no branches or tags, then
-publishes the committed workshop history and `factory-baseline`. Leave this
+**Seed the guided Pocket Cinema starter** when saving. The Control Center fails
+closed unless the remote has no branches or tags, then publishes a fresh
+product-only commit containing `demo-app/`, `.gitignore`, the Project Contract,
+and a draft Charter. Factory source, workshop documentation, setup scripts, and
+the control repository's history stay in the control checkout. Leave this
 unchecked for an existing project; the factory never replaces repository
 contents.
 
@@ -207,6 +209,13 @@ machine.
 
 If an action fails, read the operation output first. The same command is shown
 above it, so you can copy it into a terminal when deeper diagnosis is useful.
+
+If GitHub fails while approved tickets are being published, the alignment
+decision remains recorded and Planning shows **Retry ticket publication**.
+Retrying is idempotent: issues carrying the same plan-and-slice marker are
+reused instead of recreated. The equivalent CLI recovery is the same
+`factory approve PLAN_ID --yes --project-number N` command shown in the failed
+operation.
 
 If an agent is still running, select **Stop operation**. A later Factory Run
 recovers interrupted ticket work through the normal orchestrator logic. Use the

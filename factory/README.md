@@ -113,7 +113,7 @@ Arbitrary PRDs require Live agents. Rehearsal remains deterministic by design
 and therefore supports only its bundled Pocket Cinema scenarios.
 
 For a greenfield product, create and connect an empty GitHub repository but
-leave **Start with the TableStory workshop code** unchecked. On Connect, create
+leave **Seed the guided Pocket Cinema starter** unchecked. On Connect, create
 and review the detected Project Contract and Charter, approve the exact Charter,
 then select **Commit and push setup**. That initial commit contains only
 `.gitignore`, `factory.project.toml`, and `factory.charter.toml`. Planning turns
@@ -448,12 +448,13 @@ gh repo create YOUR-REPOSITORY --private
 
 In **Connect**, choose **Live**, paste
 `https://github.com/YOUR-NAME/YOUR-REPOSITORY`, select the role adapters, and
-check **Populate an empty repository with the workshop code** before saving.
-The Control Center verifies that the remote has no branches or tags, publishes
-the committed workshop history and `factory-baseline`, and opens an isolated
-checkout under `.factory/repositories/` without changing the factory source
-checkout's `origin`. It refuses to bootstrap a repository that already contains
-code.
+check **Seed the guided Pocket Cinema starter** before saving. The Control
+Center verifies that the remote has no branches or tags and creates a fresh
+product-only history containing `demo-app/`, `.gitignore`, the Project Contract,
+and a draft Charter. It tags that commit as `factory-baseline` and opens an
+isolated checkout under `.factory/repositories/` without changing the control
+checkout's `origin`. Factory source, workshop documentation, setup scripts, and
+the control repository's history are never published to the attendee repository.
 
 For a CLI-only run, clone and bootstrap the empty attendee repository
 explicitly, then configure the selected agents and start with a PRD. This
@@ -461,15 +462,19 @@ example uses Claude; select a built-in or custom setup from `CONFIGURATION.md`
 if your team uses another CLI or model:
 
 ```sh
+CONTROL="$PWD"
+TARGET="$CONTROL/../software-refactory-live"
 gh repo clone YOUR-NAME/YOUR-REPOSITORY ../software-refactory-live
 ./factory/factory bootstrap-workshop \
-  --repo ../software-refactory-live \
-  --source "$PWD"
-cd ../software-refactory-live
+  --repo "$TARGET" \
+  --source "$CONTROL"
 ./factory/factory configure \
-  --github-repository "$(gh repo view --json url --jq .url)" \
+  --repo "$TARGET" \
+  --github-repository "https://github.com/YOUR-NAME/YOUR-REPOSITORY" \
   --preset claude-workshop
-./factory/factory plan recipe-app-prd.md
+./factory/factory approve-charter --repo "$TARGET" --yes
+./factory/factory publish-setup --repo "$TARGET" --yes
+./factory/factory plan "$CONTROL/recipe-app-prd.md" --repo "$TARGET"
 ```
 
 Follow the two human planning gates described above. `factory approve` converts

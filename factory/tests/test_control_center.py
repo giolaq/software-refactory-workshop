@@ -1046,6 +1046,51 @@ class ControlCenterTests(unittest.TestCase):
             self.assertEqual(snapshot["planning"]["continue_label"], "Planning complete")
             self.assertFalse(snapshot["planning"]["failed_stage"])
 
+    def test_alignment_approved_live_plan_offers_duplicate_safe_publication_retry(self):
+        with tempfile.TemporaryDirectory() as directory:
+            center = ControlCenter(self.make_repo(directory))
+            planning = {
+                "plan_id": "abc12345",
+                "mode": "live",
+                "status": "alignment_approved",
+                "approvals": {
+                    "product": {"approved_at": "now"},
+                    "alignment": {"approved_at": "now"},
+                },
+                "stages": [
+                    {"id": "product_review", "status": "complete", "questions": []},
+                    {"id": "system_architecture", "status": "complete", "questions": []},
+                    {"id": "program_design", "status": "complete", "questions": []},
+                    {"id": "vertical_slices", "status": "complete", "questions": []},
+                ],
+            }
+            (center.repo / ".factory/planning-state.json").write_text(json.dumps(planning))
+
+            snapshot = center.snapshot()
+            journey = center.journey(
+                snapshot["planning"],
+                {"tickets": [{"number": 1, "status": "Backlog"}]},
+                {"status": "idle"},
+                {"saved": True},
+                [],
+                config={"preset": "codex-workshop"},
+                project={"configured": True, "valid": True, "committed": True},
+                charter={"approved": True},
+            )
+
+        self.assertEqual(snapshot["planning"]["presentation"]["state"], "publication_pending")
+        self.assertEqual(
+            snapshot["planning"]["presentation"]["continue_label"],
+            "Retry ticket publication",
+        )
+        self.assertEqual(
+            journey["next"]["label"],
+            "Retry ticket publication",
+        )
+        javascript = (Path(__file__).parents[1] / "control_center/app.js").read_text()
+        self.assertIn('"awaiting_alignment_approval", "alignment_approved"', javascript)
+        self.assertIn("Retrying reuses any plan-marked GitHub issues", javascript)
+
     def test_lean_snapshot_marks_supervisor_disabled_before_a_run(self):
         with tempfile.TemporaryDirectory() as directory:
             center = ControlCenter(self.make_repo(directory))
@@ -1150,9 +1195,14 @@ class ControlCenterTests(unittest.TestCase):
             "Monitor repository health",
             "Read-only by contract",
             "Active Tickets",
+            "Seed the guided Pocket Cinema starter",
         ):
             self.assertIn(label, source)
 
+        self.assertIn(
+            "Factory runtime and workshop documentation stay in this control checkout",
+            source,
+        )
         self.assertIn("app.selectedPlanning !== selectedId", javascript)
         self.assertNotIn("app.selectedPlanning === id", javascript)
         self.assertIn("planning.presentation?.selected_stage", javascript)

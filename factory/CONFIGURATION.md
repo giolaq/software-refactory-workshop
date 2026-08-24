@@ -57,9 +57,11 @@ GitHub CLI's current default.
 ```
 
 For the guided TableStory exercise, create an empty personal repository and use
-the Control Center's explicit workshop bootstrap option as described in
-`README.md`. For your own populated project, leave that option unchecked and
-initialize its Project Contract as described below. Run
+the Control Center's explicit starter option as described in `README.md`. It
+publishes only the Pocket Cinema workpiece and generated project governance,
+never the factory implementation or workshop documentation. For your own
+populated project, leave that option unchecked and initialize its Project
+Contract as described below. Run
 `./factory/factory doctor --full` before planning; it verifies that the saved
 target, `origin`, and local default branch agree.
 
