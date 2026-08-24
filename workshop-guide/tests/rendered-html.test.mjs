@@ -55,7 +55,7 @@ test("server-renders the concise self-guided workshop", async () => {
     "Publish tickets",
     "Review QA tests",
     "Run tickets",
-    "Verify the result",
+    "Run the completed app",
   ]) {
     assert.match(html, new RegExp(heading));
   }
@@ -66,16 +66,15 @@ test("server-renders the concise self-guided workshop", async () => {
   assert.match(html, /factory approve-rehearsal/);
   assert.match(html, /factory run --mock --scenario recipe-rebrand --review-qa-tests --once/);
   assert.match(html, /factory approve-tests ISSUE_NUMBER/);
-  assert.match(html, /factory evidence/);
+  assert.match(html, /\.factory\/venv\/bin\/python demo-app\/app\.py/);
   assert.match(html, /RED PROVED/);
   assert.match(html, /NEEDS YOU/);
   assert.match(html, /remote claim/);
   assert.match(html, /Merge exact revision/);
-  assert.match(html, /factory monitor/);
+  assert.match(html, /http:\/\/127\.0\.0\.1:5000\/\?mode=tv/);
   assert.match(html, /What planning creates/);
   assert.match(html, /What happens to each ticket/);
   assert.match(html, /The coding agent changes an isolated Git worktree/);
-  assert.match(html, /Monitor reports follow-up work but does not change code/);
   assert.match(html, /A required check still tests removed behavior/);
   assert.match(html, /Troubleshooting/);
 
@@ -87,10 +86,6 @@ test("server-renders the concise self-guided workshop", async () => {
   assert.match(html, /screenshots\/control-center-ticket-tests\.jpg/);
   assert.match(html, /screenshots\/control-center-overview\.jpg/);
   assert.match(html, /screenshots\/control-center-human-merge\.jpg/);
-  assert.match(html, /screenshots\/control-center-evidence\.jpg/);
-  assert.match(html, /screenshots\/tablestory-desktop\.webp/);
-  assert.match(html, /screenshots\/tablestory-mobile\.webp/);
-  assert.match(html, /screenshots\/tablestory-tv\.webp/);
 
   assert.doesNotMatch(html, /Start with one responsible delivery loop/);
   assert.doesNotMatch(html, /More agents are a cost/);

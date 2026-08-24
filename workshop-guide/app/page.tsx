@@ -12,7 +12,7 @@ const steps = [
   { id: "publish", label: "Publish tickets", time: "18 min" },
   { id: "qa", label: "Review QA tests", time: "10 min" },
   { id: "factory", label: "Run tickets", time: "22 min" },
-  { id: "finish", label: "Verify the result", time: "15 min" },
+  { id: "finish", label: "Run the completed app", time: "5 min" },
 ] as const;
 
 function CodeBlock({ children, label = "Terminal" }: { children: string; label?: string }) {
@@ -591,41 +591,15 @@ export PLAN_ID=<plan-id-from-output>
           <Checkpoint>At least one ticket reaches Done after tests, checks, review, and your merge decision.</Checkpoint>
         </StepSection>
 
-        <StepSection index={8} id="finish" title="Verify the result" goal="Test the completed app and save the run record." complete={completed.includes("finish")} onToggle={() => toggleStep("finish")}>
+        <StepSection index={8} id="finish" title="Run the completed app" goal="Start TableStory and open its supported layouts." complete={completed.includes("finish")} onToggle={() => toggleStep("finish")}>
           <WorkshopPaths
-            click={<>Open <strong>Evidence</strong>, complete the Factory Canvas, and select <strong>Create evidence packet</strong>. Then open <strong>Monitor</strong> and select <strong>Preview findings</strong>.</>}
-            whyStopped={<>The Evidence page becomes available after all tickets are Done. Monitor reports follow-up work but does not change code.</>}
-            inspect={<>Check the PRD, approvals, test results, repository checks, review, merged commit, and product screenshots.</>}
-            continueWhen={<>The tests pass, the app works on mobile, desktop, and TV layouts, and the evidence packet is created.</>}
+            click={<>Open <strong>Run app</strong> in the Control Center and copy the startup command.</>}
+            whyStopped={<>The page becomes available when every ticket is Done.</>}
+            inspect={<>Open <code>http://127.0.0.1:5000/</code> for mobile and desktop, or <code>http://127.0.0.1:5000/?mode=tv</code> for television.</>}
+            continueWhen={<>TableStory loads in the browser. Keep the terminal running while you use it, then press <code>Ctrl+C</code> to stop the server.</>}
           >{track === "live" ? `cd "$TARGET"
-"$CONTROL/.factory/venv/bin/python" -m pytest -q demo-app/tests
-node --test demo-app/static/tests/*.test.js
-"$CONTROL/factory/factory" canvas --repo "$TARGET" \\
-  --output "$TARGET/factory-canvas.md"
-"$CONTROL/factory/factory" evidence "$PLAN_ID" --repo "$TARGET" \\
-  --canvas "$TARGET/factory-canvas.md"
-"$CONTROL/factory/factory" monitor --repo "$TARGET"
-"$CONTROL/.factory/venv/bin/python" demo-app/app.py` : `.factory/venv/bin/python -m pytest -q demo-app/tests
-node --test demo-app/static/tests/*.test.js
-./factory/factory canvas --output factory-canvas.md
-./factory/factory evidence "$PLAN_ID" --canvas factory-canvas.md
-./factory/factory monitor
-.factory/venv/bin/python demo-app/app.py`}</WorkshopPaths>
-          <WorkshopMedia
-            src="/screenshots/control-center-evidence.jpg"
-            alt="Control Center Evidence screen with completion checklist and evidence packet button"
-            label="Evidence"
-            caption="Complete the checklist, then create the evidence packet."
-            width={1440}
-            height={980}
-          />
-          <p>Test five actions: browse recipes, search, open a recipe, save a recipe, and use the TV layout.</p>
-          <div className="workshop-figure-grid">
-            <WorkshopMedia src="/screenshots/tablestory-mobile.webp" alt="TableStory on a mobile viewport" label="Mobile" caption="Touch layout" width={390} height={844} portrait />
-            <WorkshopMedia src="/screenshots/tablestory-desktop.webp" alt="TableStory on a desktop viewport" label="Desktop" caption="Primary browsing layout" width={1440} height={980} />
-          </div>
-          <WorkshopMedia src="/screenshots/tablestory-tv.webp" alt="TableStory television layout" label="TV" caption="Remote-friendly navigation and readable focus states" width={1920} height={1044} />
-          <Checkpoint>The app passes its tests, works in all three layouts, and has an evidence packet.</Checkpoint>
+"$CONTROL/.factory/venv/bin/python" demo-app/app.py` : `.factory/venv/bin/python demo-app/app.py`}</WorkshopPaths>
+          <Checkpoint>TableStory opens from the repository produced by the factory.</Checkpoint>
         </StepSection>
 
         <section className="completion-panel">
@@ -675,8 +649,7 @@ node --test demo-app/static/tests/*.test.js
             <div><code>factory merge ISSUE</code><span>Merge the reviewed commit.</span></div>
             <div><code>factory status</code><span>Show ticket status.</span></div>
             <div><code>factory retry ISSUE</code><span>Retry a blocked ticket.</span></div>
-            <div><code>factory monitor</code><span>Report follow-up work without changing code.</span></div>
-            <div><code>factory canvas --output FILE</code><span>Create the input for an evidence packet.</span></div>
+            <div><code>.factory/venv/bin/python demo-app/app.py</code><span>Start the completed workshop app.</span></div>
           </div>
           <div className="next-links">
             <a href="https://github.com/giolaq/software-refactory-workshop/blob/main/factory/WORKSHOP_OUTLINE.md"><span>FACILITATOR</span><b>Workshop outline</b><i>→</i></a>

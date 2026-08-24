@@ -31,7 +31,7 @@
       <a href="#planning" data-view-link="planning"><span>⌘</span>Planning</a>
       <a href="#tickets" data-view-link="tickets"><span>▦</span>Tickets</a>
       <a href="#supervisor" data-view-link="supervisor"><span>◎</span>Supervisor</a>
-      <a href="#evidence" data-view-link="evidence"><span>✓</span>Evidence</a>
+      <a href="#evidence" data-view-link="evidence"><span>▶</span>Run app</a>
       <a href="#monitor" data-view-link="monitor"><span>◌</span>Monitor</a>
     </nav>
     <div class="sidebar-footer">
@@ -194,16 +194,21 @@
     </section>
 
     <section class="view" data-view="evidence" aria-labelledby="evidence-title" hidden>
-      <div class="page-heading"><div><span class="eyebrow">Step 8</span><h1 id="evidence-title">Verify the result</h1><p>Collect the artifacts that justify completion.</p></div><div class="heading-actions"><span class="save-state" id="canvas-save-state">Canvas not loaded</span><button class="button button-primary" id="create-evidence" type="button">Create evidence packet</button></div></div>
-      <div class="evidence-grid">
-        <section class="surface"><span class="section-label">Completion</span><h2>Evidence checklist</h2><div class="evidence-checks" id="evidence-checks"></div></section>
-        <section class="surface"><div class="surface-heading"><div><span class="section-label">Exports</span><h2>Generated files</h2></div></div><div class="file-list" id="evidence-files"><p class="empty-state">No evidence packet generated yet.</p></div></section>
+      <div class="page-heading"><div><span class="eyebrow">Step 8</span><h1 id="evidence-title">Run the completed app</h1><p>Start the generated application from the repository used by this run.</p></div></div>
+      <div class="run-app-grid">
+        <section class="surface">
+          <span class="section-label">Terminal</span>
+          <h2>Start the server</h2>
+          <pre id="run-app-command">Waiting for the completed application.</pre>
+          <button class="button" id="copy-run-command" type="button">Copy command</button>
+        </section>
+        <section class="surface">
+          <span class="section-label">Browser</span>
+          <h2>Open the app</h2>
+          <div class="run-app-links" id="run-app-links"><p class="empty-state">The application URLs appear when delivery is complete.</p></div>
+          <p>Keep the terminal running while you use the app. Press <code>Ctrl+C</code> in that terminal to stop it.</p>
+        </section>
       </div>
-      <details class="surface canvas-editor">
-        <summary><span><b>Factory Canvas</b><small>Document how this workflow should operate for your use case.</small></span><span>Edit</span></summary>
-        <textarea id="canvas-text" aria-label="Factory Canvas" spellcheck="true"></textarea>
-        <div class="form-actions"><button class="button" id="save-canvas" type="button">Save canvas</button></div>
-      </details>
     </section>
 
     <section class="view" data-view="monitor" aria-labelledby="monitor-title" hidden>
@@ -251,7 +256,7 @@
       <section class="start-over-option">
         <span class="reset-scope">Clear workshop work</span>
         <h3>Start from the beginning</h3>
-        <p>Also clear the saved PRD, expert plans, human approvals, rehearsal tickets, Factory Canvas, and evidence exports.</p>
+        <p>Also clear the saved PRD, expert plans, human approvals, rehearsal tickets, and run history.</p>
         <label>Type <strong>START OVER</strong> to confirm<input id="reset-all-confirm" autocomplete="off" spellcheck="false"></label>
         <button class="button button-danger" id="reset-all" type="button" disabled>Start workshop over</button>
       </section>

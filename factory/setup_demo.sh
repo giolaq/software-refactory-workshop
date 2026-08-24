@@ -93,7 +93,7 @@ done
 
 mkdir -p .factory
 find .factory/logs -type f ! -name 'control-center-*' -delete 2>/dev/null || true
-find .factory/prompts .factory/qa-approvals -type f -delete 2>/dev/null || true
+find .factory/prompts .factory/qa-approvals .factory/merge-events -type f -delete 2>/dev/null || true
 rm -f .factory/state.json .factory/state.tmp .factory/ids.json
 rm -rf .factory/supervisor
 rm -rf .factory/reviews

@@ -53,6 +53,55 @@ def install_approved_charter(repo: Path, merge_authority: str = "human") -> None
 
 
 class RuntimeTests(unittest.TestCase):
+    def test_factory_run_is_complete_only_when_every_ticket_is_done(self):
+        factory = Factory.__new__(Factory)
+        factory.tickets = {
+            1: {"status": "Done"},
+            2: {"status": "In Review"},
+        }
+
+        self.assertFalse(factory.delivery_complete())
+        factory.tickets[2]["status"] = "Done"
+        self.assertTrue(factory.delivery_complete())
+
+    def test_running_factory_reconciles_a_companion_human_merge_event(self):
+        with tempfile.TemporaryDirectory() as directory:
+            repo = Path(directory)
+            event_dir = repo / ".factory/merge-events"
+            event_dir.mkdir(parents=True)
+            approved_head = "a" * 40
+            merged_head = "b" * 40
+            receipt = ".factory/receipts/human-review.json"
+            (event_dir / "3.json").write_text(json.dumps({
+                "schema_version": 1,
+                "ticket": 3,
+                "approved_head": approved_head,
+                "merged_head": merged_head,
+                "merged_at": "2026-08-24T21:30:00+00:00",
+                "receipt": receipt,
+            }))
+            ticket = {
+                "number": 3,
+                "status": "In Review",
+                "phase": "in-review",
+                "approved_head": approved_head,
+                "receipts": [],
+                "history": [],
+                "failure": "",
+            }
+            factory = Factory.__new__(Factory)
+            factory.repo = repo
+            factory.tickets = {3: ticket}
+            factory._sync_store = mock.Mock()
+
+            factory.apply_human_merge_events()
+
+            self.assertEqual(ticket["status"], "Done")
+            self.assertEqual(ticket["merge_executed_by"], "human")
+            self.assertEqual(ticket["receipts"], [receipt])
+            self.assertFalse((event_dir / "3.json").exists())
+            factory._sync_store.assert_called_once_with()
+
     def test_retry_preserves_a_verification_candidate_and_qa_tests(self):
         with tempfile.TemporaryDirectory() as directory:
             repo = Path(directory) / "repo"
@@ -1359,8 +1408,11 @@ class RuntimeTests(unittest.TestCase):
             human_merge_ticket(repo, 3, mock=True, project_number=None, assume_yes=True)
 
             completed = json.loads((repo / ".factory/state.json").read_text())["tickets"][0]
+            merge_event = json.loads((repo / ".factory/merge-events/3.json").read_text())
             receipts = [json.loads((repo / path).read_text()) for path in completed["receipts"]]
             self.assertEqual(completed["status"], "Done", completed.get("failure"))
+            self.assertEqual(merge_event["approved_head"], completed["approved_head"])
+            self.assertRegex(merge_event["merged_head"], r"^[a-f0-9]{40}$")
             self.assertEqual(receipts[-1]["role"], "human_review")
             self.assertFalse((repo / "demo-app/rehearsal-attempt.txt").exists())
 

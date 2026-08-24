@@ -516,6 +516,54 @@ class ControlCenterTests(unittest.TestCase):
             self.assertEqual(finished["status"], "succeeded")
             self.assertIn("factory args: doctor --full", finished["output"])
 
+    def test_human_gates_can_unblock_a_running_factory_operation(self):
+        with tempfile.TemporaryDirectory() as directory:
+            center = ControlCenter(self.make_repo(directory))
+            factory = center.repo / "factory/factory"
+            factory.write_text(
+                "#!/bin/sh\n"
+                "if [ \"$1\" = run ]; then\n"
+                "  mkdir -p .factory/qa-approvals .factory/merged\n"
+                "  while [ ! -f .factory/qa-approvals/1 ]; do sleep 0.05; done\n"
+                "  while [ ! -f .factory/merged/1 ]; do sleep 0.05; done\n"
+                "  exit 0\n"
+                "fi\n"
+                "if [ \"$1\" = approve-tests ]; then\n"
+                "  mkdir -p .factory/qa-approvals\n"
+                "  : > .factory/qa-approvals/\"$2\"\n"
+                "  printf 'approved ticket %s\\n' \"$2\"\n"
+                "  exit 0\n"
+                "fi\n"
+                "if [ \"$1\" = merge ]; then\n"
+                "  mkdir -p .factory/merged\n"
+                "  : > .factory/merged/\"$2\"\n"
+                "  printf 'merged ticket %s\\n' \"$2\"\n"
+                "  exit 0\n"
+                "fi\n"
+                "exit 2\n"
+            )
+            factory.chmod(0o755)
+
+            center.start("run", {"mode": "rehearsal"})
+            deadline = time.monotonic() + 2
+            while center.process is None and time.monotonic() < deadline:
+                time.sleep(0.01)
+
+            with self.assertRaisesRegex(InputError, "Another factory operation"):
+                center.start("doctor", {})
+            approval = center.start("approve-tests", {"issue": 1})
+
+            self.assertEqual(approval["companion"]["action"], "approve-tests")
+            self.assertEqual(approval["companion"]["status"], "succeeded")
+            merge = center.start("merge", {"issue": 1, "mode": "rehearsal"})
+
+            self.assertEqual(merge["companion"]["action"], "merge")
+            self.assertEqual(merge["companion"]["status"], "succeeded")
+            deadline = time.monotonic() + 2
+            while center.operation_snapshot().get("status") == "running" and time.monotonic() < deadline:
+                time.sleep(0.01)
+            self.assertEqual(center.operation_snapshot()["status"], "succeeded")
+
     def test_shutdown_stops_and_joins_an_active_factory_process(self):
         with tempfile.TemporaryDirectory() as directory:
             center = ControlCenter(self.make_repo(directory))
@@ -1181,10 +1229,10 @@ class ControlCenterTests(unittest.TestCase):
             "Define the outcome",
             "Review the plan",
             "Operate the factory",
-            "Verify the result",
+            "Run the completed app",
             "Live log",
             "Diff",
-            "Factory Canvas",
+            "Start the server",
             "Current phase",
             "Reset or start again",
             "Start workshop over",

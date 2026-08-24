@@ -1054,6 +1054,55 @@ class Factory:
             ticket["qa_approved"] = True
             self.transition(ticket, "Ready", "Human approved independent Acceptance Tests")
 
+    def apply_human_merge_events(self):
+        event_dir = self.repo / ".factory/merge-events"
+        changed = False
+        for marker in sorted(event_dir.glob("*.json")):
+            try:
+                event = json.loads(marker.read_text())
+                number = int(event["ticket"])
+            except (OSError, ValueError, KeyError, json.JSONDecodeError) as exc:
+                raise ValueError(f"Invalid human merge event {marker.name}") from exc
+            ticket = self.tickets.get(number)
+            if not ticket or ticket.get("status") == "Done":
+                marker.unlink(missing_ok=True)
+                continue
+            if (
+                ticket.get("status") != "In Review"
+                or event.get("approved_head") != ticket.get("approved_head")
+                or not re.fullmatch(r"[a-f0-9]{40,64}", event.get("merged_head", ""))
+            ):
+                ticket["failure"] = (
+                    "Human merge event does not match the waiting exact revision; "
+                    "inspect the merged candidate before continuing."
+                )
+                self.transition(ticket, "Blocked", "Human merge event failed exact-revision validation")
+                marker.unlink(missing_ok=True)
+                continue
+            receipt = event.get("receipt", "")
+            if receipt and receipt not in ticket.setdefault("receipts", []):
+                ticket["receipts"].append(receipt)
+            ticket.update(
+                status="Done",
+                phase="human_review",
+                merge_executed_by="human",
+                failure="",
+                finished_at=event.get("merged_at") or now(),
+            )
+            ticket.setdefault("history", []).append({
+                "at": event.get("merged_at") or now(),
+                "status": "Done",
+                "note": f"Human merge reconciled at {event['merged_head'][:12]}",
+            })
+            marker.unlink(missing_ok=True)
+            changed = True
+            print(
+                f"#{number:<3} Done         Human merge reconciled; dependencies can continue",
+                flush=True,
+            )
+        if changed:
+            self._sync_store()
+
     def dry_plan(self):
         remaining = set(self.tickets)
         done, wave = set(), 1
@@ -1064,6 +1113,11 @@ class Factory:
                 return
             print(f"Wave {wave}: " + ", ".join(f"#{n} {self.tickets[n]['title']}" for n in ready))
             done.update(ready); remaining.difference_update(ready); wave += 1
+
+    def delivery_complete(self) -> bool:
+        return bool(self.tickets) and all(
+            ticket.get("status") == "Done" for ticket in self.tickets.values()
+        )
 
     def git(self, *args, cwd=None, **kwargs):
         return run(["git", *args], cwd or self.repo, **kwargs)
@@ -2650,9 +2704,13 @@ class Factory:
                 self.tickets[n]["failure"] = note
                 self.transition(self.tickets[n], "Blocked", note)
         while True:
+            self.apply_human_merge_events()
             self.sync_merged()
             self.apply_qa_approvals()
             self.refresh_readiness()
+            if self.delivery_complete():
+                print("Factory run complete: all Tickets are Done.", flush=True)
+                return
             candidates = [t for t in self.tickets.values() if t["status"] == "Ready"]
             ready = self.coordinate_ready(candidates) if candidates else []
             if ready:
@@ -2977,12 +3035,27 @@ def human_merge_ticket(
     ticket["phase"] = "human_review"
     ticket["merge_executed_by"] = "human"
     ticket["failure"] = ""
+    merged_at = now()
     ticket.setdefault("history", []).append({
-        "at": now(),
+        "at": merged_at,
         "status": "Done",
         "note": f"Human merged exact approved revision {approved_head[:12]}",
     })
     store.save()
+    event_dir = repo / ".factory/merge-events"
+    event_dir.mkdir(parents=True, exist_ok=True)
+    event = {
+        "schema_version": 1,
+        "ticket": number,
+        "approved_head": approved_head,
+        "merged_head": merged_head,
+        "merged_at": merged_at,
+        "receipt": str(receipt_path.relative_to(repo)),
+    }
+    event_path = event_dir / f"{number}.json"
+    event_tmp = event_path.with_suffix(".tmp")
+    event_tmp.write_text(json.dumps(event, indent=2) + "\n")
+    os.replace(event_tmp, event_path)
     worktree = worktree_path(repo, number)
     run(["git", "worktree", "remove", "--force", str(worktree)], repo, check=False)
     run(["git", "branch", "-d", branch], repo, check=False)
@@ -3225,7 +3298,7 @@ def reset_project(
         (runtime / relative).unlink(missing_ok=True)
     for relative in ("supervisor", "reviews"):
         shutil.rmtree(runtime / relative, ignore_errors=True)
-    for relative in ("prompts", "qa-approvals"):
+    for relative in ("prompts", "qa-approvals", "merge-events"):
         directory = runtime / relative
         if directory.is_dir():
             for path in directory.iterdir():

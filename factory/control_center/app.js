@@ -8,7 +8,6 @@ const app = {
   artifactPath: "",
   loadedPlanningArtifact: "",
   prdLoaded: false,
-  canvasLoaded: false,
   eventSource: null,
 };
 
@@ -47,7 +46,6 @@ function showView(name, updateHash = true) {
   if (updateHash) history.replaceState(null, "", `#${name}`);
   closeSidebar();
   if (name === "prd") loadPrd();
-  if (name === "evidence") loadCanvas();
   document.title = `${name[0].toUpperCase()}${name.slice(1)} · Factory Control Center`;
 }
 
@@ -179,7 +177,7 @@ function renderSnapshot(data) {
   renderPlanning(data.planning || {});
   renderTickets(data.factory || {});
   renderSupervisor(data.supervisor || {}, data.factory || {}, data.config || {});
-  renderEvidence(data);
+  renderApplication(data.application || {});
   renderMonitor(data.monitor || {}, data.repo || {});
   if (app.selectedTicket) {
     const current = tickets.find((ticket) => Number(ticket.number) === Number(app.selectedTicket.number));
@@ -482,31 +480,13 @@ function renderSupervisor(supervisor, factory, config) {
   $("#supervisor-history").innerHTML = events.length ? [...events].reverse().map((event) => `<article class="supervisor-event"><time>${formatTime(event.at)}</time><b>${esc(event.id)}</b><span>${esc(event.summary)}</span><small>${event.kind === "merge" ? `${esc(event.action)} Ticket #${event.ticket} · candidate ${esc((event.candidate_head || "").slice(0, 8))}` : `${event.dispatch?.length || 0} dispatched · ${event.block?.length || 0} blocked · ${event.deferred?.length || 0} deferred`}</small></article>`).join("") : '<p class="empty-state">Decisions will appear here after the first ready wave.</p>';
 }
 
-function renderEvidence(data) {
-  const tickets = data.factory?.tickets || [];
-  const profile = data.factory?.profile || data.config?.profile || "standard";
-  const causalRequired = ["standard", "assured", "autonomous-demo"].includes(profile);
-  const causalProofPass = tickets.length > 0 && tickets.every((ticket) => {
-    if (!causalRequired) return true;
-    const evidence = ticket.qa_evidence || {};
-    return evidence.red?.result === "RED PROVED"
-      && evidence.green?.result === "GREEN PROVED"
-      && (profile !== "assured" || evidence.negative?.result === "NEGATIVE PROOF PROVED");
-  });
-  const requiredGatesPass = tickets.length > 0 && tickets.every((ticket) => {
-    const required = (ticket.gate_results || []).filter((gate) => gate.required);
-    return required.length > 0 && required.every((gate) => gate.exit_code === 0);
-  });
-  const checks = [
-    [Boolean(data.planning?.approvals?.product), "Product intent approved", "Problem and behavior accepted by a person"],
-    [Boolean(data.planning?.approvals?.alignment), "Delivery plan approved", "Architecture and slices accepted"],
-    [causalProofPass, causalRequired ? "Red and green proved" : "Existing tests reviewed", causalRequired ? "The same focused command detects missing behavior and passes after implementation" : "The Lean path uses the repository's existing evidence"],
-    [requiredGatesPass, "Required gates pass", "Every ticket has a successful required gate"],
-    [tickets.length > 0 && tickets.every((ticket) => ticket.status === "Done"), "All tickets complete", "Integrated delivery has no unfinished work"],
-  ];
-  $("#evidence-checks").innerHTML = checks.map(([complete, title, text]) => `<div class="evidence-check ${complete ? "complete" : ""}"><span>${complete ? "✓" : "·"}</span><div><b>${esc(title)}</b><small>${esc(text)}</small></div></div>`).join("");
-  $("#evidence-files").innerHTML = data.evidence?.length ? data.evidence.map((file) => `<button class="file-item text-button" type="button" data-artifact="${esc(file.path)}"><span>FILE</span><div><b>${esc(file.name)}</b><small>${Math.ceil(file.size / 1024)} KB · ${formatTime(file.updated_at)}</small></div><i>Open</i></button>`).join("") : '<p class="empty-state">No evidence packet generated yet.</p>';
-  $$('[data-artifact]', $("#evidence-files")).forEach((button) => button.addEventListener("click", () => openArtifact(button.dataset.artifact)));
+function renderApplication(application) {
+  $("#run-app-command").textContent = application.available
+    ? application.command
+    : "No supported application entry point was detected. Open the project README for its startup command.";
+  $("#run-app-links").innerHTML = application.urls?.length
+    ? application.urls.map((item) => `<a href="${esc(item.url)}" target="_blank" rel="noreferrer"><b>${esc(item.label)}</b><span>${esc(item.url)}</span></a>`).join("")
+    : '<p class="empty-state">No application URLs were detected.</p>';
 }
 
 function renderMonitor(report, repo) {
@@ -554,22 +534,6 @@ async function savePrd() {
   return value;
 }
 
-async function loadCanvas() {
-  if (app.canvasLoaded) return;
-  try {
-    const value = await request("/api/canvas");
-    $("#canvas-text").value = value.text;
-    $("#canvas-save-state").textContent = value.saved ? "Canvas saved" : "Complete the canvas before export";
-    app.canvasLoaded = true;
-  } catch (error) { toast(error.message, true); }
-}
-
-async function saveCanvas() {
-  const value = await request("/api/canvas", { method: "PUT", body: JSON.stringify({ text: $("#canvas-text").value }) });
-  $("#canvas-save-state").textContent = "Canvas saved";
-  return value;
-}
-
 function basePayload(extra = {}) {
   const profile = $("#config-form")?.elements.namedItem("profile")?.value;
   return {
@@ -592,6 +556,10 @@ async function action(name, extra = {}) {
     const destructive = ["publish-plan", "approve-product", "approve-stage", "approve-tests", "retry", "release-claim"].includes(name);
     if (destructive && !window.confirm("Record this decision and continue?")) return;
     const operation = await request(`/api/actions/${name}`, { method: "POST", body: JSON.stringify(basePayload(extra)) });
+    if (operation.companion) {
+      toast(`${operation.companion.title} completed.`);
+      return operation;
+    }
     renderOperation(operation);
     showView("overview");
     toast(`${operation.title} started.`);
@@ -638,7 +606,6 @@ async function resetAll() {
   const operation = await action("reset-all", { confirm: confirmation, local_only: live });
   if (!operation) return;
   app.prdLoaded = false;
-  app.canvasLoaded = false;
   app.selectedPlanning = "";
   app.loadedPlanningArtifact = "";
 }
@@ -814,9 +781,12 @@ function wireEvents() {
   $("#drawer-scrim").addEventListener("click", closeDrawer);
   $$('.drawer-tabs button').forEach((button) => button.addEventListener("click", () => { app.drawerTab = button.dataset.drawerTab; renderDrawer(); }));
   $("#open-artifact").addEventListener("click", () => app.artifactPath && openArtifact(app.artifactPath));
-  $("#save-canvas").addEventListener("click", async () => { try { await saveCanvas(); toast("Factory Canvas saved."); } catch (error) { toast(error.message, true); } });
-  $("#canvas-text").addEventListener("input", () => { $("#canvas-save-state").textContent = "Unsaved canvas changes"; });
-  $("#create-evidence").addEventListener("click", async () => { try { await saveCanvas(); await action("evidence"); } catch (error) { toast(error.message, true); } });
+  $("#copy-run-command").addEventListener("click", async () => {
+    const command = app.snapshot?.application?.command;
+    if (!command) return toast("No startup command is available.");
+    await navigator.clipboard.writeText(command);
+    toast("Startup command copied.");
+  });
   document.addEventListener("keydown", (event) => { if (event.key === "Escape") { closeDrawer(); closeSidebar(); } });
   window.addEventListener("hashchange", () => showView(location.hash.slice(1) || "overview", false));
 }

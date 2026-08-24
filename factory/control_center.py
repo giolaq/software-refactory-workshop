@@ -71,6 +71,7 @@ ACTION_REGISTRY = frozenset({
     "run", "run-once", "dry-run", "retry", "release-claim", "evidence",
     "monitor", "publish-monitor", "reset-run", "reset-all",
 })
+COMPANION_ACTIONS = frozenset({"approve-tests", "merge"})
 
 
 def utc_now() -> str:
@@ -119,6 +120,7 @@ class ControlCenter:
         self.active_repository_path = self.control_runtime / "active-repository.json"
         self.repository_root = self.control_repo / ".factory" / "repositories"
         self.lock = threading.RLock()
+        self.companion_lock = threading.Lock()
         self.process: subprocess.Popen | None = None
         self.worker: threading.Thread | None = None
         self._pending_activation: Path | None = None
@@ -337,6 +339,43 @@ class ControlCenter:
                 })
         return sorted(candidates, key=lambda item: item["updated_at"], reverse=True)
 
+    def application_instructions(self) -> dict:
+        contract = ProjectContract.load(self.repo)
+        port = contract.ports[0] if contract.ports else 5000
+        python = self.control_repo / ".factory" / "venv" / "bin" / "python"
+        if not python.is_file():
+            python = Path(sys.executable)
+        entrypoint = next(
+            (
+                candidate for candidate in (
+                    self.repo / "demo-app" / "app.py",
+                    self.repo / "app.py",
+                )
+                if candidate.is_file()
+            ),
+            None,
+        )
+        if entrypoint is None:
+            return {
+                "available": False,
+                "repository": str(self.repo),
+                "command": "",
+                "urls": [],
+            }
+        relative = entrypoint.relative_to(self.repo)
+        return {
+            "available": True,
+            "repository": str(self.repo),
+            "command": (
+                f"cd {shlex.quote(str(self.repo))}\n"
+                f"{shlex.quote(str(python))} {shlex.quote(str(relative))}"
+            ),
+            "urls": [
+                {"label": "Mobile and desktop", "url": f"http://127.0.0.1:{port}/"},
+                {"label": "Television", "url": f"http://127.0.0.1:{port}/?mode=tv"},
+            ],
+        }
+
     def canvas(self) -> dict:
         source = self.canvas_path if self.canvas_path.is_file() else self.repo / "factory" / "FACTORY_CANVAS.md"
         text = source.read_text() if source.is_file() else "# Factory Canvas\n\n"
@@ -382,7 +421,7 @@ class ControlCenter:
             ("plan", "Plan", "Review expert contracts", "planning"),
             ("tickets", "Tickets", "Approve and create vertical slices", "planning"),
             ("build", "Build & verify", "Run QA, implementation, and gates", "tickets"),
-            ("evidence", "Evidence", "Verify the integrated result", "evidence"),
+            ("evidence", "Run app", "Open the completed application", "evidence"),
         ]
         connected = bool(config if config is not None else self.session_config()) or bool(planning) or bool(tickets)
         project_ready = project is None or bool(project.get("configured") and project.get("valid"))
@@ -403,14 +442,13 @@ class ControlCenter:
             )
         )
         delivery_done = bool(tickets) and all(ticket.get("status") == "Done" for ticket in tickets)
-        evidence_done = any(item.get("name") == "manifest.json" for item in evidence)
         completed = [
             connected and project_ready and charter_ready and setup_published,
             prd_ready,
             plan_complete,
             tickets_approved,
             delivery_done,
-            evidence_done,
+            delivery_done,
         ]
 
         phase_index = next((index for index, done in enumerate(completed) if not done), len(phase_specs) - 1)
@@ -540,17 +578,12 @@ class ControlCenter:
             headline = f"{len(ready)} ticket{'s are' if len(ready) != 1 else ' is'} ready"
             detail = "Dependencies are satisfied. The next run will dispatch QA and implementation in isolated worktrees."
             next_label, next_detail, next_view = "Run the factory", "Open Tickets and start the available work.", "tickets"
-        elif delivery_done and not evidence_done:
-            phase_index = 5
-            headline = "Implementation is complete"
-            detail = "Verify the integrated application and collect the evidence that justifies completion."
-            next_label, next_detail, next_view = "Verify the result", "Complete the Factory Canvas and create the evidence packet.", "evidence"
-        elif delivery_done and evidence_done:
+        elif delivery_done:
             phase_index = 5
             state = "complete"
-            headline = "The workshop run is complete"
-            detail = "Planning approvals, ticket evidence, required gates, and the Evidence Packet are available for review."
-            next_label, next_detail, next_view = "Review the evidence", "Inspect the packet, or start a new rehearsal when ready.", "evidence"
+            headline = "The application is ready"
+            detail = "All Tickets are Done. Start the application and open the supported layouts."
+            next_label, next_detail, next_view = "Run the app", "Use the startup command and URLs on the final page.", "evidence"
         else:
             phase_index = 4
             state = "attention"
@@ -760,6 +793,7 @@ class ControlCenter:
             "operation": operation,
             "prd": prd,
             "evidence": evidence,
+            "application": self.application_instructions(),
             "monitor": monitor,
             "decisions": decisions,
             "journey": self.journey(
@@ -1192,28 +1226,38 @@ class ControlCenter:
         activation = self._pending_activation
         self._pending_activation = None
         operation_repo = self.repo
+        companion = False
         with self.lock:
-            if self.operation.get("status") in {"running", "stopping"} or (
-                self.process and self.process.poll() is None
-            ):
+            process_running = bool(self.process and self.process.poll() is None)
+            operation_running = self.operation.get("status") in {"running", "stopping"}
+            companion = (
+                action in COMPANION_ACTIONS
+                and self.operation.get("action") in {"run", "run-once"}
+                and self.operation.get("status") == "running"
+                and process_running
+            )
+            if (operation_running or process_running) and not companion:
                 raise InputError("Another factory operation is already running.")
-            operation_id = uuid.uuid4().hex[:12]
-            log = self.control_repo / ".factory" / "logs" / f"control-center-{operation_id}.log"
-            self.operation = {
-                "id": operation_id,
-                "action": action,
-                "title": title,
-                "status": "running",
-                "started_at": utc_now(),
-                "finished_at": "",
-                "exit_code": None,
-                "command": " && ".join(shlex.join(command) for command in commands),
-                "log": str(log),
-                "error": "",
-            }
-            if activation is not None:
-                self.operation["target_repo"] = str(activation)
-            self._save_operation()
+            if not companion:
+                operation_id = uuid.uuid4().hex[:12]
+                log = self.control_repo / ".factory" / "logs" / f"control-center-{operation_id}.log"
+                self.operation = {
+                    "id": operation_id,
+                    "action": action,
+                    "title": title,
+                    "status": "running",
+                    "started_at": utc_now(),
+                    "finished_at": "",
+                    "exit_code": None,
+                    "command": " && ".join(shlex.join(command) for command in commands),
+                    "log": str(log),
+                    "error": "",
+                }
+                if activation is not None:
+                    self.operation["target_repo"] = str(activation)
+                self._save_operation()
+        if companion:
+            return self._run_companion(action, title, commands, operation_repo)
         worker = threading.Thread(
             target=self._run,
             args=(commands, log, operation_repo, activation),
@@ -1223,6 +1267,57 @@ class ControlCenter:
             self.worker = worker
         worker.start()
         return self.operation_snapshot()
+
+    def _run_companion(
+        self,
+        action: str,
+        title: str,
+        commands: list[list[str]],
+        operation_repo: Path,
+    ) -> dict:
+        companion_id = uuid.uuid4().hex[:12]
+        log = (
+            self.control_repo / ".factory" / "logs"
+            / f"control-center-{companion_id}-{action}.log"
+        )
+        exit_code = 0
+        output = ""
+        with self.companion_lock:
+            with log.open("w") as stream:
+                for command in commands:
+                    stream.write("$ " + shlex.join(command) + "\n\n")
+                    result = subprocess.run(
+                        command,
+                        cwd=operation_repo,
+                        text=True,
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.STDOUT,
+                        env={**os.environ, "PYTHONUNBUFFERED": "1"},
+                    )
+                    output += result.stdout
+                    stream.write(result.stdout)
+                    stream.flush()
+                    exit_code = result.returncode
+                    if exit_code:
+                        break
+        record = {
+            "id": companion_id,
+            "action": action,
+            "title": title,
+            "status": "succeeded" if exit_code == 0 else "failed",
+            "finished_at": utc_now(),
+            "exit_code": exit_code,
+            "log": str(log),
+        }
+        with self.lock:
+            self.operation.setdefault("companion_actions", []).append(record)
+            self._save_operation()
+        if exit_code:
+            detail = output.strip()[-3000:] or f"{title} exited with code {exit_code}."
+            raise InputError(detail)
+        snapshot = self.operation_snapshot()
+        snapshot["companion"] = record
+        return snapshot
 
     def _run(
         self,
