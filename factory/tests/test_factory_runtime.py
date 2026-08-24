@@ -13,6 +13,7 @@ from unittest import mock
 sys.path.insert(0, str(Path(__file__).parents[1]))
 
 from doctor import baseline_check, run_doctor, version_tuple
+from codex_cli import codex_auth_ready
 from orchestrator import (
     Factory,
     approve_qa_tests,
@@ -20,6 +21,7 @@ from orchestrator import (
     publish_evidence_run_summaries,
     publish_repository_setup,
     recover_remote_ticket_state,
+    resolve_codex_cli,
     worktree_path,
 )
 from factory_charter import FactoryCharter
@@ -905,6 +907,34 @@ class RuntimeTests(unittest.TestCase):
     def test_version_parser_handles_cli_prefixes(self):
         self.assertEqual(version_tuple("v22.4.1"), (22, 4, 1))
         self.assertEqual(version_tuple("3.11.9"), (3, 11, 9))
+
+    def test_codex_auth_accepts_saved_login_and_managed_credentials_only(self):
+        self.assertTrue(codex_auth_ready(0, "Logged in using ChatGPT"))
+        self.assertTrue(codex_auth_ready(
+            1,
+            "Login is not required. OpenAI Codex uses Bedrock via managed credentials.",
+        ))
+        self.assertFalse(codex_auth_ready(1, "Not logged in"))
+
+    def test_codex_resolution_accepts_managed_credentials_wrapper(self):
+        candidate = "/managed/bin/codex"
+        results = [
+            subprocess.CompletedProcess(
+                [candidate, "exec", "--help"], 0, "Run Codex non-interactively\nUsage: codex exec", "",
+            ),
+            subprocess.CompletedProcess(
+                [candidate, "login", "status"],
+                1,
+                "",
+                "Login is not required. OpenAI Codex uses Bedrock via managed credentials.",
+            ),
+        ]
+        with (
+            mock.patch.dict("os.environ", {}, clear=True),
+            mock.patch("orchestrator.shutil.which", return_value=candidate),
+            mock.patch("orchestrator.subprocess.run", side_effect=results),
+        ):
+            self.assertEqual(resolve_codex_cli(), candidate)
 
     def test_basic_doctor_does_not_call_agent_authentication(self):
         config = {

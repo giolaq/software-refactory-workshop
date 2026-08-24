@@ -33,6 +33,7 @@ from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
 
 from doctor import run_doctor
+from codex_cli import codex_auth_ready
 from acceptance_evidence import classify_focused_result, focused_test_command
 from adapter_capabilities import load_capabilities
 from evidence_packet import create_canvas, export_evidence
@@ -325,7 +326,7 @@ def resolve_codex_cli() -> str:
             )
         except (OSError, subprocess.TimeoutExpired):
             continue
-        if status.returncode == 0:
+        if codex_auth_ready(status.returncode, status.stdout + status.stderr):
             return candidate
     if compatible:
         raise RuntimeError(

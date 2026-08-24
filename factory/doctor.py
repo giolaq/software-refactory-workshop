@@ -13,6 +13,7 @@ from pathlib import Path, PurePosixPath
 
 from factory_contracts import profile as factory_profile
 from factory_charter import FactoryCharter, FactoryCharterError
+from codex_cli import codex_auth_ready
 from github_repository import (
     GitHubRepositoryError,
     parse_github_repository,
@@ -268,7 +269,8 @@ def run_doctor(
                 for candidate in codex_candidates():
                     status = command([candidate, "login", "status"], repo)
                     help_result = command([candidate, "exec", "--help"], repo)
-                    if status.returncode == 0 and help_result.returncode == 0:
+                    auth_output = status.stdout + status.stderr
+                    if codex_auth_ready(status.returncode, auth_output) and help_result.returncode == 0:
                         available, detail = True, candidate
                         break
             elif name == "claude":

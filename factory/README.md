@@ -514,10 +514,10 @@ claude auth login
 claude auth status --text
 ```
 
-For Codex, the factory selects a current CLI with a valid saved ChatGPT login
-and skips legacy `codex` executables that only support `OPENAI_API_KEY`. On
-macOS it also checks the CLI bundled with the ChatGPT app. Override discovery
-when needed:
+For Codex, the factory selects a current CLI with either a valid saved ChatGPT
+login or an explicit managed-credentials environment. It skips legacy `codex`
+executables that only support `OPENAI_API_KEY`. On macOS it also checks the CLI
+bundled with the ChatGPT app. Override discovery when needed:
 
 ```sh
 export FACTORY_CODEX_BIN=/path/to/current/codex
