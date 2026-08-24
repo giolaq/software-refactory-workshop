@@ -5,7 +5,7 @@ Status: accepted
 ## Context
 
 ADR 0005 closed the automated code-review, repair, and merge loop by allowing
-the Agent Supervisor to recommend `MERGE` and the orchestrator to execute that
+the Supervisor role to recommend `MERGE` and the orchestrator to execute that
 decision for Standard and Assured Factory Profiles. The implementation verifies
 the exact reviewed pull-request head and fails closed on stale revisions or
 branch-protection failures.
@@ -20,10 +20,11 @@ the default rather than a deliberate autonomy choice.
 
 Lean, Standard, and Assured end at a human exact-revision merge gate.
 
-The Code Review Agent may still return `APPROVE` or `REQUEST_CHANGES` for an
-exact candidate. The implementation-repair loop remains automated and all
-required gates rerun after a changed head. After approval, the Agent Supervisor
-produces a revision-bound merge recommendation and evidence summary, but it
+The adapter fulfilling the Code Review role may still return `APPROVE` or
+`REQUEST_CHANGES` for an exact candidate. The implementation-repair loop remains
+automated and all required gates rerun after a changed head. After approval,
+the adapter fulfilling the Supervisor role produces a revision-bound merge
+recommendation and evidence summary, but it
 does not cause the orchestrator to merge. A person performs the final merge;
 the orchestrator observes the merged revision before completing the Ticket.
 

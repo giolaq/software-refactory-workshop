@@ -6,6 +6,7 @@ import threading
 import time
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
@@ -591,7 +592,13 @@ class ControlCenterTests(unittest.TestCase):
                 "stages": [
                     {"id": "product_review", "status": "complete"},
                     {"id": "system_architecture", "status": "complete"},
-                    {"id": "program_design", "status": "blocked"},
+                    {
+                        "id": "program_design",
+                        "title": "Program Design",
+                        "status": "blocked",
+                        "failure_kind": "agent",
+                        "error": "The adapter process exited unexpectedly.",
+                    },
                     {"id": "vertical_slices", "status": "pending"},
                 ],
             }
@@ -645,6 +652,8 @@ class ControlCenterTests(unittest.TestCase):
             self.assertFalse(snapshot["planning"]["can_continue"])
             self.assertTrue(snapshot["planning"]["requires_decisions"])
             self.assertEqual(snapshot["planning"]["blocked_stage"], "system_architecture")
+            self.assertEqual(snapshot["planning"]["failed_stage"], "")
+            self.assertEqual(snapshot["planning"]["recovery"], {})
             self.assertEqual(snapshot["planning"]["continue_label"], "Answer expert questions")
             self.assertEqual(
                 snapshot["factory"]["human_attention"]["planning_questions"], 1,
@@ -654,6 +663,110 @@ class ControlCenterTests(unittest.TestCase):
             )
             self.assertEqual(journey["headline"], "System Architecture is waiting for you")
             self.assertEqual(journey["next"]["label"], "Answer blocked questions")
+
+    def test_snapshot_centralizes_planning_state_presentation_for_every_caller(self):
+        with tempfile.TemporaryDirectory() as directory:
+            center = ControlCenter(self.make_repo(directory))
+            planning = {
+                "plan_id": "abc12345",
+                "status": "awaiting_system_architecture_approval",
+                "approvals": {
+                    "product": {"approved_at": "now"},
+                    "system_architecture": None,
+                    "alignment": None,
+                },
+                "governance": {
+                    "planning_approvals": [
+                        "product_review",
+                        "system_architecture",
+                        "alignment",
+                    ],
+                },
+                "stages": [
+                    {"id": "product_review", "title": "Product Review", "status": "complete"},
+                    {"id": "system_architecture", "title": "System Architecture", "status": "complete"},
+                    {"id": "program_design", "title": "Program Design", "status": "pending"},
+                    {"id": "vertical_slices", "title": "Vertical Slices", "status": "pending"},
+                ],
+            }
+            (center.repo / ".factory/planning-state.json").write_text(json.dumps(planning))
+
+            snapshot = center.snapshot()
+            presentation = snapshot["planning"]["presentation"]
+
+            self.assertEqual(presentation["state"], "system_architecture_approval")
+            self.assertEqual(presentation["continue_label"], "Review System Architecture")
+            self.assertEqual(presentation["selected_stage"], "system_architecture_gate")
+            self.assertEqual(
+                presentation["decision"],
+                {
+                    "kind": "approval",
+                    "title": "Approve System Architecture",
+                    "text": "Confirm the exact expert artifact before downstream planning continues.",
+                    "view": "planning",
+                    "planning": "system_architecture_gate",
+                    "queue_status": "System Architecture Review",
+                    "queue_kind": "approval",
+                },
+            )
+            self.assertEqual(
+                [item["id"] for item in presentation["sequence"]],
+                [
+                    "product_review",
+                    "product_review_gate",
+                    "system_architecture",
+                    "system_architecture_gate",
+                    "program_design",
+                    "vertical_slices",
+                    "alignment_gate",
+                ],
+            )
+            journey = center.journey(
+                snapshot["planning"],
+                snapshot["factory"],
+                {"status": "idle"},
+                {"saved": True},
+                [],
+            )
+            self.assertEqual(journey["headline"], "System Architecture needs your approval")
+            self.assertEqual(
+                snapshot["factory"]["human_attention"]["oldest"]["status"],
+                "System Architecture Review",
+            )
+
+    def test_paused_planning_decision_routes_to_the_exact_planning_gate_once(self):
+        with tempfile.TemporaryDirectory() as directory:
+            center = ControlCenter(self.make_repo(directory))
+            planning = {
+                "plan_id": "abc12345",
+                "status": "awaiting_product_approval",
+                "updated_at": "2026-08-24T12:00:00+00:00",
+                "approvals": {"product": None, "alignment": None},
+                "stages": [{
+                    "id": "product_review",
+                    "title": "Product Review",
+                    "status": "complete",
+                    "questions": [],
+                }],
+            }
+            (center.repo / ".factory/planning-state.json").write_text(json.dumps(planning))
+            charter = {
+                "configured": True,
+                "approved": True,
+                "max_awaiting_human_review": 1,
+                "max_blocked_for_human": 2,
+                "oldest_review_hours": 24,
+            }
+
+            with patch.object(center, "factory_charter", return_value=charter):
+                snapshot = center.snapshot()
+
+            self.assertTrue(snapshot["factory"]["human_attention"]["dispatch_paused"])
+            self.assertEqual(len(snapshot["decisions"]), 1)
+            decision = snapshot["decisions"][0]
+            self.assertEqual(decision["title"], "NEEDS YOU · Dispatch paused")
+            self.assertEqual(decision["view"], "planning")
+            self.assertEqual(decision["planning"], "product_review_gate")
 
     def test_validation_failure_exposes_rejected_artifact_and_guided_retry(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -980,6 +1093,7 @@ class ControlCenterTests(unittest.TestCase):
         frontend = Path(__file__).parents[1] / "control_center"
         source = (frontend / "index.html").read_text()
         javascript = (frontend / "app.js").read_text()
+        backend = (Path(__file__).parents[1] / "control_center.py").read_text()
 
         for label in (
             "Connect the factory",
@@ -994,23 +1108,28 @@ class ControlCenterTests(unittest.TestCase):
             "Reset or start again",
             "Start workshop over",
             "Plan, build, verify, review",
-            "Agent supervisor",
+            "Supervisor",
             "Handoff Receipts",
             "GitHub repository URL",
             "Monitor repository health",
             "Read-only by contract",
+            "Active Tickets",
         ):
             self.assertIn(label, source)
 
         self.assertIn("app.selectedPlanning !== selectedId", javascript)
         self.assertNotIn("app.selectedPlanning === id", javascript)
-        self.assertIn("planning.blocked_stage || planning.failed_stage", javascript)
+        self.assertIn("planning.presentation?.selected_stage", javascript)
         self.assertIn("if (item.planning)", javascript)
         self.assertNotIn('id="planning-profile"', source)
         self.assertIn('id="connect-mode"', source)
         self.assertIn('full: mode() === "live"', javascript)
         self.assertIn("planning.can_continue", javascript)
-        self.assertIn("planning.continue_label", javascript)
+        self.assertIn("planning.presentation?.continue_label", javascript)
+        self.assertIn("const decisions = data.decisions || [];", javascript)
+        self.assertNotIn("planning.presentation?.decision", javascript)
+        self.assertIn("planning.presentation?.sequence", javascript)
+        self.assertNotIn("planning.status === `awaiting_${stage}_approval`", javascript)
         self.assertIn("renderExpertPanel", javascript)
         self.assertIn("Answer every blocking question", javascript)
         self.assertIn('action(actionName, { stage: item.id, decisions: answers })', javascript)
@@ -1019,7 +1138,7 @@ class ControlCenterTests(unittest.TestCase):
         self.assertIn("Apply correction and continue", javascript)
         self.assertIn("Switch adapter and continue", javascript)
         self.assertIn("Fix with", javascript)
-        self.assertIn("Same-agent retry disabled", javascript)
+        self.assertIn("Same-adapter retry disabled", javascript)
         self.assertIn("Retry same adapter", javascript)
         self.assertIn('action("revise-stage", { stage: item.id, feedback })', javascript)
         self.assertIn("Restart planning safely", javascript)
@@ -1027,7 +1146,7 @@ class ControlCenterTests(unittest.TestCase):
         self.assertIn("Causal acceptance evidence", javascript)
         self.assertIn("RED NOT PROVED", javascript)
         self.assertIn("GREEN NOT PROVED", javascript)
-        self.assertIn("NEEDS YOU · Dispatch paused", javascript)
+        self.assertIn("NEEDS YOU · Dispatch paused", backend)
         self.assertIn("Release abandoned claim", javascript)
         self.assertIn("Merge exact revision", javascript)
         self.assertIn('action("merge", { issue: ticket.number })', javascript)

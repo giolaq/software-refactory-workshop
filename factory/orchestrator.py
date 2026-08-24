@@ -3,8 +3,8 @@
 
 Tickets start as GitHub issues (or seed JSON in a Rehearsal Run). The scheduler
 unlocks dependency-ready work, creates one Git worktree per ticket, asks an
-independent QA agent to commit protected acceptance tests, runs the selected
-implementation agent, verifies ordered gates, retries with the failure in the
+independent QA adapter to commit protected acceptance tests, runs the selected
+Implementation adapter, verifies ordered gates, retries with the failure in the
 prompt, then publishes a PR. A Rehearsal Run (`--mock`) follows the implementation path but
 skips real QA by default and merges locally.
 Every transition is mirrored to .factory/state.json for the Control Center and
@@ -192,9 +192,9 @@ def validate_qa_changes(
     changes: list[tuple[str, str]], ticket_number: int,
     test_roots: list[str], test_file_patterns: list[str] | None = None,
 ) -> list[str]:
-    """Return policy failures for the files produced by an independent QA agent."""
+    """Return policy failures for the files produced by an independent QA adapter."""
     if not changes:
-        return ["QA agent did not create an acceptance-test file"]
+        return ["QA adapter did not create an acceptance-test file"]
     errors = []
     roots = [root.strip("/") + "/" for root in test_roots]
     patterns = test_file_patterns or DEFAULT_QA["test_file_patterns"]
@@ -342,7 +342,7 @@ def resolve_planning_cli(agent: str) -> str:
     if agent == "codex":
         return resolve_codex_cli()
     if agent != "claude":
-        raise ValueError(f"unsupported planning agent: {agent}")
+        raise ValueError(f"unsupported planning adapter: {agent}")
     binary = shutil.which("claude")
     if not binary:
         raise RuntimeError("Claude Code CLI not found. Install Claude Code, then run `claude auth login`.")
@@ -1123,7 +1123,7 @@ class Factory:
             )
             protected = (
                 "\n## Independent QA acceptance tests\n"
-                f"The {ticket['qa_agent']} QA agent created and committed these protected tests:\n{paths}\n\n"
+                f"The {ticket['qa_agent']} QA adapter created and committed these protected tests:\n{paths}\n\n"
                 f"{focused_instruction}"
                 "Make the implementation pass them. You may add other tests, but do not edit, "
                 "rename, delete, skip, or weaken the protected tests; the factory verifies their Git hashes.\n"
@@ -1217,7 +1217,7 @@ class Factory:
             f"{role_input(self.repo, 'code_review')['text']}\n"
             "Review for correctness, regressions, security, maintainability, and test quality. "
             "Report only actionable comments in changed paths. If there is any comment, return "
-            "REQUEST_CHANGES so the implementation agent fixes every comment. Return APPROVE only "
+            "REQUEST_CHANGES so the Implementation adapter fixes every comment. Return APPROVE only "
             "when there are no comments. Do not modify files, commit, or merge. The orchestrator "
             "submits your decision to the pull request.\n\n"
             "Return one JSON object with exactly this shape and no Markdown fence:\n"
@@ -1260,12 +1260,12 @@ class Factory:
         review = None
         try:
             if code:
-                raise CodeReviewError(f"Code Review Agent exited with code {code}; inspect its log.")
+                raise CodeReviewError(f"Code Review adapter exited with code {code}; inspect its log.")
             review = validate_review(extract_review(output), set(changed_paths))
             after_head = self.git("rev-parse", "HEAD", cwd=worktree).stdout.strip()
             after_status = self.git("status", "--porcelain", cwd=worktree).stdout
             if after_head != head_sha or after_status != before_status:
-                raise CodeReviewError("Read-only Code Review Agent modified the worktree.")
+                raise CodeReviewError("Read-only Code Review adapter modified the worktree.")
             protected_failure = self.verify_qa_tests_unchanged(ticket, worktree)
             if protected_failure:
                 raise CodeReviewError(protected_failure)
@@ -2119,7 +2119,7 @@ class Factory:
     def supervisor_recommend_merge(self, ticket: dict) -> None:
         """Ask the Supervisor for a bounded recommendation without granting merge authority."""
         if not self.supervisor:
-            raise RuntimeError("An approved Code Review requires the configured Agent Supervisor.")
+            raise RuntimeError("An approved Code Review requires a configured Supervisor adapter.")
         decision = self.supervisor.authorize_merge(ticket)
         ticket["supervisor_merge_decision"] = decision["id"]
         ticket["supervisor_merge_action"] = decision["action"]
@@ -2163,7 +2163,7 @@ class Factory:
         self.transition(
             ticket,
             "In Review",
-            "Code Review Agent approved exact revision; Supervisor recommends human merge",
+            "Code Review role approved exact revision; Supervisor recommends human merge",
         )
 
     def effective_merge_authority(self, ticket: dict) -> str:
@@ -2172,7 +2172,7 @@ class Factory:
 
     def supervisor_merge(self, ticket: dict, worktree: Path) -> None:
         if not self.supervisor:
-            raise RuntimeError("An approved Code Review requires the configured Agent Supervisor to merge.")
+            raise RuntimeError("An approved Code Review requires a configured Supervisor adapter to merge.")
         decision = self.supervisor.authorize_merge(ticket)
         ticket["supervisor_merge_decision"] = decision["id"]
         ticket["supervisor_merge_action"] = decision["action"]
@@ -2199,7 +2199,7 @@ class Factory:
         ticket["merge_authority"] = "supervisor"
         ticket["approved_head"] = ticket["code_review"]["head"]
         ticket["merge_executed_by"] = "supervisor"
-        self.transition(ticket, "In Review", "Code Review Agent approved; Supervisor authorized merge")
+        self.transition(ticket, "In Review", "Code Review role approved; Supervisor authorized merge")
         if not self.args.mock:
             self.backend.assert_pr_head(ticket["pr_url"], ticket["code_review"]["head"])
             self.backend.merge_pr(ticket["pr_url"])
@@ -2212,7 +2212,7 @@ class Factory:
 
         current_candidate = self.git("rev-parse", ticket["branch"]).stdout.strip()
         if current_candidate != ticket["code_review"]["head"]:
-            raise RuntimeError("Candidate branch changed after Code Review Agent approval; review it again.")
+            raise RuntimeError("Candidate branch changed after Code Review role approval; review it again.")
         if ticket.get("simulate_merge_conflict"):
             ticket["merge_conflict_path"] = "A competing integration was detected; the merge lock serialized it safely."
             ticket["history"].append({"at": now(), "status": "In Review", "note": "Merge-conflict rehearsal exercised"})
@@ -2479,7 +2479,7 @@ class Factory:
                 review_result = (ticket.get("code_review") or {}).get("result")
                 if not review_result:
                     ticket["failure"] = failure[-3000:]
-                    self.transition(ticket, "Blocked", "Code Review Agent returned an invalid decision")
+                    self.transition(ticket, "Blocked", "Code Review adapter returned an invalid decision")
                     return
                 try:
                     self.publish_review_decision(ticket)
@@ -2560,7 +2560,7 @@ class Factory:
                 ),
                 verification=[
                     f"Merge commit is reachable from {self.backend.default_branch}.",
-                    *(["Code Review Agent approval matched the merged candidate."] if automated else []),
+                    *(["Code Review role approval matched the merged candidate."] if automated else []),
                 ],
                 artifacts=[
                     ticket.get("pr_url", ""),
@@ -2824,7 +2824,7 @@ def human_merge_ticket(
         review.get("result", {}).get("decision") != "APPROVE"
         or review.get("head") != approved_head
     ):
-        raise ValueError("Code Review Agent approval does not match the exact candidate revision.")
+        raise ValueError("Code Review role approval does not match the exact candidate revision.")
     branch = ticket.get("branch", "")
     if not branch:
         raise ValueError("Ticket branch is missing; the candidate cannot be merged safely.")
@@ -3295,7 +3295,7 @@ def parser():
     )
     run_p.add_argument(
         "--review-agent",
-        help="read-only agent that approves the exact PR candidate or requests implementation changes",
+        help="read-only Code Review adapter that approves the exact PR candidate or requests implementation changes",
     )
     run_p.add_argument("--no-qa", action="store_true", help="skip the independent QA phase")
     run_p.add_argument(

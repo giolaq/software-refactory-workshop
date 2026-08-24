@@ -80,10 +80,10 @@ file-and-line comments, publication mode, and structured review artifact.
 `REQUEST_CHANGES` returns the comments to implementation; the same PR is updated,
 gates rerun, and the new revision is reviewed. `APPROVE` enables a revision-bound
 Supervisor recommendation. In Lean, Standard, and Assured, a person must inspect
-that exact revision and choose whether to merge it. The Code Review Agent does
+that exact revision and choose whether to merge it. The Code Review role does
 not edit or merge.
 
-## Inspect the Agent Supervisor
+## Inspect the Supervisor role
 
 Standard and Assured Factory Profiles use a supervisor before each dispatch
 wave. Ticket roles do not message one another or change the board directly.

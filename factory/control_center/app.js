@@ -211,7 +211,7 @@ function followJourney() {
   if (!journey) return;
   if (journey.next?.view === "planning") {
     const planning = app.snapshot?.planning || {};
-    app.selectedPlanning = planning.blocked_stage || planning.failed_stage || app.selectedPlanning;
+    app.selectedPlanning = planning.presentation?.selected_stage || app.selectedPlanning;
     app.loadedPlanningArtifact = "";
   }
   showView(journey.next?.view || "overview");
@@ -268,29 +268,7 @@ function renderOperation(operation) {
 }
 
 function renderDecisions(data) {
-  const planning = data.planning || {};
-  const tickets = data.factory?.tickets || [];
-  const decisions = [];
-  const attention = data.factory?.human_attention || {};
-  if (attention.dispatch_paused) {
-    const oldest = tickets.find((ticket) => Number(ticket.number) === Number(attention.oldest?.ticket));
-    decisions.push({ title: "NEEDS YOU · Dispatch paused", text: `${attention.reason}. Complete the oldest decision to resume new work.`, ticket: oldest, view: "tickets" });
-  }
-  if (planning.requires_replan) decisions.push({ title: "Restart planning safely", text: planning.replan_reason || "Planning inputs changed.", view: "planning", planning: planning.failed_stage || "product_review" });
-  const blockedExpert = planning.stages?.find((stage) => stage.id === planning.blocked_stage);
-  if (blockedExpert && !planning.requires_replan) decisions.push({ title: `Answer ${blockedExpert.title}`, text: `${blockedExpert.questions?.length || 0} decision(s) are blocking technical planning.`, view: "planning", planning: blockedExpert.id });
-  const product = planning.stages?.find((stage) => stage.id === "product_review");
-  if (product?.status === "complete" && !planning.approvals?.product && !planning.requires_replan) decisions.push({ title: "Approve Product Review", text: "Confirm the user outcome before technical planning.", view: "planning", planning: "product_review_gate" });
-  for (const stage of ["system_architecture", "program_design"]) {
-    if (planning.status === `awaiting_${stage}_approval` && !planning.approvals?.[stage]) {
-      const title = stage === "system_architecture" ? "System Architecture" : "Program Design";
-      decisions.push({ title: `Approve ${title}`, text: "Confirm the exact expert artifact before downstream planning continues.", view: "planning", planning: `${stage}_gate` });
-    }
-  }
-  if (planning.status === "awaiting_alignment_approval" && !planning.approvals?.alignment) decisions.push({ title: "Approve alignment", text: "Accept architecture, program design, and vertical slices.", view: "planning", planning: "alignment_gate" });
-  tickets.filter((ticket) => ticket.status === "QA Review").forEach((ticket) => decisions.push({ title: `Approve tests for #${ticket.number}`, text: ticket.title, ticket }));
-  tickets.filter((ticket) => ticket.status === "In Review" && ticket.merge_authority === "human").forEach((ticket) => decisions.push({ title: `Decide whether to merge #${ticket.number}`, text: `Exact approved head ${(ticket.approved_head || "").slice(0, 12) || "not recorded"} · ${ticket.title}`, ticket }));
-  tickets.filter((ticket) => ticket.status === "Blocked").forEach((ticket) => decisions.push({ title: `Resolve blocked #${ticket.number}`, text: ticket.failure || ticket.title, ticket }));
+  const decisions = data.decisions || [];
   $("#decision-list").innerHTML = decisions.length ? decisions.map((item, index) => `<article class="decision"><b>${esc(item.title)}</b><p>${esc(item.text)}</p><button class="button" type="button" data-decision="${index}">Review</button></article>`).join("") : '<p class="empty-state">No approvals are waiting.</p>';
   $$('[data-decision]').forEach((button) => button.addEventListener("click", () => {
     const item = decisions[Number(button.dataset.decision)];
@@ -304,37 +282,13 @@ function renderDecisions(data) {
 }
 
 function planningSequence(planning) {
-  const stages = planning.stages || [];
-  if (!stages.length) return [];
-  const required = new Set([
-    ...(planning.governance?.planning_approvals || ["product_review", "alignment"]),
-    ...(planning.planning_controls?.planning_approvals || []),
-  ]);
-  const approvalKey = { product_review: "product", system_architecture: "system_architecture", program_design: "program_design" };
-  const sequence = [];
-  for (const stage of stages) {
-    sequence.push(stage);
-    if (!required.has(stage.id) || stage.id === "vertical_slices") continue;
-    const key = approvalKey[stage.id];
-    const title = stage.id === "product_review" ? "Approve product" : stage.id === "system_architecture" ? "Approve architecture" : "Approve program design";
-    sequence.push({
-      id: `${stage.id}_gate`,
-      stage: stage.id,
-      title,
-      status: planning.approvals?.[key] ? "approved" : planning.status === `awaiting_${stage.id}_approval` || (stage.id === "product_review" && stage.status === "complete") ? "waiting" : "pending",
-      gate: true,
-    });
-  }
-  if (required.has("alignment")) {
-    sequence.push({ id: "alignment_gate", title: "Approve alignment", status: planning.approvals?.alignment ? "approved" : planning.status === "awaiting_alignment_approval" ? "waiting" : "pending", gate: true });
-  }
-  return sequence;
+  return planning.presentation?.sequence || [];
 }
 
 function renderPlanning(planning) {
   $("#plan-id").textContent = planning.plan_id || "No plan";
   const sequence = planningSequence(planning);
-  if (!app.selectedPlanning && sequence.length) app.selectedPlanning = planning.blocked_stage || planning.failed_stage || sequence[0].id;
+  if (!app.selectedPlanning && sequence.length) app.selectedPlanning = planning.presentation?.selected_stage || sequence[0].id;
   $("#planning-pipeline").innerHTML = sequence.length ? sequence.map((item, index) => `<button type="button" class="planning-stage ${esc(item.status || "pending")} ${item.gate ? "gate" : ""} ${app.selectedPlanning === item.id ? "active" : ""}" data-planning-stage="${esc(item.id)}"><span class="stage-type">${item.gate ? "Human gate" : `Expert ${String(index + 1).padStart(2, "0")}`}</span><b>${esc(item.title)}</b><small>${esc((item.status || "pending").replaceAll("_", " "))}</small></button>`).join("") : '<div class="surface empty-state">Save a PRD and start Product Review.</div>';
   $$('[data-planning-stage]').forEach((button) => button.addEventListener("click", () => selectPlanning(button.dataset.planningStage)));
   const selected = sequence.find((item) => item.id === app.selectedPlanning);
@@ -360,7 +314,7 @@ function renderPlanning(planning) {
 
   const running = ["running", "stopping"].includes(app.snapshot?.operation?.status);
   $("#continue-plan").disabled = running || !planning.can_continue;
-  $("#continue-plan").textContent = planning.continue_label || "Run remaining experts";
+  $("#continue-plan").textContent = planning.presentation?.continue_label || "Run remaining experts";
   $("#continue-plan").title = planning.requires_decisions ? "Answer the blocked expert's questions below." : "";
   $("#publish-plan").disabled = running || planning.status !== "awaiting_alignment_approval";
 }
@@ -372,14 +326,14 @@ function renderExpertPanel(item) {
     const currentAgent = app.snapshot?.planning?.planning_agent || "";
     const recovery = app.snapshot?.planning?.recovery || {};
     const fallbackAgents = recovery.alternative_adapters || (app.snapshot?.adapters || []).filter((agent) => ["claude", "codex"].includes(agent) && agent !== currentAgent);
-    const fallback = fallbackAgents.length ? `<div class="approval-card"><label><b>Use another planning agent</b><select id="planning-retry-agent">${fallbackAgents.map((agent) => `<option value="${esc(agent)}">${esc(agent[0].toUpperCase() + agent.slice(1))}</option>`).join("")}</select></label><div class="approval-actions"><button class="button button-primary" type="button" id="retry-planning-with-agent">Fix with ${esc((recovery.recommended_adapter || fallbackAgents[0])[0].toUpperCase() + (recovery.recommended_adapter || fallbackAgents[0]).slice(1))}</button></div><p class="field-help">Switch adapter and continue from the approved upstream artifacts. The factory records the adapter change in the planning manifest.</p></div>` : "";
+    const fallback = fallbackAgents.length ? `<div class="approval-card"><label><b>Use another planning adapter</b><select id="planning-retry-agent">${fallbackAgents.map((agent) => `<option value="${esc(agent)}">${esc(agent[0].toUpperCase() + agent.slice(1))}</option>`).join("")}</select></label><div class="approval-actions"><button class="button button-primary" type="button" id="retry-planning-with-agent">Fix with ${esc((recovery.recommended_adapter || fallbackAgents[0])[0].toUpperCase() + (recovery.recommended_adapter || fallbackAgents[0]).slice(1))}</button></div><p class="field-help">Switch adapter and continue from the approved upstream artifacts. The factory records the adapter change in the planning manifest.</p></div>` : "";
     const suggestedCorrection = `Return a complete corrected ${item.title} artifact that satisfies this validator error: ${item.validation_error || item.error}`;
     const correction = validationFailure ? `<div class="approval-card"><label><b>Correction sent to the expert</b><textarea id="planning-recovery-feedback">${esc(suggestedCorrection)}</textarea></label><div class="approval-actions"><button class="button button-primary" type="button" id="apply-planning-correction">${item.id === "product_review" ? "Apply correction" : "Apply correction and continue"}</button></div><p class="field-help">Edit the instruction if needed. The factory uses the rejected artifact as the revision source, validates the replacement, and resumes only after it passes.</p></div>` : "";
-    const retrySame = !validationFailure && recovery.retry_same_adapter ? `<div class="approval-actions"><button class="button" type="button" id="retry-planning-same-agent">Retry same adapter</button></div>` : "";
+    const retrySame = !validationFailure && recovery.retry_same_adapter ? `<div class="approval-actions"><button class="button" type="button" id="retry-planning-same-adapter">Retry same adapter</button></div>` : "";
     const preflight = ["authentication", "adapter_setup"].includes(recovery.kind) ? `<div class="approval-actions"><button class="button" type="button" id="check-planning-adapter">Run preflight after fixing the adapter</button></div>` : "";
     const summary = recovery.summary || (validationFailure ? "The artifact needs a correction before planning can continue." : "Inspect the failure before choosing a recovery.");
-    const repeated = recovery.kind === "repeated_agent_failure" ? `<div class="safety-note"><b>Same-agent retry disabled</b><p>The same failure occurred ${esc(recovery.same_failure_count || recovery.attempts || 2)} times. Use the recovery action below; completed upstream work is preserved.</p></div>` : "";
-    $("#approval-panel").innerHTML = `<span class="section-label">Expert recovery</span><h2>${esc(item.title)} ${validationFailure ? "failed validation" : "failed"}</h2><div class="safety-note"><b>${validationFailure ? "Deterministic validator" : "Agent process"}</b><p>${esc(item.error)}</p></div>${repeated}${item.rejected_artifact ? `<div class="approval-card"><b>Rejected artifact preserved</b><p><code>${esc(item.rejected_artifact)}</code></p></div>` : ""}<p><b>What fixes it:</b> ${esc(summary)}</p>${correction}${preflight}${retrySame}${fallback}`;
+    const repeated = recovery.kind === "repeated_agent_failure" ? `<div class="safety-note"><b>Same-adapter retry disabled</b><p>The same failure occurred ${esc(recovery.same_failure_count || recovery.attempts || 2)} times. Use the recovery action below; completed upstream work is preserved.</p></div>` : "";
+    $("#approval-panel").innerHTML = `<span class="section-label">Expert recovery</span><h2>${esc(item.title)} ${validationFailure ? "failed validation" : "failed"}</h2><div class="safety-note"><b>${validationFailure ? "Deterministic validator" : "Adapter process"}</b><p>${esc(item.error)}</p></div>${repeated}${item.rejected_artifact ? `<div class="approval-card"><b>Rejected artifact preserved</b><p><code>${esc(item.rejected_artifact)}</code></p></div>` : ""}<p><b>What fixes it:</b> ${esc(summary)}</p>${correction}${preflight}${retrySame}${fallback}`;
     $("#apply-planning-correction")?.addEventListener("click", () => {
       const feedback = $("#planning-recovery-feedback").value.trim();
       if (!feedback) return toast("Describe the required correction before continuing.", true);
@@ -387,7 +341,7 @@ function renderExpertPanel(item) {
       else action("revise-stage", { stage: item.id, feedback });
     });
     $("#check-planning-adapter")?.addEventListener("click", () => action("doctor", { full: true }));
-    $("#retry-planning-same-agent")?.addEventListener("click", () => action("continue-plan"));
+    $("#retry-planning-same-adapter")?.addEventListener("click", () => action("continue-plan"));
     $("#retry-planning-with-agent")?.addEventListener("click", () => action("continue-plan", { planning_agent: $("#planning-retry-agent").value }));
     return;
   }
@@ -484,7 +438,7 @@ function renderSupervisor(supervisor, factory, config) {
   const latest = supervisor.latest;
   if (!latest) {
     $("#supervisor-summary").textContent = status === "disabled" ? "Supervisor is not part of this profile" : "No coordination decision yet";
-    $("#supervisor-explanation").textContent = supervisor.error || (status === "disabled" ? "Choose the Standard or Assured Factory Profile to coordinate ticket agents." : "The supervisor runs automatically when dependency-ready tickets are available.");
+    $("#supervisor-explanation").textContent = supervisor.error || (status === "disabled" ? "Choose the Standard or Assured Factory Profile to coordinate ticket workers." : "The supervisor runs automatically when dependency-ready tickets are available.");
     $("#supervisor-updated").textContent = supervisor.updated_at ? formatTime(supervisor.updated_at) : "—";
     $("#supervisor-commands").innerHTML = '<p class="empty-state">No dispatch commands recorded.</p>';
     $("#supervisor-reports").innerHTML = '<p class="empty-state">No Handoff Receipts considered yet.</p>';
@@ -653,7 +607,7 @@ async function resetRun() {
   const live = mode() === "live";
   const prompt = live
     ? "Reset local execution state? GitHub artifacts and tracked source files will not be changed."
-    : "Reset ticket execution? The saved PRD, approved plan, and agent configuration will be kept.";
+    : "Reset ticket execution? The saved PRD, approved plan, and adapter configuration will be kept.";
   if (!window.confirm(prompt)) return;
   $("#reset-dialog").close();
   const operation = await action("reset-run", { local_only: live });
@@ -747,7 +701,7 @@ async function renderDrawer() {
   if (app.drawerTab === "review") {
     const review = ticket.code_review;
     if (!review) {
-      content.innerHTML = '<section class="detail-panel"><h3>Code review</h3><p>No Code Review Agent decision has been recorded for this Ticket.</p></section>';
+      content.innerHTML = '<section class="detail-panel"><h3>Code review</h3><p>No Code Review role decision has been recorded for this Ticket.</p></section>';
       return;
     }
     const result = review.result || {};

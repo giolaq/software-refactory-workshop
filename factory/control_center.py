@@ -41,28 +41,20 @@ from github_repository import (
 )
 from factory_charter import CHARTER_PATH, FactoryCharter, FactoryCharterError
 from human_attention import human_attention_snapshot
+from planning_presentation import (
+    REPLAN_REQUIRED_STATUSES,
+    planning_blocking_stage,
+    planning_can_continue,
+    planning_failed_stage,
+    planning_presentation,
+    planning_recovery,
+)
 from project_contract import CONTRACT_PATH, ProjectContract, ProjectContractError
 
 
 PLAN_ID = re.compile(r"[a-f0-9]{8,64}")
 SCENARIOS = {"recipe-rebrand", "tv"}
 DEFAULT_AGENTS = {"claude", "codex", "cursor", "mock", "mock-qa", "mock-supervisor", "mock-review"}
-RETRYABLE_PLANNING_STATUSES = {
-    "product_approved",
-    "system_architecture_approved",
-    "program_design_approved",
-    "blocked",
-    "stale_alignment",
-    "planning_system_architecture",
-    "planning_program_design",
-    "planning_vertical_slices",
-}
-REPLAN_REQUIRED_STATUSES = {
-    "stale_factory_charter",
-    "stale_factory_profile",
-    "stale_project_contract",
-    "stale_product_review",
-}
 REVISION_STAGE_ALIASES = {
     "product_review": "product",
     "system_architecture": "architecture",
@@ -100,113 +92,6 @@ def tail_text(path: Path, limit: int = 80_000) -> str:
     if len(data) > limit:
         return "… earlier output omitted …\n" + data[-limit:].decode("utf-8", errors="replace")
     return data.decode("utf-8", errors="replace")
-
-
-def planning_blocking_stage(planning: dict) -> dict | None:
-    return next(
-        (
-            stage for stage in planning.get("stages", [])
-            if stage.get("status") == "blocked" and stage.get("questions")
-        ),
-        None,
-    )
-
-
-def planning_failed_stage(planning: dict) -> dict | None:
-    """Return a failed expert stage, including failures without human questions."""
-    return next(
-        (stage for stage in planning.get("stages", []) if stage.get("status") == "blocked"),
-        None,
-    )
-
-
-def planning_recovery(stage: dict | None, current_agent: str, adapters: list[str]) -> dict:
-    """Describe the safe recovery for one failed planning stage.
-
-    Retrying is deliberately not the default. Deterministic validation needs a
-    correction, provider limits need time or another adapter, and login/tooling
-    failures need preflight. Only an otherwise-unclassified process failure is
-    eligible for an explicit same-adapter retry.
-    """
-    if not stage:
-        return {}
-    error = str(stage.get("error") or "")
-    normalized = error.lower()
-    alternatives = [
-        name for name in adapters
-        if name in PLANNING_AGENTS and name != current_agent
-    ]
-    attempts = max(1, int(stage.get("failure_count") or 0))
-    same_failure_count = max(
-        1,
-        int(stage.get("same_failure_count") or 0),
-        attempts if not stage.get("same_failure_count") else 0,
-    )
-    recommended_adapter = alternatives[0] if alternatives else ""
-    if stage.get("failure_kind") == "validation":
-        kind = "validation"
-        summary = "The artifact must be corrected before planning can continue."
-        retry_same = False
-        recommended_action = "correct_and_retry"
-    elif any(marker in normalized for marker in (
-        "session limit", "rate limit", "usage limit", "quota exceeded",
-        "too many requests", "capacity",
-    )):
-        kind = "provider_capacity"
-        summary = (
-            f"{current_agent.title() or 'The planning provider'} is unavailable or out of capacity. "
-            "Retrying the same adapter now will repeat this failure."
-        )
-        retry_same = False
-        recommended_action = "switch_adapter" if recommended_adapter else "wait"
-    elif any(marker in normalized for marker in (
-        "not logged in", "login required", "authentication", "unauthorized",
-        "invalid api key", "missing openai api key", "api key",
-    )):
-        kind = "authentication"
-        summary = "Repair the adapter login, then run preflight before retrying."
-        retry_same = False
-        recommended_action = "preflight"
-    elif any(marker in normalized for marker in (
-        "command not found", "no such file", "executable not found",
-    )):
-        kind = "adapter_setup"
-        summary = "Install or configure the planning adapter, then run preflight."
-        retry_same = False
-        recommended_action = "preflight"
-    elif same_failure_count >= 2:
-        kind = "repeated_agent_failure"
-        summary = (
-            f"{current_agent.title() or 'The planning adapter'} failed "
-            f"{same_failure_count} times with the same error. "
-            "Same-agent retry is disabled; switch adapter and continue from the saved artifacts."
-        )
-        retry_same = False
-        recommended_action = "switch_adapter" if recommended_adapter else "inspect_log"
-    else:
-        kind = "agent_process"
-        summary = "The agent process failed unexpectedly. Inspect the log, then retry explicitly."
-        retry_same = True
-        recommended_action = "retry_same_adapter"
-    return {
-        "kind": kind,
-        "summary": summary,
-        "retry_same_adapter": retry_same,
-        "alternative_adapters": alternatives,
-        "current_adapter": current_agent,
-        "recommended_action": recommended_action,
-        "recommended_adapter": recommended_adapter,
-        "attempts": attempts,
-        "same_failure_count": same_failure_count,
-    }
-
-
-def planning_can_continue(planning: dict) -> bool:
-    return (
-        bool(planning.get("approvals", {}).get("product"))
-        and planning.get("status") in RETRYABLE_PLANNING_STATUSES
-        and planning_blocking_stage(planning) is None
-    )
 
 
 def run_text(command: list[str], cwd: Path) -> str:
@@ -492,7 +377,7 @@ class ControlCenter:
         tickets = factory.get("tickets", [])
         approvals = planning.get("approvals", {})
         phase_specs = [
-            ("connect", "Connect", "Choose agents and check the repository", "connect"),
+            ("connect", "Connect", "Choose adapters and check the repository", "connect"),
             ("prd", "PRD", "Define the user outcome", "prd"),
             ("plan", "Plan", "Review expert contracts", "planning"),
             ("tickets", "Tickets", "Approve and create vertical slices", "planning"),
@@ -509,7 +394,6 @@ class ControlCenter:
             or bool(tickets)
         )
         prd_ready = bool(prd.get("saved")) or bool(planning)
-        product_ready = bool(approvals.get("product"))
         plan_complete = planning.get("status") in {"awaiting_alignment_approval", "alignment_approved", "published"}
         tickets_approved = bool(approvals.get("alignment"))
         delivery_done = bool(tickets) and all(ticket.get("status") == "Done" for ticket in tickets)
@@ -526,7 +410,7 @@ class ControlCenter:
         phase_index = next((index for index, done in enumerate(completed) if not done), len(phase_specs) - 1)
         state = "ready"
         headline = "Connect this repository"
-        detail = "Choose the agents for each role, then run preflight before planning."
+        detail = "Choose the adapter for each role, then run preflight before planning."
         next_label = "Open Connect"
         next_detail = "Save a preset and fix any blocking preflight result."
         next_view = "connect"
@@ -538,14 +422,16 @@ class ControlCenter:
         in_review = next((ticket for ticket in tickets if ticket.get("status") == "In Review"), None)
         ready = [ticket for ticket in tickets if ticket.get("status") == "Ready"]
         supervising = (supervisor or {}).get("status") == "running"
-        blocked_planning = planning_blocking_stage(planning)
-        failed_planning = planning_failed_stage(planning)
-        failed_recovery = planning.get("recovery") or planning_recovery(
-            failed_planning,
-            planning.get("planning_agent") or self.session_config().get("planning_agent") or "codex",
-            self.adapters(),
+        presentation = planning.get("presentation") or planning_presentation(
+            planning,
+            current_adapter=(
+                planning.get("planning_agent")
+                or self.session_config().get("planning_agent")
+                or "codex"
+            ),
+            adapters=self.adapters(),
         )
-        requires_replan = planning.get("status") in REPLAN_REQUIRED_STATUSES
+        planning_journey = presentation["journey"]
 
         if not connected:
             pass
@@ -559,7 +445,7 @@ class ControlCenter:
             phase_index = 0
             state = "attention"
             headline = "The Factory Charter needs your approval"
-            detail = "Review merge authority, gates, limits, protected paths, and stop conditions before agents can run."
+            detail = "Review merge authority, gates, limits, protected paths, and stop conditions before adapters can run."
             next_label, next_detail, next_view = "Review Factory Charter", "Open Connect, inspect the Charter policy, and approve its exact hash.", "connect"
         elif not setup_published:
             phase_index = 0
@@ -570,89 +456,21 @@ class ControlCenter:
         elif not prd_ready:
             phase_index = 1
             headline = "Define the product outcome"
-            detail = "Review or replace the sample PRD before any expert agent runs."
+            detail = "Review or replace the sample PRD before any planning adapter runs."
             next_label, next_detail, next_view = "Open the PRD", "Confirm the user, behavior, constraints, and evidence.", "prd"
         elif not planning.get("plan_id"):
             phase_index = 2
             headline = "The PRD is ready for Product Review"
             detail = "The first expert will turn the requirement into a testable product contract."
-            next_label, next_detail, next_view = "Start Product Review", "Choose Rehearsal or Live agents on the PRD screen.", "prd"
-        elif requires_replan:
-            phase_index = 2
-            state = "blocked"
-            headline = "Planning governance changed"
-            detail = (
-                "This run was invalidated because its PRD, Project Contract, or Factory Charter "
-                "no longer matches the current approved repository rules. A retry cannot repair it."
-            )
-            next_label = "Restart planning safely"
-            next_detail = "Keep the saved PRD and regenerate the planning artifacts under the current governance."
-            next_view = "planning"
-        elif not product_ready:
-            phase_index = 2
-            product = next((stage for stage in planning.get("stages", []) if stage.get("id") == "product_review"), {})
-            if product.get("status") == "complete":
-                state = "attention"
-                headline = "Product Review needs your decision"
-                detail = "Check the problem, user journey, scope, and measurable evidence before approving it."
-                next_label, next_detail, next_view = "Review Product Review", "Approve it or request a focused revision.", "planning"
-            else:
-                headline = "Product Review is the current planning phase"
-                detail = "The product expert is preparing the behavior and evidence contract."
-                next_label, next_detail, next_view = "Open Planning", "Watch the expert output and inspect its artifact.", "planning"
+            next_label, next_detail, next_view = "Start Product Review", "Choose Rehearsal or Live adapters on the PRD screen.", "prd"
         elif not tickets_approved:
-            if blocked_planning:
-                phase_index = 2
-                state = "attention"
-                headline = f"{blocked_planning.get('title', 'Planning expert')} needs your decisions"
-                detail = "Answer every blocking question in Planning. The expert will revise its artifact before downstream work resumes."
-                next_label, next_detail, next_view = "Answer blocked questions", "Open the blocked expert, record your decisions, and continue.", "planning"
-            elif failed_planning:
-                phase_index = 2
-                state = "blocked"
-                title = failed_planning.get("title", "Planning expert")
-                failure = str(failed_planning.get("error") or "").strip()
-                headline = f"{title} failed validation" if failed_planning.get("failure_kind") == "validation" else f"{title} failed"
-                detail = failure[:420] or "The rejected artifact and failure evidence are available in Planning."
-                if failed_recovery.get("kind") == "provider_capacity":
-                    next_label = "Switch planning adapter or wait"
-                    next_detail = failed_recovery.get("summary", "The current provider cannot run yet.")
-                elif failed_recovery.get("kind") == "validation":
-                    next_label = f"Correct {title} and continue"
-                    next_detail = "The revision will reuse approved upstream work and include the validator feedback."
-                else:
-                    next_label = "Open expert recovery"
-                    next_detail = failed_recovery.get("summary", "Inspect the failure before choosing a recovery.")
-                next_view = "planning"
-            elif planning.get("status") == "awaiting_alignment_approval":
-                phase_index = 3
-                state = "attention"
-                headline = "The delivery plan needs your approval"
-                detail = "Architecture, program design, and vertical slices are complete. No ticket is created until you approve alignment."
-                next_label, next_detail, next_view = "Review alignment", "Trace requirements through the four expert artifacts.", "planning"
-            elif planning.get("status") in {
-                "awaiting_system_architecture_approval",
-                "awaiting_program_design_approval",
-            }:
-                phase_index = 2
-                state = "attention"
-                architecture = planning.get("status") == "awaiting_system_architecture_approval"
-                title = "System Architecture" if architecture else "Program Design"
-                headline = f"{title} needs your approval"
-                detail = (
-                    "The Factory Charter requires a person to approve this exact expert artifact "
-                    "before downstream planning can continue."
-                )
-                next_label, next_detail, next_view = (
-                    f"Review {title}",
-                    "Inspect the artifact, then approve its exact hash or request a revision.",
-                    "planning",
-                )
-            else:
-                phase_index = 2
-                headline = "Technical planning is ready to run"
-                detail = "Architecture, program design, and vertical-slice experts run in sequence."
-                next_label, next_detail, next_view = "Run remaining experts", "Open Planning and start the remaining expert stages.", "planning"
+            phase_index = planning_journey["phase_index"]
+            state = planning_journey["state"]
+            headline = planning_journey["headline"]
+            detail = planning_journey["detail"]
+            next_label = planning_journey["next"]["label"]
+            next_detail = planning_journey["next"]["detail"]
+            next_view = planning_journey["next"]["view"]
         elif not tickets:
             phase_index = 4
             headline = "Approved tickets are ready to load"
@@ -686,15 +504,15 @@ class ControlCenter:
             ticket_phase = active.get("phase", "implementation")
             labels = {
                 "qa": "Independent QA is writing acceptance tests",
-                "implementation": "The implementation agent is changing the code",
+                "implementation": "The Implementation adapter is changing the code",
                 "verifying": "Quality gates are checking the change",
-                "cleanup": "The cleanup agent is checking the change",
+                "cleanup": "The cleanup adapter is checking the change",
                 "architecture_conformance": "Architecture conformance is being checked",
-                "hardening": "The hardening agent is checking the change",
+                "hardening": "The hardening adapter is checking the change",
                 "final_verifier": "The final verifier is checking the change",
-                "code-review": "The Code Review Agent is inspecting the candidate diff",
+                "code-review": "The Code Review adapter is inspecting the candidate diff",
             }
-            headline = f"{labels.get(ticket_phase, 'An agent is working')} for #{ticket_number}"
+            headline = f"{labels.get(ticket_phase, 'An adapter is running')} for #{ticket_number}"
             detail = f"{active.get('title', 'Ticket')} · attempt {active.get('attempt') or active.get('qa_attempt') or 1}."
             next_label, next_detail, next_view = f"Inspect ticket #{ticket_number}", "Follow its prompt, live log, diff, tests, code review, and history.", "tickets"
         elif in_review:
@@ -743,7 +561,7 @@ class ControlCenter:
             headline = "NEEDS YOU — new dispatch is paused"
             detail = (
                 f"{attention.get('reason', 'Human-attention capacity is full')}. "
-                "Running agents may finish, but the factory will not create more review work."
+                "Running adapters may finish, but the factory will not create more review work."
             )
             next_label = (
                 f"Open oldest decision #{ticket_number}"
@@ -775,40 +593,17 @@ class ControlCenter:
                 next_label, next_detail, next_view = "Watch live output", "The current command and its latest output are shown below.", "overview"
         elif operation.get("status") == "failed":
             state = "blocked"
-            if requires_replan and not tickets_approved:
-                phase_index = 2
-                headline = "Planning governance changed"
-                detail = (
-                    "Retrying the old expert cannot succeed. Restart planning from the saved PRD "
-                    "so every artifact is bound to the current Charter and Project Contract."
-                )
-                next_label, next_detail, next_view = (
-                    "Restart planning safely",
-                    "Open Planning and regenerate the run under the current approved governance.",
-                    "planning",
-                )
-            elif blocked_planning and not tickets_approved:
-                phase_index = 2
-                headline = f"{blocked_planning.get('title', 'Planning expert')} is waiting for you"
-                detail = "The agent completed its analysis and asked for decisions it cannot safely invent. Answer them in Planning."
-                next_label, next_detail, next_view = "Answer blocked questions", "Open the blocked expert and submit a decision for every question.", "planning"
-            elif planning_can_continue(planning) and not tickets_approved:
-                phase_index = 2
-                title = (failed_planning or {}).get("title", "Planning expert")
-                failure = str((failed_planning or {}).get("error") or "").strip()
-                headline = f"{title} failed validation" if (failed_planning or {}).get("failure_kind") == "validation" else f"{title} is blocked"
-                detail = failure[:420] or "Read the failure output, then retry the blocked expert. Completed upstream artifacts will be reused."
-                has_validation_feedback = bool((failed_planning or {}).get("validation_error"))
-                if failed_recovery.get("kind") == "provider_capacity":
-                    next_label = "Switch planning adapter or wait"
-                    next_detail = failed_recovery.get("summary", "The current provider cannot run yet.")
-                elif has_validation_feedback:
-                    next_label = f"Retry {title} with correction"
-                    next_detail = "The revision will receive the saved validator feedback and rejected artifact."
-                else:
-                    next_label = "Open expert recovery"
-                    next_detail = failed_recovery.get("summary", "Inspect the failure before choosing a recovery.")
-                next_view = "planning"
+            decision_kind = (presentation.get("decision") or {}).get("kind")
+            if not tickets_approved and decision_kind in {
+                "replan", "questions", "correction", "recovery",
+            }:
+                phase_index = planning_journey["phase_index"]
+                state = planning_journey["state"]
+                headline = planning_journey["headline"]
+                detail = planning_journey["detail"]
+                next_label = planning_journey["next"]["label"]
+                next_detail = planning_journey["next"]["detail"]
+                next_view = planning_journey["next"]["view"]
             else:
                 phase_index = operation_phase
                 headline = f"{operation.get('title') or 'The last operation'} failed"
@@ -832,6 +627,70 @@ class ControlCenter:
             "phases": phases,
         }
 
+    @staticmethod
+    def operator_decisions(planning: dict, factory: dict) -> list[dict]:
+        """Return one authoritative, directly routable human-decision queue."""
+        tickets = factory.get("tickets", [])
+        attention = factory.get("human_attention", {})
+        planning_decision = planning.get("presentation", {}).get("decision")
+        decisions: list[dict] = []
+        planning_consumed = False
+
+        if attention.get("dispatch_paused"):
+            oldest = attention.get("oldest") or {}
+            ticket = next(
+                (
+                    item for item in tickets
+                    if item.get("number") == oldest.get("ticket")
+                ),
+                None,
+            )
+            paused = {
+                "title": "NEEDS YOU · Dispatch paused",
+                "text": (
+                    f"{attention.get('reason', 'Human-attention capacity is full')}. "
+                    "Complete the oldest decision to resume new work."
+                ),
+                "view": "tickets" if ticket else "planning",
+            }
+            if ticket:
+                paused["ticket"] = ticket
+            elif oldest.get("plan_id") and planning_decision:
+                paused.update({
+                    "planning": planning_decision.get("planning", ""),
+                    "view": planning_decision.get("view", "planning"),
+                })
+                planning_consumed = True
+            decisions.append(paused)
+
+        if planning_decision and not planning_consumed:
+            decisions.append(planning_decision)
+        decisions.extend({
+            "title": f"Approve tests for #{ticket.get('number')}",
+            "text": ticket.get("title", ""),
+            "ticket": ticket,
+            "view": "tickets",
+        } for ticket in tickets if ticket.get("status") == "QA Review")
+        decisions.extend({
+            "title": f"Decide whether to merge #{ticket.get('number')}",
+            "text": (
+                f"Exact approved head {str(ticket.get('approved_head') or '')[:12] or 'not recorded'}"
+                f" · {ticket.get('title', '')}"
+            ),
+            "ticket": ticket,
+            "view": "tickets",
+        } for ticket in tickets if (
+            ticket.get("status") == "In Review"
+            and ticket.get("merge_authority") == "human"
+        ))
+        decisions.extend({
+            "title": f"Resolve blocked #{ticket.get('number')}",
+            "text": ticket.get("failure") or ticket.get("title", ""),
+            "ticket": ticket,
+            "view": "tickets",
+        } for ticket in tickets if ticket.get("status") == "Blocked")
+        return decisions
+
     def snapshot(self) -> dict:
         planning = read_json(self.repo / ".factory" / "planning-state.json", {})
         plan_id = planning.get("plan_id", "")
@@ -841,49 +700,26 @@ class ControlCenter:
             planning_agent = manifest.get("planning_agent", "codex")
             planning["planning_agent"] = planning_agent
             planning["mode"] = "rehearsal" if planning_agent == "mock" else "live"
-        blocked_stage = planning_blocking_stage(planning)
-        failed_stage = planning_failed_stage(planning)
-        recovery = planning_recovery(failed_stage, planning_agent, self.adapters())
-        requires_correction = bool(
-            failed_stage and failed_stage.get("failure_kind") == "validation"
+        presentation = planning_presentation(
+            planning,
+            current_adapter=planning_agent,
+            adapters=self.adapters(),
         )
-        requires_replan = planning.get("status") in REPLAN_REQUIRED_STATUSES
-        planning["can_continue"] = (
-            planning_can_continue(planning)
-            and failed_stage is None
-            and not requires_correction
-            and not requires_replan
-        )
-        planning["requires_decisions"] = bool(blocked_stage)
-        planning["requires_correction"] = requires_correction
-        planning["requires_replan"] = requires_replan
-        planning_status = planning.get("status", "")
-        if requires_replan:
-            planning["replan_reason"] = {
-                "stale_factory_charter": "The approved Factory Charter changed or this run predates Charter governance.",
-                "stale_factory_profile": planning.get("planning_control_error", "The proposed paths require a stronger Factory Profile."),
-                "stale_project_contract": "The Project Contract or detected repository inventory changed.",
-                "stale_product_review": "The PRD copy changed after Product Review.",
-            }.get(planning_status, "Planning inputs changed.")
-        planning["blocked_stage"] = blocked_stage.get("id", "") if blocked_stage else ""
-        planning["failed_stage"] = failed_stage.get("id", "") if failed_stage else ""
-        planning["recovery"] = recovery
-        planning["continue_label"] = (
-            "Restart planning with current governance" if requires_replan
-            else "Answer expert questions" if blocked_stage
-            else f"Enter a correction for {failed_stage.get('title', 'expert')}" if requires_correction
-            else "Open recovery options" if failed_stage
-            else "Run remaining experts" if planning_status == "product_approved"
-            else "Run remaining experts" if planning_status in {
-                "system_architecture_approved", "program_design_approved",
-            }
-            else "Review System Architecture" if planning_status == "awaiting_system_architecture_approval"
-            else "Review Program Design" if planning_status == "awaiting_program_design_approval"
-            else "Review Product Review" if planning_status == "awaiting_product_approval"
-            else "Review alignment" if planning_status == "awaiting_alignment_approval"
-            else "Planning complete" if planning_status in {"alignment_approved", "published"}
-            else "Continue planning"
-        )
+        planning["presentation"] = presentation
+        # Compatibility fields keep older local Control Center assets useful
+        # while every current caller reads the normalized presentation.
+        for key in (
+            "can_continue",
+            "requires_decisions",
+            "requires_correction",
+            "requires_replan",
+            "replan_reason",
+            "blocked_stage",
+            "failed_stage",
+            "recovery",
+            "continue_label",
+        ):
+            planning[key] = presentation[key]
         factory = read_json(self.repo / ".factory" / "state.json", {"tickets": []})
         operation = self.operation_snapshot()
         prd = {key: value for key, value in self.prd().items() if key != "text"}
@@ -900,6 +736,7 @@ class ControlCenter:
             oldest_limit=charter.get("oldest_review_hours", 24),
             planning=planning,
         )
+        decisions = self.operator_decisions(planning, factory)
         supervisor = read_json(self.repo / ".factory" / "supervisor" / "state.json", {})
         if factory.get("supervisor_agent") == "disabled" or (
             not factory.get("supervisor_agent") and config.get("profile") == "lean"
@@ -918,6 +755,7 @@ class ControlCenter:
             "prd": prd,
             "evidence": evidence,
             "monitor": monitor,
+            "decisions": decisions,
             "journey": self.journey(
                 planning, factory, operation, prd, evidence, config, supervisor,
                 project, charter,

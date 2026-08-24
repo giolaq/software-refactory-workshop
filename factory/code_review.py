@@ -27,7 +27,7 @@ def extract_review(output: str) -> dict:
         output, {"schema_version", "decision", "summary", "findings"},
     )
     if value is None:
-        raise CodeReviewError("Code Review Agent did not return a structured JSON decision.")
+        raise CodeReviewError("Code Review adapter did not return a structured JSON decision.")
     return value
 
 

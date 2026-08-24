@@ -1,6 +1,6 @@
-"""Validated coordination between the ticket scheduler and an agent supervisor.
+"""Validated coordination between the ticket scheduler and a Supervisor role.
 
-Ticket agents never mutate lifecycle state or message one another directly. The
+Ticket worker roles never mutate lifecycle state or message one another directly. The
 orchestrator turns their observed results into Handoff Receipts. At each
 dispatch checkpoint this module gives those receipts and the dependency-ready
 tickets to a supervisor adapter, validates its structured decision, and returns
@@ -159,7 +159,7 @@ def validate_merge_decision(raw: dict, ticket: dict) -> dict:
         gate.get("exit_code") == 0 for gate in required_gates
     )
     if review.get("decision") != "APPROVE":
-        raise SupervisorError("Supervisor cannot merge without Code Review Agent approval.")
+        raise SupervisorError("Supervisor cannot merge without Code Review role approval.")
     if not publication.get("published"):
         raise SupervisorError("Supervisor cannot merge before the review decision is published.")
     if not gates_pass:
@@ -481,8 +481,8 @@ class AgentSupervisor:
         charter = self.charter.context()
         payload = json.dumps(supervisor_input, indent=2)
         path.write_text(
-            "# Agent Supervisor coordination checkpoint\n\n"
-            "Coordinate only the dependency-ready Tickets in the supplied state. Worker agents report "
+            "# Supervisor role coordination checkpoint\n\n"
+            "Coordinate only the dependency-ready Tickets in the supplied state. Ticket worker roles report "
             "through Handoff Receipts. Select a safe dispatch wave, reduce concurrency when coordination "
             "requires it, and give each dispatched Ticket one concise instruction of at most 1200 "
             "characters. The Ticket already carries its approved scope, so do not repeat its specification; "
@@ -532,8 +532,8 @@ class AgentSupervisor:
         charter = self.charter.context()
         payload = json.dumps(merge_input, indent=2)
         path.write_text(
-            "# Agent Supervisor merge checkpoint\n\n"
-            "Decide whether the supplied, Code Review Agent-approved pull request can merge now. "
+            "# Supervisor role merge checkpoint\n\n"
+            "Decide whether the pull request approved by the Code Review role can merge now. "
             "Check the candidate revision, required gate evidence, review approval, and unresolved risks. "
             "Return MERGE only when all evidence refers to the same candidate and no blocking risk remains. "
             "Return BLOCK otherwise. You do not run GitHub commands; the orchestrator validates and applies "

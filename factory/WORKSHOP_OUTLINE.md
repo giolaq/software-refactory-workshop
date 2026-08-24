@@ -15,8 +15,8 @@ Attendees should leave able to:
 - Explain what an AI software factory adds around coding agents.
 - Plan product intent, architecture, program design, and vertical slices before implementation.
 - Use GitHub Projects as the shared view of work.
-- Explain how an Agent Supervisor coordinates a safe dispatch wave from worker Handoff Receipts.
-- Explain the separate authority of the Code Review Agent, Agent Supervisor,
+- Explain how a Supervisor role coordinates a safe dispatch wave from worker Handoff Receipts.
+- Explain the separate authority of the Code Review role, Supervisor role,
   and orchestrator in the review-and-merge loop.
 - Inspect prompts, logs, diffs, tests, and reviews for one ticket.
 - Adapt the workflow to their own repository, PRD, agents, and risk level.
@@ -184,7 +184,7 @@ Select **Approve and create tickets** only after the requirements trace through
 all four artifacts. In Live mode, enter a new Project title or use the Project
 number saved on **Connect**.
 
-The planning agents create normal workshop tickets from the PRD. Do not seed five tickets; seeding exists only for fixtures and recovery demonstrations.
+The planning adapters create normal workshop tickets from the PRD. Do not seed five tickets; seeding exists only for fixtures and recovery demonstrations.
 
 **Check:** GitHub Projects shows the approved slices as issues. In rehearsal, the dry run prints the issues that would be created.
 
@@ -192,7 +192,7 @@ The planning agents create normal workshop tickets from the PRD. Do not seed fiv
 
 **Goal:** Define acceptance evidence before implementation.
 
-**Do:** Open **Tickets** and select **Run one cycle**. The QA agent proposes
+**Do:** Open **Tickets** and select **Run one cycle**. The QA adapter proposes
 tests for ready tickets before implementation begins. Open one ticket, inspect
 its Tests tab, and approve only assertions that prove user-visible behavior.
 The focused command must fail for the missing behavior at the pre-implementation
@@ -212,7 +212,7 @@ feedback, repair, approval, and merge.
 checkpoint from worker Handoff Receipts to the supervisor's dispatch instruction
 and the orchestrator's validated state change. Return to **Tickets** and follow
 the selected Ticket. Show its remote claim, supervisor instruction, exact
-prompt, live log, diff, protected tests, gate output, Code Review Agent decision,
+prompt, live log, diff, protected tests, gate output, Code Review role decision,
 Handoff Receipts, and history. In the deterministic run, Ticket #1 receives
 `REQUEST_CHANGES`, returns to the same development branch, passes its gates
 again, and receives `APPROVE`. The Supervisor may then recommend the exact

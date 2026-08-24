@@ -92,7 +92,7 @@
       "handoff_receipt": ["Hand off the pull request, candidate base and head revisions, structured decision, comments, and review artifact."]
     },
     "supervisor_merge": {
-      "ownership": ["Final MERGE or BLOCK command after Code Review Agent approval, based on matching candidate revision, required gates, Handoff Receipts, and unresolved risks."],
+      "ownership": ["Final MERGE or BLOCK command after Code Review role approval, based on matching candidate revision, required gates, Handoff Receipts, and unresolved risks."],
       "exclusions": ["Source changes, review fabrication, gate overrides, stale-candidate merge, direct GitHub execution, and repository-policy changes."],
       "verification": ["Authorize merge only when the approved review, required gates, pull request, and candidate head all refer to the same revision."],
       "handoff_receipt": ["Hand off the validated merge command, evidence revisions, resulting merge reference, and any blocking risk."]

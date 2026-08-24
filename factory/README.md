@@ -120,18 +120,18 @@ The orchestration flow is intentionally direct:
 1. Load issues and parse `Depends-on: #…` plus `agent: …` from each body.
 2. Move dependency-complete, `agent-ready` tickets to Ready.
 3. In Standard and Assured profiles, give ready Tickets and recent worker
-   Handoff Receipts to the Agent Supervisor. The orchestrator validates its
+   Handoff Receipts to the Supervisor role. The orchestrator validates its
    dispatch, defer, or block decision and remains the lifecycle authority.
 4. Create `../<repository>-wt-<issue>` on `factory/<issue>-<slug>` and ask the independent
-   QA agent to add ticket-numbered acceptance tests only.
+   QA adapter to add ticket-numbered acceptance tests only.
 5. Commit and protect the Acceptance Tests; optionally pause for explicit human approval.
-6. Run the implementation agent with the supervisor's Ticket instruction. The factory rejects any implementation that
+6. Run the Implementation adapter with the supervisor's Ticket instruction. The factory rejects any implementation that
    modifies or deletes a protected test.
 7. Execute configured gates in order; feed the last 3,000 failure characters
    back to the agent for up to two retries.
 8. On green gates, push or update the PR and give its exact candidate revision
-   to the read-only Code Review Agent. Review comments return to the same
-   implementation agent and consume the bounded retry budget; gates and review rerun.
+   to the read-only Code Review role. Review comments return to the same
+   Implementation adapter and consume the bounded retry budget; gates and review rerun.
 9. After an `APPROVE` decision with no comments, the Supervisor may recommend
    a revision-bound `MERGE`. The orchestrator rechecks the live PR head. Lean,
    Standard, and Assured then stop for the human exact-revision merge action;
@@ -140,7 +140,7 @@ The orchestration flow is intentionally direct:
     artifact path to `.factory/state.json` for the Control Center.
 
 The Control Center teaches four macro phases—**Plan, Build, Verify, Review**—before
-showing detailed ticket states. Every orchestrated role writes a Handoff Receipt
+showing detailed ticket states. Every executed role produces a Handoff Receipt
 with input and output revisions, its claim, verification, unresolved risks,
 artifacts, and policy hashes. Worker roles communicate results to the Agent
 Supervisor through those receipts; the Supervisor screen shows its validated
@@ -157,7 +157,7 @@ Profiles are executable role topologies, not presentation labels:
 
 - **Lean** runs Product Review and Vertical Slices, then implementation,
   verification, and human review.
-- **Standard** runs all four planning roles, supervised dispatch, independent
+- **Standard** includes all four planning roles, supervised dispatch, independent
   QA, protected Acceptance Tests, implementation, verification, independent
   code review, review-comment rework, a Supervisor recommendation, and a human
   exact-revision merge.
@@ -354,7 +354,7 @@ Inspect the GitHub board, then deliberately start implementation:
 
 ## Independent QA acceptance-test phase
 
-Real factory runs use a dedicated QA agent before the implementation agent for
+Real factory runs use a dedicated QA adapter before the Implementation adapter for
 every ticket. The committed repository default is Codex; an attendee preset
 overrides it locally. The QA adapter can be different from the implementation
 adapter, including a project-specific adapter registered in `factory.toml`:
@@ -387,7 +387,7 @@ For each issue, QA receives the full spec and acceptance criteria. It may only
 add new files that match the Project Contract's ticket-numbered patterns inside
 its configured test roots. The factory
 commits those files before implementation and records their Git blob hashes.
-The implementation agent sees the protected-file list in its prompt and may add
+The Implementation adapter sees the protected-file list in its prompt and may add
 more tests, but changing, renaming, or deleting an Acceptance Test fails verification and
 is fed back into the normal retry loop.
 

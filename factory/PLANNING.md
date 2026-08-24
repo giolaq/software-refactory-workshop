@@ -1,7 +1,7 @@
 # Profile-driven planning pipeline
 
 The factory treats planning as a sequence of reviewable contracts, not a single
-request to generate tickets. A fresh read-only agent owns each stage. Stable IDs
+request to generate tickets. A distinct read-only planning role owns each stage. Stable IDs
 and hashes make disagreements visible before implementation becomes expensive.
 
 The Standard and Assured profiles run all four experts. Lean runs Product

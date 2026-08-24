@@ -205,12 +205,12 @@ verification responsibility, and Handoff Receipt. `factory/policy.json`
 defines versioned repository rules. An Agent Adapter fills a role; changing its
 CLI or model does not change the role contract.
 
-Standard and Assured profiles use an Agent Supervisor before each ready-ticket
+Standard and Assured profiles use a Supervisor role before each ready-ticket
 wave. Lean deliberately omits it. The supervisor reads recent worker Handoff
 Receipts, proposes a bounded dispatch or block decision, and supplies a concise
 instruction to each selected Ticket. It cannot edit code, change Ticket scope
 or dependencies, override gates, approve code, or mutate lifecycle state. After
-an independent Code Review Agent approves an exact revision, it may separately
+an independent Code Review role approves an exact revision, it may separately
 recommend `MERGE` or `BLOCK`. For Standard and Assured, `MERGE` is only a
 recommendation: the run stops at the human exact-revision merge gate. The
 orchestrator validates and records the recommendation without executing it.
@@ -232,7 +232,7 @@ decision that silently dispatches nothing fails the checkpoint with ready work
 preserved. Inspect `.factory/supervisor/state.json`, the referenced prompt and
 log, or the Control Center's **Supervisor** screen.
 
-Standard and Assured profiles also run a separate Code Review Agent after all
+Standard and Assured profiles also include a separate Code Review role after all
 required verification gates pass and the candidate PR is open. It reviews the
 exact base-to-head candidate diff without modifying the worktree. Its JSON
 decision is schema-validated and may contain blocking, warning, or note comments
@@ -277,7 +277,7 @@ published review, gates, PR URL, and exact candidate head, then presents the
 human merge action. `./factory/factory merge ISSUE --yes` rechecks that exact
 head and records the person's decision. A stale head, malformed recommendation,
 or branch-protection failure blocks the Ticket. Lean keeps direct human diff
-review and does not run the Code Review Agent.
+review and does not include the Code Review role.
 
 `Autonomous Demo` is a workshop-only contrast. It requires an approved Charter
 with `merge_authority = "supervisor"` and the transient

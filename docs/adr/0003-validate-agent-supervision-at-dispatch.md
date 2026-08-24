@@ -13,10 +13,11 @@ dependency, concurrency, test, gate, or human-approval controls.
 
 ## Decision
 
-Standard and Assured Factory Profiles run an Agent Supervisor at the scheduler's
-dispatch checkpoint. The orchestrator supplies dependency-ready Tickets,
-current state, configured parallelism, and recent worker Handoff Receipts. The
-Supervisor returns one versioned decision containing:
+Standard and Assured Factory Profiles include a Supervisor role at the
+scheduler's dispatch checkpoint. The orchestrator supplies the configured
+Supervisor adapter with dependency-ready Tickets, current state, configured
+parallelism, and recent worker Handoff Receipts. The adapter returns one
+versioned decision containing:
 
 - Ticket-specific dispatch instructions;
 - explicit blocks with reasons; and

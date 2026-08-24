@@ -268,6 +268,9 @@ class FactoryContractTests(unittest.TestCase):
             ):
                 run_live_github_smoke(repo, True, agent="codex")
 
+            brief = next((repo / ".factory").glob("live-smoke-*.md")).read_text()
+            self.assertIn("external Codex Agent Adapter delivery path", brief)
+            self.assertNotIn("external Claude Agent Adapter delivery path", brief)
             doctor = next(command for command in commands if "doctor" in command)
             plan = next(command for command in commands if "plan" in command)
             delivery = next(command for command in commands if "run" in command)
@@ -305,6 +308,7 @@ class FactoryContractTests(unittest.TestCase):
                     }))
                 if command[-3:] == ["review", "product", "live-plan"]:
                     brief = next((repo / ".factory").glob("live-smoke-*.md")).read_text()
+                    self.assertIn("external Claude Agent Adapter delivery path", brief)
                     self.assertIn(
                         "Human approval for this disposable smoke explicitly covers adding "
                         "the Acceptance Test under `demo-app/tests/`.",

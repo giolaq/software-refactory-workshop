@@ -14,11 +14,11 @@ factory can target a separate existing Git repository and any PRD after
 - Start the self-guided experience with the [workshop website](workshop-guide/README.md).
 - Use the [factory quickstart](factory/README.md) for the operator reference.
 - Use the [configuration guide](factory/CONFIGURATION.md) to select Claude,
-  Codex, Cursor, or register your own supervisor, implementation, QA, and code-review agent,
+  Codex, Cursor, or register your own Supervisor, Implementation, QA, and Code Review adapters,
   model wrapper, and execution environment.
 - Use the [Control Center guide](factory/CONTROL_CENTER.md) to inspect how worker
   Handoff Receipts become validated supervisor dispatch commands and how a
-  separate Code Review Agent requests repairs or approves an exact candidate
+  separate Code Review role requests repairs or approves an exact candidate
   before the Supervisor recommends that exact revision for a human merge.
 - Read the [planning pipeline guide](factory/PLANNING.md) for prompts, artifacts,
 approvals, traceability, and stale-plan behavior.

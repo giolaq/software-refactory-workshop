@@ -415,7 +415,7 @@ class GitHubBackend:
         comment = self.gh("pr", "comment", pr_url, "--body", fallback_body, check=False)
         if comment.returncode:
             detail = (official.stderr or official.stdout or comment.stderr or comment.stdout).strip()
-            raise GitHubError(f"Could not publish Code Review Agent decision: {detail}")
+            raise GitHubError(f"Could not publish Code Review role decision: {detail}")
         return {
             "published": True,
             "official": False,
@@ -437,7 +437,7 @@ class GitHubBackend:
         value = self.json("pr", "view", pr_url, "--json", "headRefOid")
         if value.get("headRefOid") != expected_head:
             raise GitHubError(
-                "Pull request head changed after Code Review Agent approval; review the new revision before merge."
+                "Pull request head changed after Code Review role approval; review the new revision before merge."
             )
 
     def merged_pr(self, ticket):

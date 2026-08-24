@@ -234,7 +234,12 @@ def validate_product(product: dict):
     if not isinstance(product.get("users"), list) or not product["users"]:
         raise ValueError("product review requires at least one user")
     unique_ids(product["users"], "user")
-    if not isinstance(product.get("journeys"), list) or not product["journeys"]:
+    blocking_questions = product.get("blocking_questions")
+    if not isinstance(blocking_questions, list):
+        raise ValueError("product review blocking_questions must be a list")
+    if not isinstance(product.get("journeys"), list):
+        raise ValueError("product review journeys must be a list")
+    if not product["journeys"] and not blocking_questions:
         raise ValueError("product review requires at least one journey")
     unique_ids(product["journeys"], "journey")
     for journey in product["journeys"]:
@@ -244,8 +249,6 @@ def validate_product(product: dict):
     scope = product.get("scope")
     if not isinstance(scope, dict) or not isinstance(scope.get("in"), list) or not isinstance(scope.get("out"), list):
         raise ValueError("product review requires explicit in-scope and out-of-scope lists")
-    if not isinstance(product.get("blocking_questions"), list):
-        raise ValueError("product review blocking_questions must be a list")
 
 
 def validate_architecture(architecture: dict, product: dict):
@@ -894,7 +897,7 @@ def _run_stage_agent_impl(
             if result.returncode == 0 and structured is not None:
                 write_json(raw, structured)
         else:
-            raise ValueError(f"unsupported planning agent: {planning_agent}")
+            raise ValueError(f"unsupported planning adapter: {planning_agent}")
         if planning_agent == "codex":
             log.write_text(result.stdout + result.stderr)
         if result.returncode:
@@ -1661,7 +1664,7 @@ def write_alignment_review(repo: Path, run_dir: Path, manifest: dict) -> Path:
     lines += [
         "", "## Human gate", "", "Confirm scope, contracts, code design, ownership, dependencies, and QA evidence. Then publish:", "",
         f"`./factory/factory approve {manifest['plan_id']}`", "",
-        "No GitHub issue or implementation agent is created until this command is explicitly confirmed.", "",
+        "No GitHub issue is created and no Implementation adapter is started until this command is explicitly confirmed.", "",
     ]
     path = run_dir / "alignment-review.md"
     path.write_text("\n".join(lines))

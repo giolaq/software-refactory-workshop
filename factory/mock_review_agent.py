@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Deterministic Code Review Agent used by the credential-free rehearsal."""
+"""Deterministic adapter that fulfils the Code Review role in Rehearsal."""
 
 from __future__ import annotations
 

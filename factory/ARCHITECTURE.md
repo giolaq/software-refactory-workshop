@@ -27,7 +27,7 @@ flowchart LR
   Alignment --> Rehearsal["Local PRD-derived rehearsal tickets"]
   Issues --> Scheduler["orchestrator.py scheduler"]
   Rehearsal --> Scheduler
-  Scheduler --> Supervisor["Agent Supervisor"]
+  Scheduler --> Supervisor["Supervisor role"]
   Supervisor -->|validated dispatch| Scheduler
   Scheduler --> Worktree["Isolated Git worktree"]
   Worktree --> QA["Independent QA adapter"]
@@ -36,7 +36,7 @@ flowchart LR
   Implementer --> Gates["Configured verification gates"]
   Gates -->|failure| Implementer
   Gates -->|pass| PR["Open or update pull request"]
-  PR --> Reviewer["Read-only Code Review Agent"]
+  PR --> Reviewer["Read-only Code Review adapter"]
   Reviewer -->|REQUEST_CHANGES| Implementer
   Reviewer -->|APPROVE exact head| MergeSupervisor["Supervisor merge decision"]
   MergeSupervisor -->|recommend exact head| HumanMerge{"Human merge decision"}
@@ -96,7 +96,7 @@ flowchart LR
   planning, QA policy, preflight, verification, and reset. A changed contract
   invalidates an in-progress plan before publication.
 - Profile topology determines which roles and controls are applicable.
-- Standard and Assured runs add an Agent Supervisor at each dispatch checkpoint.
+- Standard and Assured runs include a Supervisor role at each dispatch checkpoint.
   It reads worker Handoff Receipts and proposes Ticket-specific dispatch or
   block commands. Lean runs keep direct scheduler dispatch.
 - The orchestrator, not an agent, issues every Handoff Receipt, validates every
@@ -104,11 +104,11 @@ flowchart LR
   remains the only lifecycle authority.
 - Each ticket runs in its own worktree and branch.
 - QA may add only new ticket-numbered files under configured test roots.
-- Acceptance Test hashes prevent the implementation agent from weakening that evidence.
+- Acceptance Test hashes prevent the Implementation adapter from weakening that evidence.
 - Required gates must pass before the candidate branch is pushed and its PR is
   opened or updated.
 - Standard and Assured runs give that exact PR candidate to a separate, read-only
-  Code Review Agent. `REQUEST_CHANGES` returns every comment to implementation
+  Code Review role. `REQUEST_CHANGES` returns every comment to implementation
   within the existing retry limit. Tests, gates, and review then run again.
 - `APPROVE` is revision-specific and cannot include unresolved comments. The
   Supervisor may recommend `MERGE` only for that reviewed head, with passing

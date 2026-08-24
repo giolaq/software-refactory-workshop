@@ -63,7 +63,7 @@ adapter. Live planning accepts any PRD and records that contract with the plan.
 19. As an attendee, I want to see approved Vertical Slices become GitHub Issues and Project items, so that tickets visibly originate from the PRD rather than seeding.
 20. As an attendee, I want dependencies represented on the Project and dashboard, so that waiting and safe execution order are explainable.
 21. As an attendee, I want the mobile recipe journey to remain the narrative Ticket, so that one user-visible outcome can be followed throughout the workshop.
-22. As an attendee, I want an independent QA Agent Role to create Acceptance Tests before implementation, so that completion evidence is not authored only by the code-producing role.
+22. As an attendee, I want an independent QA role to create Acceptance Tests before implementation, so that completion evidence is not authored only by the code-producing role.
 23. As a peer reviewer, I want to inspect and approve an Acceptance Test, so that I practice deciding whether it proves behavior rather than merely whether it runs.
 24. As an attendee, I want implementation roles prevented from changing QA-owned protected Acceptance Tests, so that failed requirements cannot be hidden by weakening evidence.
 25. As an attendee, I want implementation to run in isolated Git worktrees, so that concurrent or failed work does not contaminate the main checkout.
@@ -92,12 +92,12 @@ adapter. Live planning accepts any PRD and records that contract with the plan.
 48. As a workshop owner, I want the source, website, CLI, and release to show one version identity, so that attendee instructions can be reproduced against the intended revision.
 49. As a workshop owner, I want the repository audited before it becomes public and a template, so that no local credentials, generated state, or obsolete control material are published.
 50. As a workshop owner, I want the website and all documentation to use the project glossary, so that terms such as Agent Role, Agent Adapter, Live Run, Rehearsal Run, GitHub Project, and Factory Dashboard are not conflated.
-51. As an operator, I want an Agent Supervisor to coordinate dependency-ready Ticket agents from their Handoff Receipts, so that parallel work receives one coherent dispatch decision.
+51. As an operator, I want a Supervisor role to coordinate dependency-ready Ticket workers from their Handoff Receipts, so that parallel work receives one coherent dispatch decision.
 52. As an operator, I want supervisor commands validated by the orchestrator, so that a coordinating agent cannot change scope, dependencies, gates, approvals, or lifecycle state.
 53. As an attendee, I want to inspect supervisor inputs, Ticket instructions, blocks, logs, and decision history, so that multi-agent synchronization is understandable rather than hidden.
-54. As an operator, I want a separate read-only Code Review Agent to inspect the exact candidate PR diff and return `APPROVE` or `REQUEST_CHANGES`, so that technical approval remains independent of implementation.
+54. As an operator, I want a separate read-only Code Review role fulfilled by an adapter that inspects the exact candidate PR diff and returns `APPROVE` or `REQUEST_CHANGES`, so that technical approval remains independent of implementation.
 55. As an operator, I want every code-review comment to return through the bounded implementation retry loop on the same branch and PR, so that the repaired revision reruns gates and review before it can merge.
-56. As an operator, I want the Agent Supervisor to recommend merge only for the exact approved PR head with passing gates and a published review decision, so that a human can make the final merge decision from validated evidence.
+56. As an operator, I want the Supervisor role to recommend merge only for the exact approved PR head with passing gates and a published review decision, so that a human can make the final merge decision from validated evidence.
 57. As an attendee, I want the workshop to distinguish a formal GitHub review from the single-account Factory-comment fallback, so that I do not mistake audit evidence for a branch-protection approval.
 58. As a Live Run attendee, I want to paste the URL of a GitHub repository I control, so that the factory targets it explicitly instead of depending on an unrelated GitHub CLI default.
 59. As a Live Run attendee, I want reset to clear only local factory state without rewriting source or GitHub, so that I can recover the control panel without mistaking local cleanup for remote deletion.
@@ -137,7 +137,7 @@ adapter. Live planning accepts any PRD and records that contract with the plan.
 - The Product Review revision interface accepts a plan identifier, a product
   stage, and human feedback supplied inline or from a file. It stores feedback
   and revision history, regenerates Product Review through the original
-  Planning Agent Role, invalidates product and alignment approvals, deletes or
+  Planning role, invalidates product and alignment approvals, deletes or
   marks downstream artifacts stale, and returns the run to product review.
 - Rehearsal Run starts with a deliberately vague claim that TV back-navigation
   “works” without objective keyboard and mode-preservation evidence. Applying
@@ -164,8 +164,8 @@ adapter. Live planning accepts any PRD and records that contract with the plan.
   output revisions, claimed result, verification, unresolved risks, artifact
   references, policy hashes, and timestamp. The central orchestrator is the
   only lifecycle authority.
-- After required gates pass, the factory opens or updates the PR. The Code Review
-  Agent receives its exact candidate base and head revisions, Ticket contract,
+- After required gates pass, the factory opens or updates the PR. The adapter
+  fulfilling the Code Review role receives its exact candidate base and head revisions, Ticket contract,
   changed paths, and gate summary. Its output has a versioned `APPROVE` or
   `REQUEST_CHANGES` schema. Comments are bounded, restricted to changed paths,
   and classified as blocking, warning, or note. The orchestrator rejects malformed
@@ -174,15 +174,15 @@ adapter. Live planning accepts any PRD and records that contract with the plan.
   the new commit. `APPROVE` requires an empty comments list.
 - Autonomous Demo gives the Supervisor a separate post-review `MERGE` or
   `BLOCK` contract. In that explicitly opted-in profile only, the orchestrator
-  accepts `MERGE` when the Code Review Agent approved the same candidate head,
+  accepts `MERGE` when the Code Review role approved the same candidate head,
   required gates pass, and the decision was published. It rechecks the live
   GitHub PR head and executes the merge; stale heads and branch-protection
   failures block the Ticket. Lean, Standard, and Assured instead stop at the
   human exact-revision merge gate. With a single GitHub identity, formal
   self-approval falls back to an explicit Factory comment that does not satisfy
   branch-protection approval requirements.
-- Standard and Assured profiles run an Agent Supervisor at each ready-ticket
-  dispatch checkpoint; Lean retains direct scheduler dispatch. The Supervisor
+- Standard and Assured profiles include a Supervisor role at each ready-ticket
+  dispatch checkpoint; Lean retains direct scheduler dispatch. The configured adapter
   reads current dependency state and recent worker Handoff Receipts, then
   proposes Ticket-specific dispatch instructions or evidence-backed blocks.
   The orchestrator validates readiness, uniqueness, concurrency, output schema,

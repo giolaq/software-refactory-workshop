@@ -14,8 +14,8 @@ explicit and auditable.
 ## Decision
 
 Standard and Assured profiles open or update the pull request after required
-gates pass. A distinct, read-only Code Review Agent reviews the exact
-base-to-head candidate and returns schema-versioned `APPROVE` or
+gates pass. A distinct, read-only Code Review role owns review of the exact
+base-to-head candidate. The adapter fulfilling that role returns schema-versioned `APPROVE` or
 `REQUEST_CHANGES` JSON. Every comment requires `REQUEST_CHANGES`; `APPROVE`
 requires an empty findings list. Findings are limited to changed paths.
 
@@ -24,8 +24,8 @@ bounded retry context. The same implementation role works on the same branch
 and pull request. Protected Acceptance Tests, required gates, and code review
 all run again. Approval applies only to the newly reviewed commit.
 
-After approval, the Agent Supervisor receives the review, required gates,
-Handoff Receipts, PR URL, and candidate head. It may return only `MERGE` or
+After approval, the adapter fulfilling the Supervisor role receives the review,
+required gates, Handoff Receipts, PR URL, and candidate head. It may return only `MERGE` or
 `BLOCK` for that exact Ticket and revision. The Supervisor does not execute
 GitHub commands. The orchestrator validates the command, confirms that the live
 PR head still equals the approved head, and then executes the merge. It observes
@@ -48,6 +48,6 @@ Lean retains its direct human diff-and-merge path.
   a new gate and review pass.
 - Branch protection, publication failure, malformed agent output, missing gate
   evidence, and stale revisions fail closed.
-- The Code Review Agent owns technical approval; the Supervisor owns a bounded
+- The Code Review role owns technical approval; the Supervisor owns a bounded
   merge recommendation; the orchestrator remains the only lifecycle and GitHub
   mutation authority.

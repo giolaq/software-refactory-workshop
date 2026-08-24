@@ -7,7 +7,7 @@ turn a local coding CLI into a security sandbox.
 
 - The Control Center listens on loopback and accepts only registered actions.
 - Each Ticket uses a separate Git worktree and a deterministic remote claim.
-- Agent processes receive only their declared environment allowlist and
+- Adapter processes receive only their declared environment allowlist and
   credential names.
 - Planning and supported review adapters run with read-only CLI settings.
   Every read-only role also has its Git head and worktree status checked.
@@ -39,7 +39,7 @@ containerized.
 
 - GitHub permissions come from the authenticated `gh` identity. Use a
   disposable repository for the workshop and protect the default branch.
-- A Code Review Agent comment is not necessarily a formal branch-protection
+- A comment from the Code Review adapter is not necessarily a formal branch-protection
   approval, especially when the PR author and reviewer identity are the same.
 - Claude, Codex, Cursor, and custom providers retain their own account,
   telemetry, model-log, rate-limit, and data-handling policies.

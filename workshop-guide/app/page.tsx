@@ -331,7 +331,7 @@ export default function Home() {
           <div className="section-heading">
             <span className="section-kicker">Multi-agent coordination</span>
             <h2>The supervisor coordinates work. It does not own delivery.</h2>
-            <p>A ticket agent sees one assignment. The Agent Supervisor sees the delivery state between work waves and recommends what should happen next.</p>
+            <p>A ticket worker sees one assignment. The Supervisor role sees the delivery state between work waves and recommends what should happen next.</p>
           </div>
           <details className="optional-detail">
             <summary>Inspect the Supervisor contract</summary>
@@ -369,8 +369,8 @@ export default function Home() {
         <section id="code-review-role" className="supervisor-section">
           <div className="section-heading">
             <span className="section-kicker">Independent code review</span>
-            <h2>The Code Review Agent closes the feedback loop.</h2>
-            <p>After tests and required gates pass, the factory opens or updates a pull request. A separate read-only agent reviews that exact candidate revision.</p>
+            <h2>The Code Review role closes the feedback loop.</h2>
+            <p>After tests and required gates pass, the factory opens or updates a pull request. A separate read-only Code Review role is fulfilled by the configured adapter, which reviews that exact candidate revision.</p>
           </div>
           <details className="optional-detail">
             <summary>Inspect the review and rework loop</summary>
@@ -380,7 +380,7 @@ export default function Home() {
               <article><span>3 · Close</span><h3>Fix and recheck</h3><p>Comments return to implementation. Gates and review rerun before a person can merge.</p></article>
             </div>
             <Callout type="note" title="Three roles, separate authority">
-              <p>The Code Review Agent can approve or request changes. The Supervisor can recommend that exact commit. Only the human merge action ships it.</p>
+              <p>The Code Review role can approve or request changes. The Supervisor can recommend that exact commit. Only the human merge action ships it.</p>
             </Callout>
             <Callout type="warning" title="GitHub approval needs a separate identity">
               <p>With one workshop login, review is published as a labelled PR comment. For formal approval, use a second account through <code>FACTORY_REVIEW_GH_TOKEN</code>. Never commit it.</p>
@@ -619,12 +619,12 @@ export PLAN_ID=<plan-id-from-output>
             illustration
           />
           <Callout type="warning" title="Do not seed normal workshop tickets">
-            <p>The planning agents produce the tickets from the PRD. Seeding exists only for fixtures and recovery demos.</p>
+            <p>The planning roles produce the tickets from the PRD. Seeding exists only for fixtures and recovery demos.</p>
           </Callout>
           <Checkpoint>{track === "live" ? "GitHub Projects shows the approved vertical slices as issues." : "The dry run prints the issues that would be created in GitHub."}</Checkpoint>
         </StepSection>
 
-        <StepSection index={6} id="qa" title="Approve tests" goal="Have a QA agent define acceptance evidence before implementation." complete={completed.includes("qa")} onToggle={() => toggleStep("qa")}>
+        <StepSection index={6} id="qa" title="Approve tests" goal="Have the QA role define acceptance evidence before implementation." complete={completed.includes("qa")} onToggle={() => toggleStep("qa")}>
           <WorkshopPaths
             click={<>Open <strong>Tickets</strong>, select <strong>Run one cycle</strong>, open ticket <strong>#1</strong>, then select <strong>Tests</strong>. Return to Summary to approve.</>}
             whyStopped={<>Implementation cannot start until the focused command has failed for the missing behavior and a person accepts the QA-owned tests.</>}
@@ -647,7 +647,7 @@ export PLAN_ID=<plan-id-from-output>
           <WorkshopPaths
             click={track === "live" ? <>Keep your <strong>GitHub Project</strong> open. In the Control Center, open <strong>Tickets</strong>, select <strong>Run factory</strong>, then open <strong>Supervisor</strong>.</> : <>Open <strong>Tickets</strong>, select <strong>Run factory</strong>, then open <strong>Supervisor</strong>.</>}
             whyStopped={<>The scheduler stops for full human-review capacity, an owned remote claim, failed causal proof, a gate failure, review comments, or the final human merge decision. The top <strong>NEEDS YOU</strong> card names the reason.</>}
-            inspect={track === "live" ? <>Use GitHub Projects for shared state. In Supervisor, follow worker Handoff Receipts into a dispatch instruction. Open the Ticket for its prompt, log, diff, tests, and gates. When verification passes, open <strong>Code review</strong>, compare the decision with the GitHub review or labelled Factory comment, then inspect the human merge gate.</> : <>Follow worker Handoff Receipts into a dispatch instruction. Open the selected Ticket and compare its instruction with its prompt, logs, gates, Code Review Agent decision, Supervisor recommendation, and human merge gate.</>}
+            inspect={track === "live" ? <>Use GitHub Projects for shared state. In Supervisor, follow worker Handoff Receipts into a dispatch instruction. Open the Ticket for its prompt, log, diff, tests, and gates. When verification passes, open <strong>Code review</strong>, compare the decision with the GitHub review or labelled Factory comment, then inspect the human merge gate.</> : <>Follow worker Handoff Receipts into a dispatch instruction. Open the selected Ticket and compare its instruction with its prompt, logs, gates, Code Review role decision, Supervisor recommendation, and human merge gate.</>}
             continueWhen={<>The reviewer approves the exact PR head. You inspect the evidence and select <strong>Merge exact revision</strong>; only then does the Ticket reach Done.</>}
           >{track === "live" ? `gh project view <project-number> --owner "@me" --web
 ./factory/factory run` : `./factory/factory run --mock --scenario recipe-rebrand`}</WorkshopPaths>
@@ -684,7 +684,7 @@ export PLAN_ID=<plan-id-from-output>
               <li>Open that Ticket’s <strong>Supervisor</strong> tab and read its instruction.</li>
               <li>After the worker finishes, find its new Handoff Receipt in the next supervisor decision.</li>
             </ol>
-            <p>The Agent Supervisor recommends coordination. The orchestrator validates commands and remains the only lifecycle authority.</p>
+            <p>The Supervisor role recommends coordination. The orchestrator validates commands and remains the only lifecycle authority.</p>
           </div>
           <WorkshopMedia
             src="/screenshots/control-center-human-merge.jpg"
@@ -831,7 +831,7 @@ agent = "my-agent"`}</CodeBlock>
             <details><summary>Repository is not connected</summary><p>Open <strong>Connect</strong>, choose <strong>Live</strong>, paste the repository URL, and save. The factory verifies access and configures <code>origin</code>. Push <code>main</code>, then rerun preflight.</p></details>
             <details><summary>Claude asks for an OpenAI API key</summary><p>Your selected adapter is still the OpenAI preset. Run <code>./factory/factory configure --preset claude-workshop</code>, confirm Claude is authenticated, then rerun doctor.</p></details>
             <details><summary>A ticket is blocked</summary><p>Open its event history and agent log. Fix the recorded cause, then run <code>./factory/factory retry ISSUE_NUMBER</code>.</p></details>
-            <details><summary>Retry blocked expert repeats the same error</summary><p>Open the failed expert&apos;s recovery card. For validation, select <strong>Apply correction and continue</strong>; the factory sends the rejected artifact and exact validator message to the expert. For a session or rate limit, select <strong>Fix with Codex</strong> (or another configured adapter). After the same process failure occurs twice, the Control Center disables same-agent retry and keeps the completed upstream artifacts. If the PRD, Project Contract, or Factory Charter changed, select <strong>Restart planning safely</strong>.</p></details>
+            <details><summary>Retry blocked expert repeats the same error</summary><p>Open the failed expert&apos;s recovery card. For validation, select <strong>Apply correction and continue</strong>; the factory sends the rejected artifact and exact validator message to the expert. For a session or rate limit, select <strong>Fix with Codex</strong> (or another configured adapter). After the same process failure occurs twice, the Control Center disables same-adapter retry and keeps the completed upstream artifacts. If the PRD, Project Contract, or Factory Charter changed, select <strong>Restart planning safely</strong>.</p></details>
             <details><summary>NEEDS YOU says dispatch is paused</summary><p>The human queue reached its Charter limit. Open the oldest linked decision. Approve, reject, answer, or merge it; dispatch resumes when the queue falls below the limit.</p></details>
             <details><summary>A remote claim belongs to an abandoned run</summary><p>Confirm the owner is no longer running. Open the blocked Ticket and select <strong>Release abandoned claim</strong>. Local reset never releases a remote claim.</p></details>
             <details><summary>The Control Center reports a deadlock</summary><p>One or more dependency chains form a cycle. Edit issue dependencies so at least one ticket can start, then rerun the factory.</p></details>

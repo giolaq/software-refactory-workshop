@@ -81,7 +81,7 @@
 
       <div class="health-grid">
         <article><span class="health-icon blue">P</span><div><strong id="metric-plan">No plan</strong><span>Planning</span></div></article>
-        <article><span class="health-icon purple">A</span><div><strong id="metric-active">0</strong><span>Active agents</span></div></article>
+        <article><span class="health-icon purple">A</span><div><strong id="metric-active">0</strong><span>Active Tickets</span></div></article>
         <article><span class="health-icon amber">Q</span><div><strong id="metric-review">0</strong><span>Awaiting review</span></div></article>
         <article><span class="health-icon green">✓</span><div><strong id="metric-done">0</strong><span>Completed</span></div></article>
       </div>
@@ -102,7 +102,7 @@
     </section>
 
     <section class="view" data-view="connect" aria-labelledby="connect-title" hidden>
-      <div class="page-heading"><div><span class="eyebrow">Step 1</span><h1 id="connect-title">Connect the factory</h1><p>Choose the agents and confirm that this repository is ready.</p></div></div>
+      <div class="page-heading"><div><span class="eyebrow">Step 1</span><h1 id="connect-title">Connect the factory</h1><p>Choose the adapters and confirm that this repository is ready.</p></div></div>
       <div class="two-column">
         <section class="surface form-surface">
           <div class="surface-heading"><div><span class="section-label">Configuration</span><h2>Agent roles</h2></div></div>
@@ -150,7 +150,7 @@
       <div class="page-heading"><div><span class="eyebrow">Step 2</span><h1 id="prd-title">Define the outcome</h1><p>Write the product requirement the planning experts will receive.</p></div><div class="heading-actions"><span class="save-state" id="prd-save-state">Not edited</span><button class="button" id="save-prd" type="button">Save PRD</button><button class="button button-primary" id="start-planning" type="button">Start Product Review</button></div></div>
       <div class="prd-grid">
         <section class="surface editor-surface"><textarea id="prd-editor" aria-label="Product requirements document" spellcheck="true"></textarea></section>
-        <aside class="surface prd-checklist"><span class="section-label">Before planning</span><h2>A useful PRD answers</h2><ul><li>Who is the product for?</li><li>What changes for the user?</li><li>What must remain compatible?</li><li>What evidence proves success?</li></ul><label>Planning mode<select id="planning-mode"><option value="rehearsal">Rehearsal</option><option value="live">Live agents</option></select></label><p class="config-reminder">The Factory Profile selected in Connect applies to planning and execution.</p></aside>
+        <aside class="surface prd-checklist"><span class="section-label">Before planning</span><h2>A useful PRD answers</h2><ul><li>Who is the product for?</li><li>What changes for the user?</li><li>What must remain compatible?</li><li>What evidence proves success?</li></ul><label>Planning mode<select id="planning-mode"><option value="rehearsal">Rehearsal</option><option value="live">Live adapters</option></select></label><p class="config-reminder">The Factory Profile selected in Connect applies to planning and execution.</p></aside>
       </div>
     </section>
 
@@ -170,9 +170,9 @@
     </section>
 
     <section class="view" data-view="supervisor" aria-labelledby="supervisor-title" hidden>
-      <div class="page-heading"><div><span class="eyebrow">Dispatch and merge coordination</span><h1 id="supervisor-title">Agent supervisor</h1><p>See how worker results become safe dispatch commands and how an approved revision becomes a merge recommendation for a person.</p></div><div class="heading-actions"><span class="operation-status idle" id="supervisor-status">Waiting</span><a class="button button-primary" href="#tickets" data-view-link="tickets">Open Tickets</a></div></div>
+      <div class="page-heading"><div><span class="eyebrow">Dispatch and merge coordination</span><h1 id="supervisor-title">Supervisor</h1><p>See how worker results become safe dispatch commands and how an approved revision becomes a merge recommendation for a person.</p></div><div class="heading-actions"><span class="operation-status idle" id="supervisor-status">Waiting</span><a class="button button-primary" href="#tickets" data-view-link="tickets">Open Tickets</a></div></div>
       <section class="surface supervisor-flow" aria-label="Supervisor communication flow">
-        <div><b>Worker agents</b><span>QA, implementation, verification, review</span></div><i>Handoff Receipts →</i><div><b>Supervisor</b><span>Proposes dispatch; recommends merge</span></div><i>Validated decisions →</i><div><b>Orchestrator</b><span>Enforces dependencies, gates, exact revision, and state</span></div>
+        <div><b>Worker roles</b><span>QA, implementation, verification, review</span></div><i>Handoff Receipts →</i><div><b>Supervisor</b><span>Proposes dispatch; recommends merge</span></div><i>Validated decisions →</i><div><b>Orchestrator</b><span>Enforces dependencies, gates, exact revision, and state</span></div>
       </section>
       <div class="supervisor-grid">
         <section class="surface supervisor-latest">
@@ -239,7 +239,7 @@
 
   <dialog class="reset-dialog" id="reset-dialog" aria-labelledby="reset-title">
     <div class="dialog-heading"><div><span class="section-label">Recovery</span><h2 id="reset-title">Reset or start again</h2></div><button class="icon-button" id="close-reset" type="button" aria-label="Close reset dialog">×</button></div>
-    <p class="dialog-intro">Choose how much workshop state to keep. Neither option changes your saved agent or GitHub Project configuration.</p>
+    <p class="dialog-intro">Choose how much workshop state to keep. Neither option changes your saved adapter or GitHub Project configuration.</p>
     <div class="reset-options">
       <section>
         <span class="reset-scope">Keep PRD and plan</span>

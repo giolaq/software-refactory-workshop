@@ -6,6 +6,8 @@ import json
 from datetime import datetime, timezone
 from pathlib import Path
 
+from planning_presentation import planning_presentation
+
 
 def _waiting_since(ticket: dict) -> str:
     current = ticket.get("status")
@@ -17,36 +19,17 @@ def _waiting_since(ticket: dict) -> str:
 
 
 def _planning_decision(planning: dict) -> tuple[dict | None, bool]:
-    status = str(planning.get("status", ""))
-    if status.startswith("awaiting_") and status.endswith("_approval"):
-        label = {
-            "awaiting_product_approval": "Product Review",
-            "awaiting_alignment_approval": "Alignment Review",
-            "awaiting_system_architecture_approval": "System Architecture Review",
-            "awaiting_program_design_approval": "Program Design Review",
-        }.get(status, "Planning Review")
+    presentation = planning.get("presentation") or planning_presentation(planning)
+    decision = presentation.get("decision") or {}
+    queue_kind = decision.get("queue_kind")
+    if queue_kind in {"approval", "question"}:
         return ({
             "ticket": None,
             "plan_id": planning.get("plan_id", ""),
-            "status": label,
+            "status": decision.get("queue_status", "Planning Review"),
             "waiting_since": planning.get("updated_at", ""),
             "history": [],
-        }, False)
-    blocked = next(
-        (
-            stage for stage in planning.get("stages", [])
-            if stage.get("status") == "blocked" and stage.get("questions")
-        ),
-        None,
-    )
-    if blocked:
-        return ({
-            "ticket": None,
-            "plan_id": planning.get("plan_id", ""),
-            "status": f"{blocked.get('title', 'Planning')} questions",
-            "waiting_since": planning.get("updated_at", ""),
-            "history": [],
-        }, True)
+        }, queue_kind == "question")
     return None, False
 
 

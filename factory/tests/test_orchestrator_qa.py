@@ -123,7 +123,7 @@ class QaPolicyTests(unittest.TestCase):
     def test_requires_at_least_one_acceptance_test(self):
         self.assertEqual(
             validate_qa_changes([], 42, TEST_ROOTS),
-            ["QA agent did not create an acceptance-test file"],
+            ["QA adapter did not create an acceptance-test file"],
         )
 
     def test_rejects_edits_to_existing_tests_and_production_files(self):

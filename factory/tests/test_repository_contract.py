@@ -28,6 +28,15 @@ RETIRED_LANGUAGE = {
     "two delivery" + " systems",
     "compare both" + " results",
 }
+AMBIGUOUS_ROLE_LABELS = {
+    "agent" + " supervisor",
+    "qa" + " agent",
+    "implementation" + " agent",
+    "code review" + " agent",
+    "monitor" + " agent",
+    "planning" + " agent",
+    "supervisor" + " agent",
+}
 
 
 class RepositoryContractTests(unittest.TestCase):
@@ -110,6 +119,33 @@ class RepositoryContractTests(unittest.TestCase):
 
         self.assertNotIn("reviewing QA tests", guide)
         self.assertNotIn("QA test revision", orchestrator)
+
+    def test_operator_surfaces_distinguish_roles_from_adapters(self):
+        tracked = subprocess.run(
+            ["git", "ls-files"],
+            cwd=REPO,
+            text=True,
+            capture_output=True,
+            check=True,
+        ).stdout.splitlines()
+        checked_suffixes = {".html", ".js", ".json", ".md", ".py", ".tsx"}
+        offenders = []
+
+        for relative in tracked:
+            path = REPO / relative
+            if (
+                path.suffix not in checked_suffixes
+                or "/tests/" in f"/{relative}"
+                or not path.is_file()
+            ):
+                continue
+            for line_number, line in enumerate(path.read_text(errors="ignore").splitlines(), 1):
+                folded = line.casefold()
+                for phrase in AMBIGUOUS_ROLE_LABELS:
+                    if phrase in folded:
+                        offenders.append(f"{relative}:{line_number}: {phrase}")
+
+        self.assertEqual(offenders, [])
 
 
 if __name__ == "__main__":

@@ -43,7 +43,7 @@ Complete every section, then review the Canvas with a peer before exporting the 
 ## Agent Roles
 
 [Name each Agent Role, its ownership, and the Agent Adapter that will fill it.
-If the profile uses an Agent Supervisor, define which Handoff Receipts it reads,
+If the profile uses a Supervisor role, define which Handoff Receipts it reads,
 which commands it may propose, and which authority remains with the orchestrator
 and humans.]
 

@@ -267,7 +267,7 @@ The rebrand is complete when a human reviewer can perform all of the following:
 9. Search rendered application files and public source symbols and find no unsupported cinema-domain terms listed in the terminology requirement.
 10. Run the Python and JavaScript test suites with no failures.
 
-## Delivery guidance for the planning agent
+## Delivery guidance for the planning adapter
 
 - Produce small, independently reviewable tickets with objective acceptance criteria.
 - Separate work that can safely proceed in parallel, such as recipe data/API migration, brand styling, client interactions, TV browse behavior, TV detail behavior, and automated verification.

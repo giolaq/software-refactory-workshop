@@ -5,17 +5,17 @@ Status: Superseded by ADR 0005
 ## Context
 
 Implementation, QA, verification, and supervision have different authority.
-Using the implementation agent to review its own output weakens independence;
-using the Agent Supervisor as a reviewer mixes coordination with technical
+Using the Implementation adapter to review its own output weakens independence;
+using the Supervisor role as a reviewer mixes coordination with technical
 judgment. Neither should silently approve a pull request.
 
 ## Decision
 
-Standard and Assured profiles run a distinct, read-only Code Review Agent after
-required verification and before pull-request publication. It inspects the
-exact candidate base-to-head diff and returns a validated JSON PASS or BLOCK
-verdict. Findings are limited to changed paths and include severity, optional
-line, and message.
+Standard and Assured profiles include a distinct, read-only Code Review role
+after required verification and before pull-request publication. The configured
+review adapter inspects the exact candidate base-to-head diff and returns a
+validated JSON PASS or BLOCK verdict. Findings are limited to changed paths and
+include severity, optional line, and message.
 
 A BLOCK becomes retry context for implementation and consumes the existing
 bounded retry budget. A PASS is stored under `.factory/reviews/`; in a Live Run

@@ -84,7 +84,7 @@ Triage
   -> Monitor
 ```
 
-The Agent Supervisor coordinates dependency-ready workers, reads Handoff
+The Supervisor role coordinates dependency-ready workers, reads Handoff
 Receipts, pauses unsafe dispatch, and recommends the next action. It does not
 own product intent, edit code, waive gates, change the Factory Charter, or
 replace the normal human shipping decision.
@@ -95,12 +95,12 @@ replace the normal human shipping decision.
 | --- | --- | --- |
 | Human operator | Factory Charter, material approvals, exceptions, normal merge | Silently waive required evidence |
 | Orchestrator | State transitions, validation, retries, exact-revision enforcement | Invent agent results or policy exceptions |
-| Agent Supervisor | Dispatch proposals, synchronization, evidence-backed blocks, merge recommendation | Edit code, change scope, waive gates, merge by itself |
+| Supervisor role | Dispatch proposals, synchronization, evidence-backed blocks, merge recommendation | Edit code, change scope, waive gates, merge by itself |
 | Planning experts | Product, architecture, design, and slice proposals | Approve their own proposals or edit the Charter |
-| QA Agent | New Ticket Acceptance Tests and focused test command | Implement product behavior or weaken existing tests |
-| Implementation Agent | Ticket-scoped source changes | Modify accepted QA evidence or protected policy |
-| Code Review Agent | Exact-revision technical verdict and actionable comments | Modify the worktree, merge, or approve a different head |
-| Monitor Agent | Health findings and proposed follow-up Tickets | Repair findings in the same monitoring run |
+| QA role | New Ticket Acceptance Tests and focused test command | Implement product behavior or weaken existing tests |
+| Implementation role | Ticket-scoped source changes | Modify accepted QA evidence or protected policy |
+| Code Review role | Exact-revision technical verdict and actionable comments | Modify the worktree, merge, or approve a different head |
+| Monitor role | Health findings and proposed follow-up Tickets | Repair findings in the same monitoring run |
 
 ### Factory Profiles after this roadmap
 
@@ -243,7 +243,7 @@ Deliverables:
 
 Acceptance criteria:
 
-- A trivial bounded issue can proceed without four unnecessary planning agents.
+- A trivial bounded issue can proceed without invoking all four planning roles.
 - A load-bearing path cannot select a weaker gate level than its Charter rule.
 - Required skipped or unavailable checks fail closed with a repair instruction.
 - The UI distinguishes deterministic gate failures from agent review findings.
@@ -429,7 +429,7 @@ Acceptance criteria:
 | F-09 | Add atomic remote Ticket claim and audited release | F-03 |
 | F-10 | Add risk triage and fast/full/deep gate selection | F-02 |
 | F-11 | Publish sanitized remote run summaries and reconcile state | F-09 |
-| F-12 | Add metrics and idempotent Monitor Agent | F-10, F-11 |
+| F-12 | Add metrics and idempotent Monitor role | F-10, F-11 |
 | F-13 | Add adapter capability and environment allowlist contracts | F-02 |
 | F-14 | Consolidate Control Center action/state presentation | F-04, F-08, F-11 |
 | W-01 | Rewrite workshop narrative as a capability ladder | F-01, F-05, F-08 |

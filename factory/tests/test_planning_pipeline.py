@@ -24,6 +24,7 @@ from planning_pipeline import (
     review,
     sha_text,
     stage_prompt,
+    validate_product,
     validate_vertical_slices,
     validate_project_paths,
 )
@@ -71,6 +72,15 @@ class PlanningPipelineTests(unittest.TestCase):
         self.assertEqual(manifest["stages"]["product_review"]["status"], "complete")
         self.assertEqual(manifest["stages"]["system_architecture"]["status"], "pending")
         self.assertIsNone(manifest["approvals"]["product"])
+
+    def test_incomplete_prd_can_return_questions_without_inventing_a_journey(self):
+        product = json.loads((FIXTURES / "01-product-review.json").read_text())
+        product["journeys"] = []
+        product["blocking_questions"] = [
+            "What user outcome should this product deliver?",
+        ]
+
+        validate_product(product)
 
     def test_project_contract_change_invalidates_planning_before_approval(self):
         ProjectContract.detect(self.repo).write()

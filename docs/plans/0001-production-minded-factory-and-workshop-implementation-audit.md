@@ -226,7 +226,7 @@ Proof:
 - Visible copy remains below the 3,200-word budget, and the documented timeline
   remains 100 minutes.
 
-### Milestone 7 — Release and adoption hardening: LOCAL PASS, LIVE PACKET TARGET REQUIRED
+### Milestone 7 — Release and adoption hardening: IMPLEMENTATION AND LIVE SMOKE PASS; PROMOTION PENDING
 
 - `factory/COMPATIBILITY.md` documents migration and reset behavior.
 - `factory/workshop_update.py` provides a versioned preview/apply path, records
@@ -316,6 +316,14 @@ Proof:
   serialized without reducing worker concurrency (`b11a3cb`); CI asserts the
   human merge gates rather than retired automatic completion (`9451092`); and
   Monitor evaluates the latest default-branch result per workflow (`736a5cc`).
+- Post-review hardening centralizes every planning lifecycle presentation in
+  one normalized backend contract, routes a paused planning decision to its
+  exact gate without duplicate cards, labels Ticket activity accurately, and
+  distinguishes stable roles from executable adapters across operator-facing
+  materials. An incomplete PRD may now yield Product Review questions without
+  inventing a user journey; the Codex retry for plan `fd840b4f0d9c` retained
+  eight questions as a human decision state with no false adapter-failure
+  recovery.
 - GitHub Actions on the former disposable repository: PASS was recorded for
   run 32679270165 and the 218-test
   suite, TV first wave, and recipe first wave. Publishing the existing
@@ -345,8 +353,8 @@ Proof:
 Run from the repository root on 2026-08-24:
 
 ```text
-.factory/venv/bin/python -m unittest discover -s factory/tests
-241 tests · PASS · 38.5s
+.factory/venv/bin/python -m unittest discover -s factory/tests -p 'test_*.py'
+245 tests · PASS · 33.3s
 
 npm --prefix workshop-guide test
 8 tests · PASS
@@ -372,7 +380,7 @@ factory workshop-v1.1.0
 
 The first full-suite attempt used the host Python 3.14 interpreter and failed
 eight integration tests because that interpreter lacked `pytest`. The supported
-`.factory/venv` invocation above passes all 241 tests. Commit `cff4397` also
+`.factory/venv` invocation above passes all 245 tests. Commit `cff4397` also
 made CI install `demo-app/requirements.txt` and changed the release runbooks to
 use the prepared virtual environment, so this dependency error is now explicit
 and reproducible.

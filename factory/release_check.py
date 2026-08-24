@@ -274,7 +274,7 @@ def validate_standard_rehearsal(manifest: dict, state: dict) -> list[str]:
                 f"ticket #{number} is missing Standard role receipts: {', '.join(missing_roles)}"
             )
         if ticket.get("code_review", {}).get("result", {}).get("decision") != "APPROVE":
-            failures.append(f"ticket #{number} has no Code Review Agent approval")
+            failures.append(f"ticket #{number} has no Code Review role approval")
         evidence = ticket.get("qa_evidence", {})
         if evidence.get("red", {}).get("result") != "RED PROVED":
             failures.append(f"ticket #{number} has no RED PROVED evidence")
@@ -512,7 +512,7 @@ def run_live_github_smoke(repo: Path, confirmed: bool, agent: str = "claude") ->
     prd.write_text(f"""# Factory live smoke
 
 ## Problem
-The release needs objective proof that the external Claude delivery path works.
+The release needs objective proof that the external {agent.title()} Agent Adapter delivery path works.
 
 ## Desired behavior
 Add one reversible `GET {endpoint}` endpoint to the demo application.
@@ -639,7 +639,7 @@ The implementation passes every configured gate and is merged through a pull req
     } <= receipt_roles:
         raise RuntimeError("live smoke is missing required Handoff Receipts")
     if ticket.get("code_review", {}).get("result", {}).get("decision") != "APPROVE":
-        raise RuntimeError("live smoke is missing Code Review Agent approval")
+        raise RuntimeError("live smoke is missing Code Review role approval")
     review_receipts = [
         receipt
         for receipt in (

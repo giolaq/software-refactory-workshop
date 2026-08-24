@@ -102,7 +102,7 @@ Explain the boundary plainly: a Live Run accepts any PRD and repository;
 Rehearsal is a deterministic TableStory teaching pack. Do not switch the core
 exercise to an unfamiliar repository during the 100-minute session.
 
-If the group uses another implementation or QA agent, register it under
+If the group uses another implementation or QA adapter, register it under
 `[agents]` in `factory/factory.toml`, then save the attendee defaults with
 `factory configure`. Keep Claude or Codex as the structured planning adapter.
 The exact contract and wrapper requirements are in `factory/CONFIGURATION.md`.
@@ -236,7 +236,7 @@ Don't click through every field. Use one ticket to show this sequence:
 
 1. **Specification:** the authorized outcome and acceptance criteria.
 2. **QA prompt and test diff:** independent evidence written before implementation.
-3. **Protected test hashes:** the implementation agent can't weaken the evidence.
+3. **Protected test hashes:** the Implementation adapter can't weaken the evidence.
 4. **Implementation prompt and log:** the current scope and activity.
 5. **Changed files:** the code-review surface.
 6. **Gate output:** the reason for pass, retry, or block.
@@ -246,7 +246,7 @@ Don't click through every field. Use one ticket to show this sequence:
    `REQUEST_CHANGES` decision, changed-path comments, and GitHub publication
    mode. On Ticket #1, show the first comment and the repaired second revision.
 9. **Merge evidence:** the Supervisor's `MERGE` recommendation must name the
-   same PR and commit that the Code Review Agent approved. In the Standard
+   same PR and commit that the Code Review role approved. In the Standard
    path, show the human exact-revision merge decision that follows it.
 10. **Handoff Receipts:** the revisions, claim, verification, risks, and policy
    hashes behind each role transition.
@@ -257,11 +257,11 @@ Control Center for local prompts, logs, worktree changes, protected tests,
 gate results, and receipts. Do not describe the Control Center as a hosted
 Project board.
 
-Use the Supervisor screen to make authority explicit. Ticket agents report
-results through Handoff Receipts. The Agent Supervisor recommends the next
+Use the Supervisor screen to make authority explicit. Ticket worker roles report
+results through Handoff Receipts. The Supervisor role recommends the next
 bounded wave. The orchestrator validates and applies allowed commands. Humans
 still approve Product Review, alignment, and Acceptance Tests when configured.
-The Code Review Agent approves an exact candidate or requests changes but cannot
+The Code Review role approves an exact candidate or requests changes but cannot
 edit or merge. After approval, the Supervisor may recommend merge. The
 orchestrator rechecks the PR revision, then Lean, Standard, and Assured wait for
 a human decision. Only an explicitly opted-in Autonomous Demo executes the
@@ -279,7 +279,7 @@ approval needs a distinct reviewer identity supplied through the uncommitted
 | --- | --- |
 | GitHub, Wi-Fi, or a model is slow | Switch to the deterministic recipe scenario. |
 | Product Review is blocked | Resolve the blocking question; don't continue to architecture. |
-| A planning retry repeats the same error | Read the failed expert's recovery card. For validation, use the prefilled **Apply correction and continue** instruction. For a session or rate limit, select **Fix with Codex** (or another configured adapter). After the same process failure occurs twice, the Control Center disables same-agent retry and preserves completed upstream artifacts. If governance changed, use **Restart planning safely**. |
+| A planning retry repeats the same error | Read the failed expert's recovery card. For validation, use the prefilled **Apply correction and continue** instruction. For a session or rate limit, select **Fix with Codex** (or another configured adapter). After the same process failure occurs twice, the Control Center disables same-adapter retry and preserves completed upstream artifacts. If governance changed, use **Restart planning safely**. |
 | QA Review takes too long | Review one test set, then finish without `--review-qa-tests`. |
 | A ticket is blocked | Inspect the final log and gate output before using `factory retry`. |
 | A port is occupied | Stop the old process or use a fresh checkout. |

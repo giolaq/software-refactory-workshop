@@ -28,9 +28,10 @@ test("server-renders the concise self-guided workshop", async () => {
   assert.match(html, /Ambiguity, collisions, weak proof/);
   assert.match(html, /More agents are a cost/);
   assert.match(html, /Plan[\s\S]*Build[\s\S]*Verify[\s\S]*Review/);
-  assert.match(html, /Agent Supervisor recommends coordination/);
-  assert.match(html, /Code Review Agent closes the feedback loop/);
-  assert.match(html, /Code Review Agent can approve or request changes/);
+  assert.match(html, /Supervisor role recommends coordination/);
+  assert.match(html, /Code Review role closes the feedback loop/);
+  assert.match(html, /separate read-only Code Review role is fulfilled by the configured adapter/);
+  assert.match(html, /Code Review role can approve or request changes/);
   assert.match(html, /review feedback.*repair.*approval.*Supervisor recommendation.*human merge/);
   assert.match(html, /GitHub approval needs a separate identity/);
   assert.match(html, /worker Handoff Receipts/i);
@@ -98,7 +99,7 @@ test("server-renders the concise self-guided workshop", async () => {
   assert.match(html, /Not the normal shipping path/);
   assert.match(html, /factory monitor/);
   assert.match(html, /Monitor reports health separately and never repairs code/);
-  assert.match(html, /planning agents produce the tickets from the PRD/i);
+  assert.match(html, /planning roles produce the tickets from the PRD/i);
   assert.match(html, /Configure your own agent/);
   assert.match(html, /my-agent =/);
   assert.match(html, /Use your own agents/);

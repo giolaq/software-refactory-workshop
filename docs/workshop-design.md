@@ -82,7 +82,7 @@ single exercise proves better code, faster delivery, or lower cost.
   background factory.
 - QA owns Acceptance Tests before implementation. Implementation adapters cannot
   modify protected Acceptance Tests.
-- Standard and Assured runs add a separate read-only Code Review Agent after
+- Standard and Assured runs include a separate read-only Code Review role after
   required gates. It can request changes with changed-path comments or approve
   the exact candidate. Comments return to implementation; after a clean recheck,
   the Supervisor may recommend that revision and a human decides whether to
@@ -119,7 +119,7 @@ Every phase emits a structured handoff receipt containing the role, ticket,
 input and output revisions, claimed result, verification performed, unresolved
 risks, and artifact paths. The central orchestrator owns lifecycle state and
 handoffs; agents do not coordinate through peer-to-peer queues. In Standard and
-Assured profiles, an Agent Supervisor reads those receipts at the scheduler
+Assured profiles, a Supervisor role reads those receipts at the scheduler
 seam and proposes the next bounded dispatch wave. The orchestrator validates
 and applies allowed commands; the Supervisor cannot change scope, dependencies,
 gates, approvals, or lifecycle state.
