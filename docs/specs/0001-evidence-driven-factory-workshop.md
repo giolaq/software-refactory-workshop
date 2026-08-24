@@ -258,8 +258,8 @@ adapter. Live planning accepts any PRD and records that contract with the plan.
   Evidence Packet without GitHub or model credentials.
 - A disposable live GitHub smoke test validates repository preflight, Project
   creation, ticket publication, QA approval, one implementation Ticket, PR
-  creation, Handoff Receipts, and Evidence Packet links using the Claude golden
-  path.
+  creation, Handoff Receipts, and Evidence Packet links using a selected,
+  authenticated Claude or Codex Agent Adapter.
 - Before public/template release, run the full Python and website suites, the
   clean rehearsal, secret and generated-state audit, link check, and deployed
   website verification against the frozen release identity.

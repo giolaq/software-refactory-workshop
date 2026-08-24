@@ -8,16 +8,15 @@
 
 ## Verdict
 
-The roadmap's local implementation and credential-free Standard Rehearsal are
-complete and verified. The owner-authorized `giolaq/testcodexws` smoke proved
-the current planning, GitHub Project publication, remote claim, and independent
-QA RED path. Its implementation stage then stopped fail-closed when Claude
-reported a session limit that resets at 18:30 Europe/London; no PR, merge, or
-current Evidence Packet is claimed. The Live release command creates a unique
-endpoint per invocation and exports the packet before reset, so the disposable
-repository can be reused after capacity resets without invalidating causal RED
-proof. The public
-Vercel site also still serves an older build, and the private repository has
+The roadmap's local implementation, credential-free Standard Rehearsal, and
+owner-authorized disposable Live GitHub smoke are complete and verified. The
+current `giolaq/testcodexws` run used Codex for planning, QA, implementation,
+and supervision; proved causal RED/GREEN evidence; preserved review rework on
+one pull-request branch; merged through the human exact-revision gate; exported
+and validated its Evidence Packet; reconstructed the merged run after local
+reset; and ended with a healthy Monitor. The Live release command accepts
+Claude or Codex explicitly and creates a unique endpoint per invocation. The
+public Vercel site still serves an older build, and the private repository has
 not yet been tagged or enabled as a public template. These are release gates,
 not silently accepted omissions.
 
@@ -25,7 +24,7 @@ not silently accepted omissions.
 | --- | --- | --- |
 | Milestones 0–6 | PASS | Source contracts, operator surfaces, focused tests, full Python suite, website suite, and Standard Rehearsal |
 | Milestone 7 local behavior | PASS | Compatibility/update tests, release audit, clean-clone Standard Rehearsal, link/secret/version checks |
-| Disposable Live GitHub path | CURRENT PLANNING/PUBLICATION/QA PASS; DELIVERY BLOCKED BY CLAUDE CAPACITY | `giolaq/testcodexws` Project #11 and Issue #11 preserve plan `99737bf1307e`, remote claim `ee518e687022`, and a QA-authored behavior-assertion RED. Claude's implementation session limit stopped the run before PR/review/merge/packet proof. Historical end-to-end recovery evidence remains available only as recorded below. |
+| Disposable Live GitHub path | PASS | `giolaq/testcodexws` Project #12, Issue #12, and PR #13 preserve plan `bc7992ff1923`, Codex QA/implementation/supervision, `REQUEST_CHANGES` then `APPROVE`, human merge `b60dc7d`, packet `1690e19f…95ff23`, fresh-state recovery, and a healthy Monitor. |
 | Deployed website identity | FAIL — old deployment | `https://software-refactory-workshop.vercel.app/` does not currently render `workshop-v1.1.0` or the new evidence/Monitor language |
 | Tag and public-template settings | PENDING | Repository is private, `main` is the default branch, and `isTemplate` is false |
 
@@ -240,7 +239,7 @@ Proof:
   Rehearsal covers planning revision, approvals, five Tickets, QA red/green,
   review rework, human merge, Monitor, Canvas, and Evidence Packet.
 - The Live smoke implementation covers Charter approval/preflight, Project and
-  Issue publication, remote claim, Claude QA/implementation/supervision,
+  Issue publication, remote claim, selected-adapter QA/implementation/supervision,
   deterministic review request/repair/approval, exact-revision human merge,
   remote summary, Monitor, Evidence Packet, local reset, and fresh recovery.
 - Every Live smoke invocation uses a unique endpoint and Project. This keeps
@@ -276,7 +275,7 @@ Proof:
   produced GREEN, Mock Review recorded `REQUEST_CHANGES` then `APPROVE` on two
   distinct heads, the Supervisor recommended `MERGE`, and the human merge gate
   merged candidate `567c9b1` as `e66d889`.
-- Current disposable Live partial smoke: PASS through planning, Project #11,
+- Failed-capacity audit trail: PASS through planning, Project #11,
   Issue #11, remote claim `ee518e687022`, and independent QA RED in
   `giolaq/testcodexws`. Product Review completed without questions; the
   architecture and exact-one-slice validators each rejected one invalid
@@ -285,6 +284,23 @@ Proof:
   Python tests, two JavaScript tests, and `git diff --check` pass. The factory
   correctly blocked before PR publication when all bounded Claude
   implementation attempts reported the account session limit.
+- Current disposable Live smoke: PASS against `giolaq/testcodexws` Project #12,
+  Issue #12, and PR #13. Plan `bc7992ff1923` used Codex for all four external
+  roles. QA proved RED at `2a14213`; implementation proved GREEN; Mock Review
+  recorded `REQUEST_CHANGES` at `b0afa46` and `APPROVE` at distinct head
+  `44a3213`; the Supervisor recommended `MERGE`; and the human merge gate
+  merged the approved head as `b60dc7d`.
+- Current Evidence Packet: PASS at
+  `.factory/evidence/bc7992ff1923/evidence-packet.md`, sha256
+  `1690e19f73883e3c9a789b5864c4066bad79f06376ec71b1498d48b12295ff23`.
+  The manifest reports no missing evidence, and the sanitized remote run
+  summary publishes the same packet identity and gate results.
+- Current fresh-state recovery: PASS. Run `e3b047b67b6a` reconstructed closed
+  Issue #12, merged PR #13, the approved revision, the original remote claim,
+  and a recovered remote summary after local state reset. The completed claim
+  was then explicitly released; the read-only Monitor reports `healthy` with
+  no findings. GitHub recorded same-account review decisions as labelled
+  Factory comments, an explicit limitation rather than a formal approval claim.
 - Fresh-state recovery: PASS. After local reset, a new run reconstructed Issue
   #11 as `Done`, restored PR #12 and claim `ea8522b`, and marked the sanitized
   remote summary as recovered.
@@ -330,7 +346,7 @@ Run from the repository root on 2026-08-24:
 
 ```text
 .factory/venv/bin/python -m unittest discover -s factory/tests
-239 tests · PASS · 40.2s
+241 tests · PASS · 38.5s
 
 npm --prefix workshop-guide test
 8 tests · PASS
@@ -347,41 +363,29 @@ Local release audit: PASS (workshop-v1.1.0)
 ./factory/factory release-check --rehearsal
 Standard Rehearsal PASS (410326debec4, 5 tickets, Evidence Packet, Monitor healthy)
 
+./factory/factory release-check --live-smoke --live-agent codex --confirm-disposable-repo
+Codex delivery + deterministic review-rework GitHub smoke PASS (Project #12, Issue #12, PR #13, Evidence Packet, remote recovery PASS)
+
 ./factory/factory --version
 factory workshop-v1.1.0
 ```
 
 The first full-suite attempt used the host Python 3.14 interpreter and failed
 eight integration tests because that interpreter lacked `pytest`. The supported
-`.factory/venv` invocation above passes all 239 tests. Commit `cff4397` also
+`.factory/venv` invocation above passes all 241 tests. Commit `cff4397` also
 made CI install `demo-app/requirements.txt` and changed the release runbooks to
 use the prepared virtual environment, so this dependency error is now explicit
 and reproducible.
 
 ## Remaining release gates
 
-1. After Claude capacity resets, rerun the bounded smoke from the authorized
-   `giolaq/testcodexws` disposable checkout:
-
-   ```sh
-   ./factory/factory release-check --live-smoke \
-     --confirm-disposable-repo
-   ```
-
-   The command generates a unique endpoint, so the same disposable repository
-   may be reused for later release checks without making the focused test pass
-   before implementation.
-2. Confirm the command exports and validates the Evidence Packet before local
-   reset, then inspect the Project, Issue, PR review/rework, human merge, remote
-   claim/run summary, Monitor output, reset, and fresh recovery.
-3. Merge the release candidate to `main` only after the repeated Live smoke
-   exports its packet and CI is green.
-4. Deploy the new website and verify the rendered footer contains
+1. Merge the release candidate to `main` after confirming PR #36 remains green.
+2. Deploy the new website and verify the rendered footer contains
    `workshop-v1.1.0` plus the RED/GREEN, `NEEDS YOU`, Autonomous Demo, and
    Monitor sections.
-5. Create and verify tag `workshop-v1.1.0`; make the repository public and
+3. Create and verify tag `workshop-v1.1.0`; make the repository public and
    enable template mode on the owner-approved schedule.
 
 The roadmap must remain **implementation in progress** until these external
-gates are complete. Do not tag or publish the new workshop before the Live
-smoke passes.
+gates are complete. The Live smoke gate is now satisfied; promotion, deployment,
+tagging, and owner-scheduled public/template settings remain pending.

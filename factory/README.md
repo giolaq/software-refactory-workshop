@@ -570,16 +570,20 @@ credentials, obsolete participant-facing language, and a clean worktree. The
 `--rehearsal` check clones committed HEAD and executes the complete Standard
 planning, approval, execution-role, and retry path. Maintainers can additionally
 validate GitHub Issue, Project, PR, merge, and dashboard synchronization from a
-disposable repository. This opt-in check runs Claude planning and delivery with
-a deterministic review adapter, creates a fresh Project and run-specific smoke
+disposable repository. This opt-in check runs the selected authenticated Agent
+Adapter for planning and delivery with a deterministic review adapter, creates
+a fresh Project and run-specific smoke
 endpoint, approves independent
 Acceptance Tests, returns one review comment to the same implementation branch,
 merges the repaired Ticket, and verifies its Evidence Packet links:
 
 ```sh
 ./factory/factory release-check --live-smoke \
+  --live-agent codex \
   --confirm-disposable-repo
 ```
+
+`--live-agent` accepts `claude` or `codex` and defaults to `claude`.
 
 The unique endpoint preserves causal RED proof when the same explicitly
 disposable repository is reused. Every invocation still creates and merges a

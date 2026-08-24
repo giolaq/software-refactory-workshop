@@ -335,16 +335,20 @@ npm --prefix workshop-guide run lint
 The website suite includes structural accessibility checks; the release audit
 checks participant links and possible secrets. The rehearsal release check
 executes the complete Standard journey in a clean clone. Verify the deployed
-website separately. In a dedicated disposable GitHub repository with Claude
-authenticated, also run the golden-path smoke below. It creates a fresh
-Project, uses Claude for planning, QA, implementation, and supervision,
+website separately. In a dedicated disposable GitHub repository with Claude or
+Codex authenticated, also run the golden-path smoke below. It creates a fresh
+Project, uses the selected adapter for planning, QA, implementation, and supervision,
 deterministically sends one Code Review comment back to the same PR, and merges
 the repaired Ticket:
 
 ```sh
 ./factory/factory release-check --live-smoke \
+  --live-agent codex \
   --confirm-disposable-repo
 ```
+
+Use `--live-agent claude` for the Claude path. If omitted, Claude remains the
+default for compatibility with the original release rehearsal.
 
 The command creates a unique smoke endpoint and Project on every invocation so
 an explicitly disposable repository can be retested without invalidating RED
