@@ -424,7 +424,7 @@ Rehearsal Run from the tagged baseline.
 ## Instructor-led Live Run
 
 Keep the factory source checkout as the control plane, prepare the guided
-TableStory workpiece there, and publish it to a private attendee repository:
+TableStory workpiece there, and create an empty private attendee repository:
 
 ```sh
 gh auth login
@@ -432,24 +432,29 @@ gh auth refresh -s project
 git clone https://github.com/giolaq/software-refactory-workshop.git software-refactory-control
 cd software-refactory-control
 ./setup_demo.sh --scenario recipe-rebrand
-gh repo create YOUR-REPOSITORY --private --source=. --remote=workshop
-git push workshop main factory-baseline
+gh repo create YOUR-REPOSITORY --private
 ./factory/factory control-center
 ```
 
 In **Connect**, choose **Live**, paste
 `https://github.com/YOUR-NAME/YOUR-REPOSITORY`, select the role adapters, and
-save. The Control Center verifies access and clones the attendee repository
-under its isolated `.factory/repositories/` workspace without changing the
-factory source checkout's `origin`.
+check **Populate an empty repository with the workshop code** before saving.
+The Control Center verifies that the remote has no branches or tags, publishes
+the committed workshop history and `factory-baseline`, and opens an isolated
+checkout under `.factory/repositories/` without changing the factory source
+checkout's `origin`. It refuses to bootstrap a repository that already contains
+code.
 
-For a CLI-only run, clone the attendee repository separately, configure the
-selected agents, and start with a PRD. This example uses Claude; select a
-built-in or custom setup from `CONFIGURATION.md` if your team uses another CLI
-or model:
+For a CLI-only run, clone and bootstrap the empty attendee repository
+explicitly, then configure the selected agents and start with a PRD. This
+example uses Claude; select a built-in or custom setup from `CONFIGURATION.md`
+if your team uses another CLI or model:
 
 ```sh
 gh repo clone YOUR-NAME/YOUR-REPOSITORY ../software-refactory-live
+./factory/factory bootstrap-workshop \
+  --repo ../software-refactory-live \
+  --source "$PWD"
 cd ../software-refactory-live
 ./factory/factory configure \
   --github-repository "$(gh repo view --json url --jq .url)" \
@@ -609,6 +614,7 @@ factory configure [--preset claude-workshop|codex-workshop]
                   [--review-qa-tests|--no-review-qa-tests]
                   [--max-parallel N] [--project-number N]
 factory control-center [--port N] [--no-open]
+factory bootstrap-workshop --repo PATH --source WORKSHOP_CHECKOUT
 factory init [--repo PATH] [--name NAME] [--force]
 factory prepare [--repo PATH] [--yes]
 factory seed [recipe-rebrand|tv] [--github-repo OWNER/REPOSITORY] [--agent NAME]

@@ -148,6 +148,133 @@ def checkout_github_repository(
     }
 
 
+def bootstrap_empty_workshop_repository(
+    repo: Path,
+    source: Path,
+    *,
+    runner=None,
+) -> dict:
+    """Populate an empty remote and managed checkout from a workshop checkout."""
+    repo = repo.resolve()
+    source = source.resolve()
+    if repo == source:
+        raise GitHubRepositoryError("Workshop source and attendee repository must be separate.")
+    if not (repo / ".git").exists():
+        raise GitHubRepositoryError(f"Attendee checkout is not a Git repository: {repo}")
+    if not (source / ".git").exists():
+        raise GitHubRepositoryError(f"Workshop source is not a Git repository: {source}")
+    required = (
+        "factory/factory",
+        "factory.project.toml",
+        "factory.charter.toml",
+        "demo-app/app.py",
+    )
+    missing = [
+        path for path in required
+        if _run(["git", "cat-file", "-e", f"HEAD:{path}"], source, runner=runner).returncode
+    ]
+    if missing:
+        raise GitHubRepositoryError(
+            "Workshop source is missing required committed files: " + ", ".join(missing)
+        )
+    source_head = _run(
+        ["git", "rev-parse", "--verify", "HEAD"], source, runner=runner,
+    )
+    if source_head.returncode or not source_head.stdout.strip():
+        raise GitHubRepositoryError("Workshop source has no commit to publish.")
+    baseline = _run(
+        ["git", "rev-parse", "--verify", "refs/tags/factory-baseline^{commit}"],
+        source,
+        runner=runner,
+    )
+    if baseline.returncode or not baseline.stdout.strip():
+        raise GitHubRepositoryError(
+            "Workshop source is missing factory-baseline. Run ./setup_demo.sh first."
+        )
+
+    local_head = _run(["git", "rev-parse", "--verify", "HEAD"], repo, runner=runner)
+    if local_head.returncode == 0:
+        raise GitHubRepositoryError(
+            "The attendee repository already has a commit. Empty-repository bootstrap was not applied."
+        )
+    status = _run(
+        ["git", "status", "--porcelain=v1", "-z", "--untracked-files=all"],
+        repo,
+        runner=runner,
+    )
+    if status.returncode:
+        raise GitHubRepositoryError(status.stderr.strip() or "Could not inspect attendee checkout.")
+    paths = {
+        entry[3:].split(" -> ")[-1]
+        for entry in status.stdout.split("\0")
+        if len(entry) >= 4
+    }
+    unexpected = sorted(
+        path for path in paths
+        if path != ".factory" and not path.startswith(".factory/")
+    )
+    if unexpected:
+        raise GitHubRepositoryError(
+            "Empty-repository bootstrap found unexpected local files: " + ", ".join(unexpected)
+        )
+
+    remote = _run(["git", "remote", "get-url", "origin"], repo, runner=runner)
+    if remote.returncode or not remote.stdout.strip():
+        raise GitHubRepositoryError("Attendee checkout has no origin remote.")
+    remote_refs = _run(["git", "ls-remote", "--refs", "origin"], repo, runner=runner)
+    if remote_refs.returncode:
+        raise GitHubRepositoryError(
+            remote_refs.stderr.strip() or "Could not inspect the attendee repository."
+        )
+    if remote_refs.stdout.strip():
+        raise GitHubRepositoryError(
+            "The GitHub repository is not empty. Workshop bootstrap was not applied."
+        )
+
+    pushed = _run(
+        [
+            "git", "push", remote.stdout.strip(),
+            "HEAD:refs/heads/main",
+            "refs/tags/factory-baseline:refs/tags/factory-baseline",
+        ],
+        source,
+        runner=runner,
+    )
+    if pushed.returncode:
+        raise GitHubRepositoryError(
+            pushed.stderr.strip() or pushed.stdout.strip() or "Could not publish workshop code."
+        )
+    fetched = _run(
+        [
+            "git", "fetch", "origin",
+            "refs/heads/main:refs/remotes/origin/main",
+            "refs/tags/factory-baseline:refs/tags/factory-baseline",
+        ],
+        repo,
+        runner=runner,
+    )
+    if fetched.returncode:
+        raise GitHubRepositoryError(
+            fetched.stderr.strip() or fetched.stdout.strip() or "Could not fetch workshop code."
+        )
+    checked_out = _run(
+        ["git", "checkout", "-B", "main", "--track", "origin/main"],
+        repo,
+        runner=runner,
+    )
+    if checked_out.returncode:
+        raise GitHubRepositoryError(
+            checked_out.stderr.strip() or checked_out.stdout.strip()
+            or "Could not activate the workshop branch."
+        )
+    return {
+        "path": str(repo),
+        "branch": "main",
+        "commit": source_head.stdout.strip(),
+        "baseline": baseline.stdout.strip(),
+    }
+
+
 def connect_github_repository(repo: Path, raw: str, *, runner=None) -> dict:
     """Verify that a local checkout belongs to the explicitly selected repository.
 

@@ -150,6 +150,42 @@ class ControlCenterTests(unittest.TestCase):
             self.assertIn("https://github.com/attendee/workshop", commands[1])
             self.assertIn("--repo", commands[1])
 
+            _, commands = center.build_commands("configure", {
+                "mode": "live",
+                "preset": "claude-workshop",
+                "github_repository": "https://github.com/attendee/workshop",
+                "bootstrap_workshop": True,
+            })
+
+            self.assertEqual([command[1] for command in commands], [
+                "checkout", "bootstrap-workshop", "configure",
+            ])
+            self.assertIn(str(center.repo), commands[1])
+            self.assertIn("--source", commands[1])
+
+    def test_connected_empty_repository_can_request_workshop_bootstrap(self):
+        with tempfile.TemporaryDirectory() as directory:
+            repo = self.make_repo(directory)
+            subprocess.run(["git", "init", "-q", "-b", "main"], cwd=repo, check=True)
+            subprocess.run(
+                ["git", "remote", "add", "origin", "https://github.com/attendee/workshop.git"],
+                cwd=repo,
+                check=True,
+            )
+            center = ControlCenter(repo)
+
+            _, commands = center.build_commands("configure", {
+                "mode": "live",
+                "preset": "claude-workshop",
+                "github_repository": "https://github.com/attendee/workshop",
+                "bootstrap_workshop": True,
+            })
+
+            self.assertEqual([command[1] for command in commands], [
+                "bootstrap-workshop", "configure",
+            ])
+            self.assertIn(str(repo.resolve()), commands[0])
+
     def test_successful_live_configuration_activates_the_managed_checkout(self):
         with tempfile.TemporaryDirectory() as directory:
             host = self.make_repo(directory)

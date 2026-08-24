@@ -471,7 +471,7 @@ ${track === "live" ? "gh --version" : ""}`}</CodeBlock>
         </section>
 
         <StepSection index={1} id="setup" title="Set up" goal="Start from a clean, personal workshop repository." complete={completed.includes("setup")} onToggle={() => toggleStep("setup")}>
-          <p>{track === "live" ? "Keep a local factory checkout as the control plane, then connect it to your personal GitHub repository." : "Clone the workshop into a disposable local repository. Deterministic agents do not write to GitHub or call a model provider."}</p>
+          <p>{track === "live" ? "Keep a local factory checkout as the control plane, create an empty personal repository, then let the Control Center populate it." : "Clone the workshop into a disposable local repository. Deterministic agents do not write to GitHub or call a model provider."}</p>
           <CodeBlock label="Terminal 1 — repository setup">{track === "rehearsal" ? `git clone https://github.com/giolaq/software-refactory-workshop.git software-refactory-rehearsal
 cd software-refactory-rehearsal
 ./setup_demo.sh --scenario recipe-rebrand
@@ -482,10 +482,9 @@ gh auth refresh -s project
 git clone https://github.com/giolaq/software-refactory-workshop.git software-refactory-control
 cd software-refactory-control
 ./setup_demo.sh --scenario recipe-rebrand
-gh repo create YOUR-REPOSITORY --private --source=. --remote=workshop
-git push workshop main factory-baseline`}</CodeBlock>
-          <Callout type="tip" title="Already have a GitHub repository?">
-            <p>Keep the factory checkout separate and skip the two repository creation and push commands. Start the Control Center, choose Live, and paste the existing repository&apos;s full URL in Connect. Saving verifies access and opens an isolated managed checkout without changing the factory checkout&apos;s <code>origin</code>.</p>
+gh repo create YOUR-REPOSITORY --private`}</CodeBlock>
+          <Callout type="tip" title="Already have a populated GitHub project?">
+            <p>Keep the factory checkout separate and paste the project repository&apos;s full URL in Connect. Leave <strong>Populate an empty repository with the workshop code</strong> unchecked so the Control Center uses the existing code without replacing it.</p>
           </Callout>
           {track === "live" ? <Callout type="note" title="Using an existing project instead?">
             <p>Keep the factory checkout separate. Run the commands below from it, review the generated contract, then continue in the Control Center. The guided steps that mention Pocket Cinema apply only to the workshop repository.</p>
@@ -507,19 +506,25 @@ git -C /path/to/your-project push origin HEAD
             <ol>
               <li>Wait for <code>Factory Control Center: http://127.0.0.1:5050</code>.</li>
               <li>Your browser should open automatically. If it does not, open <a href="http://127.0.0.1:5050">127.0.0.1:5050</a> yourself.</li>
-              {track === "live" ? <li>Open <strong>Connect</strong>, choose <strong>Live</strong>, paste <code>https://github.com/YOUR-NAME/YOUR-REPOSITORY</code>, then save. The Control Center clones that repository into its isolated workspace.</li> : null}
+              {track === "live" ? <li>Open <strong>Connect</strong>, choose <strong>Live</strong>, paste <code>https://github.com/YOUR-NAME/YOUR-REPOSITORY</code>, check <strong>Populate an empty repository with the workshop code</strong>, then save. The Control Center verifies the repository is empty before publishing the workshop.</li> : null}
               <li>Leave this terminal running for the workshop. Press <code>Ctrl+C</code> only when you want to stop the Control Center.</li>
             </ol>
           </div>
 
           <WorkshopPaths
-            click={<>Select <strong>Connect</strong>. Create the Project Contract and Charter if needed. Review both. Approve the exact Charter, then choose <strong>{track === "live" ? "Live" : "Rehearsal"}</strong>{track === "live" ? <>, paste your repository URL, choose an agent preset, and save</> : null}. Select <strong>Run preflight</strong>.</>}
+            click={<>Select <strong>Connect</strong>, choose <strong>{track === "live" ? "Live" : "Rehearsal"}</strong>{track === "live" ? <>, paste your repository URL, choose an agent preset, check the empty-repository bootstrap option, and save</> : null}. Create the Project Contract and Charter if needed, review both, and approve the exact Charter. Select <strong>Run preflight</strong>.</>}
             whyStopped={<>Planning stays locked until the repository contract exists and a person approves the exact Charter policy.</>}
             inspect={<>Confirm source roots, test roots, gate levels, protected paths, consequence tier, human merge authority, and—on Live—the GitHub target and agents.</>}
             continueWhen={<>The Charter says <strong>Approved</strong>, preflight reports no blockers, and the header names the correct repository.</>}
-          >{`${track === "live" ? `./factory/factory configure --preset claude-workshop \\\n  --github-repository https://github.com/YOUR-NAME/YOUR-REPOSITORY
-` : ""}./factory/factory approve-charter --yes
-./factory/factory doctor${track === "live" ? " --full" : ""}`}</WorkshopPaths>
+          >{track === "live" ? `CONTROL="$PWD"
+TARGET="$CONTROL/.factory/repositories/your-name/your-repository"
+./factory/factory checkout https://github.com/YOUR-NAME/YOUR-REPOSITORY \\
+  --workspace-root "$CONTROL/.factory/repositories"
+./factory/factory bootstrap-workshop --repo "$TARGET" --source "$CONTROL"
+./factory/factory configure --repo "$TARGET" --preset claude-workshop \\
+  --github-repository https://github.com/YOUR-NAME/YOUR-REPOSITORY
+./factory/factory doctor --repo "$TARGET" --full` : `./factory/factory approve-charter --yes
+./factory/factory doctor`}</WorkshopPaths>
           <WorkshopMedia
             src="/screenshots/control-center-connect.jpg"
             alt="Control Center Connect screen with agent presets, repository details, and preflight button"

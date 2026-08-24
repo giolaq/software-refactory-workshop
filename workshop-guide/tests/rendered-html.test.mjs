@@ -144,13 +144,15 @@ test("attendee page stays within its copy budget", async () => {
     .replace(/&(?:[a-z]+|#\d+);/gi, " ");
   const words = visible.trim().split(/\s+/).filter(Boolean).length;
   assert.ok(words < 3200, `attendee page renders ${words} visible words; expected fewer than 3200`);
-  assert.match(source, /doctor\$\{track === "live" \? " --full" : ""\}/);
+  assert.match(source, /factory doctor --repo "\$TARGET" --full/);
   assert.match(source, /gh project view <project-number>/);
   assert.match(source, /screenshots\/github-project-board\.jpg/);
   assert.match(source, /agent_capabilities\.my-agent/);
-  assert.match(source, /gh repo create YOUR-REPOSITORY --private --source=\. --remote=workshop/);
-  assert.match(source, /git push workshop main factory-baseline/);
-  assert.match(source, /The Control Center clones that repository into its isolated workspace/);
+  assert.match(source, /gh repo create YOUR-REPOSITORY --private/);
+  assert.match(source, /Populate an empty repository with the workshop code/);
+  assert.match(source, /verifies the repository is empty before publishing the workshop/);
+  assert.match(source, /factory bootstrap-workshop --repo/);
+  assert.doesNotMatch(source, /git push workshop main factory-baseline/);
   assert.doesNotMatch(source, /--template giolaq\/software-refactory-workshop/);
 });
 

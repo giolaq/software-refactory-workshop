@@ -907,11 +907,14 @@ class ControlCenter:
         if action == "configure":
             command = base + ["configure"]
             commands = []
+            bootstrap_workshop = payload.get("bootstrap_workshop") is True
             repository = self._string(payload, "github_repository", max_length=240)
             if mode == "live" and not repository:
                 repository = self.session_config().get("github_repository", "")
             if mode == "live" and not repository:
                 raise InputError("Enter the GitHub repository URL before saving Live configuration.")
+            if bootstrap_workshop and mode != "live":
+                raise InputError("Workshop bootstrap is available only for a Live repository.")
             if mode == "live":
                 try:
                     requested = parse_github_repository(repository)
@@ -930,7 +933,14 @@ class ControlCenter:
                     command += ["--repo", str(target)]
                     self._pending_activation = target
                 else:
+                    target = self.repo
                     command += ["--repo", str(self.repo)]
+                if bootstrap_workshop:
+                    commands.append([
+                        str(self.factory), "bootstrap-workshop",
+                        "--repo", str(target),
+                        "--source", str(self.control_repo),
+                    ])
                 command += ["--github-repository", repository]
             preset = self._string(payload, "preset")
             if preset:

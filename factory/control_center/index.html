@@ -120,6 +120,7 @@
               <label>Code review (Standard/Assured)<select name="review_agent" data-agent-select="review"></select></label>
               <label>GitHub Project number<input name="project_number" type="number" min="1" placeholder="Create during approval"></label>
             </div>
+            <label class="check-row" id="bootstrap-workshop-option"><input name="bootstrap_workshop" type="checkbox"><span><b>Populate an empty repository with the workshop code</b><small>Copies the committed workshop history and baseline only when the GitHub repository has no branches or tags. Existing repositories are never overwritten.</small></span></label>
             <label class="check-row"><input name="review_qa_tests" type="checkbox" checked><span><b>Require human QA approval</b><small>Implementation waits until a person approves the acceptance tests.</small></span></label>
             <label class="check-row safety-note" id="autonomous-merge-warning" hidden><input id="autonomous-merge-opt-in" type="checkbox"><span><b>Delegate final merge accountability for this demonstration</b><small>This delegates final merge accountability: the Supervisor recommends and the orchestrator executes an exact-revision merge. This is a workshop contrast, not the normal shipping path. The choice is not saved and must be made again after a reload.</small></span></label>
             <div class="form-actions"><button class="button button-primary" type="submit">Save configuration</button><button class="button" type="button" data-action="doctor">Run preflight</button></div>

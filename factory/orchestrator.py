@@ -48,6 +48,7 @@ from factory_contracts import (
 from release_check import render_release_check
 from github_backend import GitHubBackend, GitHubError
 from github_repository import (
+    bootstrap_empty_workshop_repository,
     checkout_github_repository,
     connect_github_repository,
     parse_github_repository,
@@ -3247,6 +3248,12 @@ def parser():
     )
     checkout.add_argument("github_repository", metavar="URL")
     checkout.add_argument("--workspace-root", required=True)
+    bootstrap = sub.add_parser(
+        "bootstrap-workshop",
+        help="populate an empty attendee repository from a local workshop checkout",
+    )
+    bootstrap.add_argument("--repo", required=True)
+    bootstrap.add_argument("--source", required=True)
     profiles = sub.add_parser("profiles", help="show executable Factory Profile role sequences")
     profiles.add_argument("--json", action="store_true", dest="as_json")
     canvas = sub.add_parser("canvas", help="create a Factory Canvas from the versioned template")
@@ -3463,6 +3470,14 @@ def main():
                 Path(args.workspace_root), args.github_repository,
             )
             print(f"Repository {connected['action']}: {connected['path']}")
+        elif args.command == "bootstrap-workshop":
+            bootstrapped = bootstrap_empty_workshop_repository(
+                repo, Path(args.source),
+            )
+            print(f"Empty repository populated: {bootstrapped['path']}")
+            print(f"  Branch: {bootstrapped['branch']}")
+            print(f"  Commit: {bootstrapped['commit']}")
+            print(f"  Baseline: {bootstrapped['baseline']}")
         elif args.command == "profiles":
             print(render_profiles(args.as_json))
         elif args.command == "canvas":

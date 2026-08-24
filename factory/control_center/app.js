@@ -79,6 +79,11 @@ function setMode(value) {
     repository.required = next === "live";
     repository.disabled = next !== "live";
   }
+  const bootstrap = $("#config-form")?.elements.namedItem("bootstrap_workshop");
+  if (bootstrap) {
+    bootstrap.disabled = next !== "live";
+    if (bootstrap.disabled) bootstrap.checked = false;
+  }
 }
 
 function formatTime(value) {
@@ -632,6 +637,7 @@ async function submitConfig(event) {
   const payload = Object.fromEntries(form.entries());
   payload.mode = mode();
   payload.review_qa_tests = event.currentTarget.elements.review_qa_tests.checked;
+  payload.bootstrap_workshop = event.currentTarget.elements.bootstrap_workshop.checked;
   if (payload.preset) {
     delete payload.planning_agent;
     delete payload.agent;

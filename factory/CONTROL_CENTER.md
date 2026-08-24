@@ -149,6 +149,13 @@ before preflight. The factory never rewrites the factory source checkout's
 `origin`, and it uses the saved target explicitly even if `gh` has a different
 default repository.
 
+For the guided TableStory exercise, create an empty GitHub repository and check
+**Populate an empty repository with the workshop code** when saving. The
+Control Center fails closed unless the remote has no branches or tags, then
+publishes the committed workshop history and `factory-baseline`. Leave this
+unchecked for an existing project; the factory never replaces repository
+contents.
+
 ### Open an existing local checkout
 
 The URL workflow above is the normal path. To use an existing local checkout
