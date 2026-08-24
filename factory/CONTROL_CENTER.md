@@ -150,11 +150,18 @@ before preflight. The factory never rewrites the factory source checkout's
 default repository.
 
 For the guided TableStory exercise, create an empty GitHub repository and check
-**Populate an empty repository with the workshop code** when saving. The
+**Start with the TableStory workshop code** when saving. The
 Control Center fails closed unless the remote has no branches or tags, then
 publishes the committed workshop history and `factory-baseline`. Leave this
 unchecked for an existing project; the factory never replaces repository
 contents.
+
+For a greenfield product, also leave the option unchecked. After the empty
+repository activates, create and review its Project Contract and Charter,
+approve the exact Charter, and select **Commit and push setup**. This creates a
+minimal default branch containing only governance and `.gitignore`. The PRD,
+planning artifacts, GitHub tickets, and worker changes then create the product;
+the factory implementation remains in the separate control checkout.
 
 ### Open an existing local checkout
 

@@ -48,7 +48,7 @@ test("server-renders the concise self-guided workshop", async () => {
   assert.match(html, /Python 3\.11/);
   assert.match(html, /Node\.js 20/);
   assert.match(html, /A local Git repository for the Rehearsal path/);
-  assert.match(html, /One personal GitHub workshop repository/);
+  assert.match(html, /One personal GitHub product repository/);
   assert.match(html, /facilitator uses a different repository/i);
   assert.match(html, /Rehearsal/);
   assert.match(html, /Live/);
@@ -149,8 +149,9 @@ test("attendee page stays within its copy budget", async () => {
   assert.match(source, /screenshots\/github-project-board\.jpg/);
   assert.match(source, /agent_capabilities\.my-agent/);
   assert.match(source, /gh repo create YOUR-REPOSITORY --private/);
-  assert.match(source, /Populate an empty repository with the workshop code/);
-  assert.match(source, /verifies the repository is empty before publishing the workshop/);
+  assert.match(source, /Start with the TableStory workshop code/);
+  assert.match(source, /For a greenfield product/);
+  assert.match(source, /agents create code from PRD-derived tickets/);
   assert.match(source, /factory bootstrap-workshop --repo/);
   assert.doesNotMatch(source, /git push workshop main factory-baseline/);
   assert.doesNotMatch(source, /--template giolaq\/software-refactory-workshop/);

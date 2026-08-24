@@ -63,6 +63,12 @@ initialize its Project Contract as described below. Run
 `./factory/factory doctor --full` before planning; it verifies that the saved
 target, `origin`, and local default branch agree.
 
+For a greenfield product, connect an empty repository with the option unchecked.
+Create and review its generic Project Contract and Charter, publish that minimal
+governance commit, then plan from a PRD that names the intended stack and
+verification requirements. The resulting issues and agent changes create the
+product code without copying the local factory implementation.
+
 ## Describe an existing repository
 
 The factory accepts any PRD in Live mode. Repository mechanics do not come from

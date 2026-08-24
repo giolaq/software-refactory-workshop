@@ -112,6 +112,16 @@ change before Live preflight; the default-branch checkout must be clean.
 Arbitrary PRDs require Live agents. Rehearsal remains deterministic by design
 and therefore supports only its bundled Pocket Cinema scenarios.
 
+For a greenfield product, create and connect an empty GitHub repository but
+leave **Start with the TableStory workshop code** unchecked. On Connect, create
+and review the detected Project Contract and Charter, approve the exact Charter,
+then select **Commit and push setup**. That initial commit contains only
+`.gitignore`, `factory.project.toml`, and `factory.charter.toml`. Planning turns
+the PRD into GitHub Issues and the worker roles create the product and tests;
+the local factory implementation is never copied into the product repository.
+State the intended language, framework, and required verification in the PRD
+and review the generic contract before approval.
+
 ## Architecture tour
 
 Start with `ARCHITECTURE.md`, which maps the runtime into a short reading path.
@@ -523,6 +533,12 @@ bundled with the ChatGPT app. Override discovery when needed:
 export FACTORY_CODEX_BIN=/path/to/current/codex
 "$FACTORY_CODEX_BIN" login status
 ```
+
+Managed Amazon Bedrock wrappers also require an AWS region. The factory checks
+`AWS_REGION`, then `AWS_DEFAULT_REGION`, then the selected profile in
+`~/.aws/config`; it passes the resolved region to Codex without forwarding AWS
+credential variables. `factory doctor --full` reports the selected region or
+fails with the configuration needed before an agent starts.
 
 ## Product payoff
 
