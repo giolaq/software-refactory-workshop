@@ -14,7 +14,7 @@ test("the local editor discovers workshop headings and paragraphs", async () => 
   const snapshot = buildSnapshot(source);
 
   assert.ok(snapshot.entries.length > 100);
-  assert.ok(snapshot.entries.some((entry) => entry.value === "Turn a PRD into verified code"));
+  assert.ok(snapshot.entries.some((entry) => entry.value === "Software (re)-Factory workshop"));
   assert.ok(snapshot.entries.some((entry) => entry.section === "prerequisites"));
 });
 
@@ -25,7 +25,7 @@ test("custom component titles and body copy can be selected in the preview", asy
     (entry) => entry.value === "Use your own repository",
   );
   const body = snapshot.entries.find(
-    (entry) => entry.value.startsWith("Every Live attendee creates a personal GitHub repository"),
+    (entry) => entry.value.startsWith("For Live mode, use a personal GitHub repository"),
   );
 
   assert.ok(title);
@@ -43,7 +43,7 @@ test("a custom component body edit remains valid TSX", async () => {
   const source = await readFile(pagePath, "utf8");
   const snapshot = buildSnapshot(source);
   const entry = snapshot.entries.find(
-    (candidate) => candidate.value.startsWith("Every Live attendee creates a personal GitHub repository"),
+    (candidate) => candidate.value.startsWith("For Live mode, use a personal GitHub repository"),
   );
   assert.ok(entry);
 
@@ -55,7 +55,7 @@ test("a custom component body edit remains valid TSX", async () => {
   });
 
   assert.match(result.source, new RegExp(replacement));
-  assert.doesNotMatch(result.source, /Every Live attendee creates a personal GitHub repository/);
+  assert.doesNotMatch(result.source, /For Live mode, use a personal GitHub repository/);
   const parsed = ts.createSourceFile("page.tsx", result.source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
   assert.equal(parsed.parseDiagnostics.length, 0);
 });
@@ -64,11 +64,11 @@ test("a text edit changes only the selected source range and remains valid TSX",
   const source = await readFile(pagePath, "utf8");
   const snapshot = buildSnapshot(source);
   const entry = snapshot.entries.find(
-    (candidate) => candidate.value === "Turn a PRD into verified code",
+    (candidate) => candidate.value === "Software (re)-Factory workshop",
   );
   assert.ok(entry);
 
-  const replacement = "Turn a requirement into verified code";
+  const replacement = "Software Factory workshop";
   const result = applyEdit(source, {
     id: entry.id,
     version: snapshot.version,
