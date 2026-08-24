@@ -28,6 +28,15 @@ RETIRED_LANGUAGE = {
     "two delivery" + " systems",
     "compare both" + " results",
 }
+AMBIGUOUS_ROLE_LABELS = {
+    "agent" + " supervisor",
+    "qa" + " agent",
+    "implementation" + " agent",
+    "code review" + " agent",
+    "monitor" + " agent",
+    "planning" + " agent",
+    "supervisor" + " agent",
+}
 
 
 class RepositoryContractTests(unittest.TestCase):
@@ -52,6 +61,89 @@ class RepositoryContractTests(unittest.TestCase):
             for phrase in RETIRED_LANGUAGE:
                 if phrase.casefold() in text:
                     offenders.append(f"{relative}: {phrase}")
+
+        self.assertEqual(offenders, [])
+
+    def test_release_test_commands_use_an_environment_with_runtime_test_dependencies(self):
+        workflow = (REPO / ".github/workflows/factory-verify.yml").read_text()
+        install = "python3 -m pip install -r demo-app/requirements.txt"
+        unit = "python3 -m unittest discover -s factory/tests -v"
+        self.assertIn(install, workflow)
+        self.assertLess(workflow.index(install), workflow.index(unit))
+
+        for relative in ("factory/README.md", "factory/FACILITATOR.md"):
+            text = (REPO / relative).read_text()
+            self.assertIn(
+                ".factory/venv/bin/python -m unittest discover -s factory/tests",
+                text,
+            )
+
+    def test_release_workflow_uses_node_24_action_runtimes(self):
+        workflow = (REPO / ".github/workflows/factory-verify.yml").read_text()
+
+        self.assertEqual(workflow.count("uses: actions/checkout@v7"), 3)
+        self.assertEqual(workflow.count("uses: actions/setup-python@v7"), 3)
+        self.assertEqual(workflow.count("uses: actions/setup-node@v7"), 2)
+        for retired in (
+            "actions/checkout@v4",
+            "actions/setup-python@v5",
+            "actions/setup-node@v4",
+        ):
+            self.assertNotIn(retired, workflow)
+
+    def test_release_workflow_does_not_duplicate_pull_request_runs(self):
+        workflow = (REPO / ".github/workflows/factory-verify.yml").read_text()
+
+        self.assertIn(
+            "on:\n  push:\n    branches: [main]\n  pull_request:",
+            workflow,
+        )
+
+    def test_rehearsal_workflow_asserts_the_human_merge_gate(self):
+        workflow = (REPO / ".github/workflows/factory-verify.yml").read_text()
+
+        self.assertIn(
+            "assert in_review == [1, 3, 7]",
+            workflow,
+        )
+        self.assertIn(
+            "assert in_review == [1, 2]",
+            workflow,
+        )
+        self.assertNotIn("assert all(ticket['status'] == 'Done'", workflow)
+        self.assertNotIn("sum(t['status'] == 'Done'", workflow)
+
+    def test_participant_surfaces_use_acceptance_test_terminology(self):
+        guide = (REPO / "workshop-guide/app/page.tsx").read_text()
+        orchestrator = (REPO / "factory/orchestrator.py").read_text()
+
+        self.assertNotIn("reviewing QA tests", guide)
+        self.assertNotIn("QA test revision", orchestrator)
+
+    def test_operator_surfaces_distinguish_roles_from_adapters(self):
+        tracked = subprocess.run(
+            ["git", "ls-files"],
+            cwd=REPO,
+            text=True,
+            capture_output=True,
+            check=True,
+        ).stdout.splitlines()
+        checked_suffixes = {".html", ".js", ".json", ".md", ".py", ".tsx"}
+        offenders = []
+
+        for relative in tracked:
+            path = REPO / relative
+            if (
+                path.suffix not in checked_suffixes
+                or "/tests/" in f"/{relative}"
+                or not path.is_file()
+            ):
+                continue
+            for line_number, line in enumerate(path.read_text(errors="ignore").splitlines(), 1):
+                folded = line.casefold()
+                for phrase in AMBIGUOUS_ROLE_LABELS:
+                    if phrase in folded:
+                        offenders.append(f"{relative}:{line_number}: {phrase}")
 
         self.assertEqual(offenders, [])
 

@@ -1,12 +1,12 @@
 # Software (re)-Factory workshop guide
 
-Release: `workshop-v1.0.0`
+Release: `workshop-v1.1.0`
 
 The attendee-facing, self-guided website for the Software (re)-Factory
 workshop. It follows one PRD from intent to verified delivery using a repeated
 **Goal → Do → Check** pattern. The main path contains only the decisions,
 Control Center actions, and evidence attendees need. Equivalent CLI commands
-are shown beside every Control Center step. Optional agent configuration and
+are shown beside every Control Center step. Optional adapter configuration and
 recovery guidance remain in the reference sections.
 
 The guide supports deterministic rehearsal and live GitHub paths. Claude is

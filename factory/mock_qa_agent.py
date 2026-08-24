@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Deterministic independent QA agent for credential-free rehearsals."""
+"""Deterministic independent QA adapter for credential-free rehearsals."""
 
 from __future__ import annotations
 

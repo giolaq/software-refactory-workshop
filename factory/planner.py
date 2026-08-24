@@ -102,6 +102,23 @@ def render_review(plan: dict) -> str:
             "**Acceptance criteria**", "",
             *[f"- [ ] {criterion}" for criterion in ticket["acceptance_criteria"]], "",
         ]
+        if ticket.get("vertical_outcome"):
+            lines += ["**Vertical outcome**", "", ticket["vertical_outcome"], ""]
+        if ticket.get("file_ownership"):
+            lines += ["**File ownership**", "", *[f"- `{path}`" for path in ticket["file_ownership"]], ""]
+        if ticket.get("qa_evidence"):
+            lines += ["**QA evidence**", "", *[f"- {item}" for item in ticket["qa_evidence"]], ""]
+        mappings = (
+            ("Requirements", "requirement_ids"),
+            ("Architecture contracts", "contract_ids"),
+            ("Program elements", "program_element_ids"),
+        )
+        traceability = [
+            f"- **{label}:** {', '.join(ticket.get(field, []))}"
+            for label, field in mappings if ticket.get(field)
+        ]
+        if traceability:
+            lines += ["**Traceability**", "", *traceability, ""]
     lines += [
         "## Human approval", "",
         "Edit the companion JSON file if needed. Clear every open question, then run:", "",
@@ -130,14 +147,60 @@ def show_plan(plan: dict):
             print(f"  - {criterion}")
 
 
-def issue_body(ticket: dict, numbers: dict[str, int], plan_id: str) -> str:
+def governance_marker(governance: dict | None) -> str:
+    """Render the immutable planning controls into a durable Ticket marker."""
+    if governance is None:
+        return ""
+    schema = governance.get("schema_version")
+    profile = governance.get("profile")
+    charter = governance.get("charter_sha256")
+    authority = governance.get("merge_authority")
+    if schema != 1:
+        raise ValueError("Ticket governance schema_version must be 1")
+    if not isinstance(profile, str) or not re.fullmatch(r"[a-z][a-z0-9-]{0,31}", profile):
+        raise ValueError("Ticket governance profile is invalid")
+    if not isinstance(charter, str) or not re.fullmatch(r"[a-f0-9]{64}", charter):
+        raise ValueError("Ticket governance Charter hash is invalid")
+    if authority not in {"human", "supervisor"}:
+        raise ValueError("Ticket governance merge authority is invalid")
+    return (
+        f"<!-- factory-governance:v1;profile={profile};"
+        f"charter={charter};merge={authority} -->"
+    )
+
+
+def issue_body(
+    ticket: dict,
+    numbers: dict[str, int],
+    plan_id: str,
+    governance: dict | None = None,
+) -> str:
     dependencies = [numbers[key] for key in ticket["dependencies"]]
     dependency_section = "\n## Dependencies\nDepends-on: " + ", ".join(f"#{number}" for number in dependencies) + "\n" if dependencies else ""
     criteria = "\n".join(f"- [ ] {item}" for item in ticket["acceptance_criteria"])
+    details = []
+    if ticket.get("vertical_outcome"):
+        details += ["## Vertical outcome", ticket["vertical_outcome"], ""]
+    mappings = (
+        ("Requirements", "requirement_ids"),
+        ("Architecture contracts", "contract_ids"),
+        ("Program elements", "program_element_ids"),
+    )
+    traceability = [
+        f"- **{label}:** {', '.join(ticket.get(field, []))}"
+        for label, field in mappings if ticket.get(field)
+    ]
+    if traceability:
+        details += ["## Traceability", *traceability, ""]
+    for title, field in (("File ownership", "file_ownership"), ("QA evidence", "qa_evidence")):
+        if ticket.get(field):
+            details += [f"## {title}", *[f"- {item}" for item in ticket[field]], ""]
+    detail_section = "\n".join(details)
     return (
         f"## Spec\n{ticket['spec']}\n\n## Acceptance criteria\n{criteria}\n"
-        f"{dependency_section}\n## Agent\nagent: {ticket['agent']}\n\n"
+        f"{dependency_section}\n{detail_section}## Agent\nagent: {ticket['agent']}\n\n"
         f"<!-- factory-plan:{plan_id}:{ticket['key']} -->"
+        f"{chr(10) + governance_marker(governance) if governance else ''}"
     )
 
 
@@ -149,6 +212,9 @@ def approve_plan(
         raise ValueError("use either --project-number or --new-project-title, not both")
     plan_path = plan_path.resolve()
     plan = json.loads(plan_path.read_text())
+    manifest_path = plan_path.parent / "manifest.json"
+    manifest = json.loads(manifest_path.read_text()) if manifest_path.is_file() else {}
+    governance = manifest.get("governance")
     order = validate_plan(plan)
     show_plan(plan)
     if plan["open_questions"]:
@@ -176,15 +242,30 @@ def approve_plan(
     )
     existing = backend.json(
         "issue", "list", "--repo", repository, "--state", "all", "--limit", 500,
-        "--json", "number,title,body,url",
+        "--json", "number,title,body,url,labels",
     )
     marker = re.compile(rf"<!-- factory-plan:{re.escape(plan['plan_id'])}:([^ ]+) -->")
+    by_key = {ticket["key"]: ticket for ticket in plan["tickets"]}
     numbers = {}
+    issue_urls = {int(issue["number"]): issue["url"] for issue in existing}
+    remote = {
+        int(issue["number"]): {
+            "number": int(issue["number"]),
+            "labels": [
+                label.get("name", "") if isinstance(label, dict) else str(label)
+                for label in issue.get("labels", [])
+            ],
+        }
+        for issue in existing
+    }
+    # Prime Project fields, item IDs, and lifecycle labels before publishing.
+    # GitHub's item listing is eventually consistent after item-add; do not
+    # replace the item IDs returned by those writes with an immediate reload.
+    backend.load()
     for issue in existing:
         match = marker.search(issue.get("body") or "")
-        if match:
+        if match and match.group(1) in by_key:
             numbers[match.group(1)] = int(issue["number"])
-    by_key = {ticket["key"]: ticket for ticket in plan["tickets"]}
     created = set()
     for key in order:
         if key in numbers:
@@ -192,21 +273,26 @@ def approve_plan(
         ticket = by_key[key]
         result = backend.gh(
             "issue", "create", "--repo", repository, "--title", ticket["title"],
-            "--body", issue_body(ticket, numbers, plan["plan_id"]), "--label", "agent-ready",
+            "--body", issue_body(ticket, numbers, plan["plan_id"], governance), "--label", "agent-ready",
         )
-        numbers[key] = int(result.stdout.strip().splitlines()[-1].rsplit("/", 1)[-1])
+        issue_url = result.stdout.strip().splitlines()[-1]
+        numbers[key] = int(issue_url.rsplit("/", 1)[-1])
+        issue_urls[numbers[key]] = issue_url
+        remote[numbers[key]] = {"number": numbers[key], "labels": ["agent-ready"]}
         created.add(numbers[key])
         print(f"Created #{numbers[key]}: {ticket['title']}")
+    added_to_project = set()
     for key in order:  # apply any human edits and final dependency numbers
         ticket = by_key[key]
         backend.gh(
             "issue", "edit", numbers[key], "--repo", repository, "--title", ticket["title"],
-            "--body", issue_body(ticket, numbers, plan["plan_id"]), "--add-label", "agent-ready",
+            "--body", issue_body(ticket, numbers, plan["plan_id"], governance), "--add-label", "agent-ready",
         )
-    remote = {ticket["number"]: ticket for ticket in backend.load()}
+        if backend.add_issue_to_project(numbers[key], issue_urls[numbers[key]]):
+            added_to_project.add(numbers[key])
     for key in order:
         number = numbers[key]
-        if number in created:
+        if not plan.get("publication") or number in created or number in added_to_project:
             status = "Backlog" if by_key[key]["dependencies"] else "Ready"
             backend.set_status(remote[number], status, "Approved ticket plan")
     project = backend.json("project", "view", backend.project_number, "--owner", backend.owner, "--format", "json")

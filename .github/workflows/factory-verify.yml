@@ -2,72 +2,88 @@ name: Factory rehearsal
 
 on:
   push:
+    branches: [main]
   pull_request:
 
 jobs:
   factory-unit-tests:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.11"
+      - run: python3 -m pip install -r demo-app/requirements.txt
       - run: python3 -m unittest discover -s factory/tests -v
       - run: python3 -m compileall -q factory
 
   tv-rehearsal:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.11"
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: "22"
       - run: ./setup_demo.sh --scenario tv
       - run: ./factory/factory run --mock --scenario tv --once --max-parallel 4
-      - name: Assert TV workshop outcomes and QA coverage
+      - name: Assert TV first wave and human merge gates
         run: |
           .factory/venv/bin/python - <<'PY'
           import json
           state = json.load(open('.factory/state.json'))
           tickets = {ticket['number']: ticket for ticket in state['tickets']}
-          assert sum(t['status'] == 'Done' for t in tickets.values()) == 7
-          assert [t['number'] for t in tickets.values() if t['status'] == 'Blocked'] == [8]
-          assert all(tickets[number]['qa_tests'] for number in range(1, 8))
-          assert tickets[7].get('merge_conflict_path')
+          in_review = [number for number, ticket in tickets.items() if ticket['status'] == 'In Review']
+          backlog = [number for number, ticket in tickets.items() if ticket['status'] == 'Backlog']
+          blocked = [number for number, ticket in tickets.items() if ticket['status'] == 'Blocked']
+          assert in_review == [1, 3, 7]
+          assert backlog == [2, 4, 5, 6]
+          assert blocked == [8]
+          assert all(tickets[number]['qa_tests'] for number in in_review)
+          assert all(tickets[number]['gate_results'] for number in in_review)
+          assert all(tickets[number]['code_review']['result']['decision'] == 'APPROVE' for number in in_review)
+          assert all(tickets[number]['approved_head'] for number in in_review)
           assert 'QA acceptance-test phase failed' in tickets[8]['failure']
           PY
 
   recipe-rebrand-rehearsal:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.11"
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: "22"
       - run: ./setup_demo.sh --scenario recipe-rebrand
       - run: ./factory/factory run --mock --scenario recipe-rebrand --once --max-parallel 4
-      - name: Assert TableStory outcomes and QA coverage
+      - name: Assert TableStory first wave and human merge gates
         run: |
           .factory/venv/bin/python - <<'PY'
           import json
           state = json.load(open('.factory/state.json'))
           tickets = state['tickets']
           assert len(tickets) == 5
-          assert all(ticket['status'] == 'Done' for ticket in tickets)
-          assert all(ticket['qa_tests'] for ticket in tickets)
-          assert all(ticket['gate_results'] for ticket in tickets)
+          in_review = [ticket['number'] for ticket in tickets if ticket['status'] == 'In Review']
+          backlog = [ticket['number'] for ticket in tickets if ticket['status'] == 'Backlog']
+          assert in_review == [1, 2]
+          assert backlog == [3, 4, 5]
+          assert all(ticket['qa_tests'] for ticket in tickets if ticket['number'] in in_review)
+          assert all(ticket['gate_results'] for ticket in tickets if ticket['number'] in in_review)
+          assert all(
+              ticket['code_review']['result']['decision'] == 'APPROVE'
+              for ticket in tickets if ticket['number'] in in_review
+          )
+          assert all(ticket['approved_head'] for ticket in tickets if ticket['number'] in in_review)
           PY
       - run: .factory/venv/bin/python -m pytest -q demo-app/tests
       - run: node --test demo-app/static/tests/*.test.js
