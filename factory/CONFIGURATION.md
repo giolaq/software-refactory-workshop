@@ -56,9 +56,11 @@ GitHub CLI's current default.
   --preset claude-workshop
 ```
 
-Create a repository from the workshop template for the guided TableStory
-exercise. For your own project, initialize its Project Contract as described
-below. An empty new repository also works after it has an initial commit. Run
+For the guided TableStory exercise, publish the prepared local workshop
+checkout to a personal repository as described in `README.md`, then connect
+that repository in the Control Center. For your own project, initialize its
+Project Contract as described below. An empty new repository also works after
+it has an initial commit. Run
 `./factory/factory doctor --full` before planning; it verifies that the saved
 target, `origin`, and local default branch agree.
 

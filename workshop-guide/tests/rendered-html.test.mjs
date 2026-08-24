@@ -148,6 +148,10 @@ test("attendee page stays within its copy budget", async () => {
   assert.match(source, /gh project view <project-number>/);
   assert.match(source, /screenshots\/github-project-board\.jpg/);
   assert.match(source, /agent_capabilities\.my-agent/);
+  assert.match(source, /gh repo create YOUR-REPOSITORY --private --source=\. --remote=workshop/);
+  assert.match(source, /git push workshop main factory-baseline/);
+  assert.match(source, /The Control Center clones that repository into its isolated workspace/);
+  assert.doesNotMatch(source, /--template giolaq\/software-refactory-workshop/);
 });
 
 test("server-rendered workshop has accessible document and image structure", async () => {

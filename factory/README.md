@@ -423,24 +423,34 @@ Rehearsal Run from the tagged baseline.
 
 ## Instructor-led Live Run
 
-Create and clone a private repository from the public workshop template (choose
-your own repository name):
-
-```sh
-gh repo create software-refactory-workshop \
-  --private \
-  --template giolaq/software-refactory-workshop \
-  --clone
-cd software-refactory-workshop
-```
-
-Authenticate the GitHub CLI with Projects permission, configure the selected
-agents, and start with a PRD. This example uses Claude; select a built-in or
-custom setup from `CONFIGURATION.md` if your team uses another CLI or model:
+Keep the factory source checkout as the control plane, prepare the guided
+TableStory workpiece there, and publish it to a private attendee repository:
 
 ```sh
 gh auth login
 gh auth refresh -s project
+git clone https://github.com/giolaq/software-refactory-workshop.git software-refactory-control
+cd software-refactory-control
+./setup_demo.sh --scenario recipe-rebrand
+gh repo create YOUR-REPOSITORY --private --source=. --remote=workshop
+git push workshop main factory-baseline
+./factory/factory control-center
+```
+
+In **Connect**, choose **Live**, paste
+`https://github.com/YOUR-NAME/YOUR-REPOSITORY`, select the role adapters, and
+save. The Control Center verifies access and clones the attendee repository
+under its isolated `.factory/repositories/` workspace without changing the
+factory source checkout's `origin`.
+
+For a CLI-only run, clone the attendee repository separately, configure the
+selected agents, and start with a PRD. This example uses Claude; select a
+built-in or custom setup from `CONFIGURATION.md` if your team uses another CLI
+or model:
+
+```sh
+gh repo clone YOUR-NAME/YOUR-REPOSITORY ../software-refactory-live
+cd ../software-refactory-live
 ./factory/factory configure \
   --github-repository "$(gh repo view --json url --jq .url)" \
   --preset claude-workshop

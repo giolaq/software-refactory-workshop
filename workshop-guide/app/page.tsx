@@ -471,7 +471,7 @@ ${track === "live" ? "gh --version" : ""}`}</CodeBlock>
         </section>
 
         <StepSection index={1} id="setup" title="Set up" goal="Start from a clean, personal workshop repository." complete={completed.includes("setup")} onToggle={() => toggleStep("setup")}>
-          <p>{track === "live" ? "Create a personal GitHub repository from the workshop template, then clone it." : "Clone the workshop into a disposable local repository. Deterministic agents do not write to GitHub or call a model provider."}</p>
+          <p>{track === "live" ? "Keep a local factory checkout as the control plane, then connect it to your personal GitHub repository." : "Clone the workshop into a disposable local repository. Deterministic agents do not write to GitHub or call a model provider."}</p>
           <CodeBlock label="Terminal 1 — repository setup">{track === "rehearsal" ? `git clone https://github.com/giolaq/software-refactory-workshop.git software-refactory-rehearsal
 cd software-refactory-rehearsal
 ./setup_demo.sh --scenario recipe-rebrand
@@ -479,13 +479,13 @@ git remote remove origin
 git add .
 git commit -m "chore: start workshop rehearsal"` : `gh auth login
 gh auth refresh -s project
-gh repo create YOUR-REPOSITORY --private \
-  --template giolaq/software-refactory-workshop --clone
-cd YOUR-REPOSITORY
+git clone https://github.com/giolaq/software-refactory-workshop.git software-refactory-control
+cd software-refactory-control
 ./setup_demo.sh --scenario recipe-rebrand
-git push origin main --follow-tags`}</CodeBlock>
-          <Callout type="tip" title="Already created the repository?">
-            <p>Clone it if it already contains the workshop template. Otherwise clone the workshop locally and paste your repository URL in Connect; saving Live configuration will set that repository as <code>origin</code>. Push <code>main</code> before preflight.</p>
+gh repo create YOUR-REPOSITORY --private --source=. --remote=workshop
+git push workshop main factory-baseline`}</CodeBlock>
+          <Callout type="tip" title="Already have a GitHub repository?">
+            <p>Keep the factory checkout separate and skip the two repository creation and push commands. Start the Control Center, choose Live, and paste the existing repository&apos;s full URL in Connect. Saving verifies access and opens an isolated managed checkout without changing the factory checkout&apos;s <code>origin</code>.</p>
           </Callout>
           {track === "live" ? <Callout type="note" title="Using an existing project instead?">
             <p>Keep the factory checkout separate. Run the commands below from it, review the generated contract, then continue in the Control Center. The guided steps that mention Pocket Cinema apply only to the workshop repository.</p>
@@ -502,11 +502,12 @@ git -C /path/to/your-project push origin HEAD
           <div className="activity-card launch-card">
             <span className="activity-label">Do this before using the screenshots</span>
             <h3>Open the Control Center</h3>
-            <p>Open another terminal tab in the <code>software-refactory-demo</code> repository. Run:</p>
+            <p>Open another terminal tab in the <code>{track === "live" ? "software-refactory-control" : "software-refactory-rehearsal"}</code> repository. Run:</p>
             <CodeBlock label="Terminal 2 — keep this running">{`./factory/factory control-center`}</CodeBlock>
             <ol>
               <li>Wait for <code>Factory Control Center: http://127.0.0.1:5050</code>.</li>
               <li>Your browser should open automatically. If it does not, open <a href="http://127.0.0.1:5050">127.0.0.1:5050</a> yourself.</li>
+              {track === "live" ? <li>Open <strong>Connect</strong>, choose <strong>Live</strong>, paste <code>https://github.com/YOUR-NAME/YOUR-REPOSITORY</code>, then save. The Control Center clones that repository into its isolated workspace.</li> : null}
               <li>Leave this terminal running for the workshop. Press <code>Ctrl+C</code> only when you want to stop the Control Center.</li>
             </ol>
           </div>
