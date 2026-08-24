@@ -411,7 +411,7 @@ git -C /path/to/your-project push origin HEAD
             label="Connect"
             caption="Connect the repository, approve its settings, and run preflight."
             width={1440}
-            height={900}
+            height={980}
           />
           <Callout type="tip" title="Use the Overview as your guide">
             <p><strong>Current phase</strong> shows what is running. <strong>Next checkpoint</strong> opens the next action that needs you.</p>
@@ -439,7 +439,7 @@ git -C "$TARGET" ls-tree -r --name-only HEAD`
             label="Expected baseline"
             caption="A working media application that will become TableStory."
             width={1440}
-            height={900}
+            height={980}
           />
           <Checkpoint>Pocket Cinema opens, or the new product repository contains only factory settings.</Checkpoint>
         </StepSection>
@@ -459,7 +459,7 @@ git -C "$TARGET" ls-tree -r --name-only HEAD`
             label="PRD"
             caption="Read the request, make any needed edits, and save it."
             width={1440}
-            height={900}
+            height={980}
           />
           <Checkpoint>The PRD is saved and describes the TableStory result.</Checkpoint>
         </StepSection>
@@ -487,7 +487,7 @@ export PLAN_ID=<plan-id-from-output>
             label="Planning"
             caption="Open Product Review. Yellow cards need a decision from you."
             width={1440}
-            height={900}
+            height={980}
           />
           <Checkpoint>Product Review shows <strong>Approved</strong>.</Checkpoint>
         </StepSection>
@@ -526,7 +526,7 @@ export PLAN_ID=<plan-id-from-output>
             label="Ticket tests"
             caption="Approve only when RED PROVED shows that the requested behavior is missing."
             width={1440}
-            height={900}
+            height={980}
           />
           <Checkpoint>The ticket shows <strong>RED PROVED</strong> and records your approval.</Checkpoint>
         </StepSection>
@@ -545,15 +545,15 @@ export PLAN_ID=<plan-id-from-output>
             label="Ticket board"
             caption="Open a ticket to inspect its task, log, files, tests, checks, and review."
             width={1440}
-            height={900}
+            height={980}
           />
           {track === "live" && <WorkshopMedia
             src="/screenshots/github-project-board.jpg"
             alt="Illustrated GitHub Project board showing factory Tickets in lifecycle columns"
             label="GitHub Project"
             caption="Use the project board to see shared ticket status."
-            width={1440}
-            height={900}
+            width={1280}
+            height={942}
           />}
           <WorkshopMedia
             src="/screenshots/control-center-overview.jpg"
@@ -561,7 +561,7 @@ export PLAN_ID=<plan-id-from-output>
             label="Overview"
             caption="Current phase shows what is running. Next checkpoint opens your next action."
             width={1440}
-            height={900}
+            height={980}
           />
           <div className="activity-card">
             <h3>What happens to each ticket</h3>
@@ -580,7 +580,7 @@ export PLAN_ID=<plan-id-from-output>
             label="Merge checkpoint"
             caption="Confirm that review approved the current pull request commit. Then select Merge exact revision."
             width={1440}
-            height={900}
+            height={980}
           />
           <Callout type="tip" title="A failed check is normal">
             <p>The factory sends the error back to the agent and reruns the check after the fix. Open the ticket history to follow the retry.</p>
@@ -617,14 +617,14 @@ node --test demo-app/static/tests/*.test.js
             label="Evidence"
             caption="Complete the checklist, then create the evidence packet."
             width={1440}
-            height={900}
+            height={980}
           />
           <p>Test five actions: browse recipes, search, open a recipe, save a recipe, and use the TV layout.</p>
           <div className="workshop-figure-grid">
-            <WorkshopMedia src="/screenshots/tablestory-mobile.webp" alt="TableStory on a mobile viewport" label="Mobile" caption="Touch layout" width={430} height={932} portrait />
-            <WorkshopMedia src="/screenshots/tablestory-desktop.webp" alt="TableStory on a desktop viewport" label="Desktop" caption="Primary browsing layout" width={1440} height={900} />
+            <WorkshopMedia src="/screenshots/tablestory-mobile.webp" alt="TableStory on a mobile viewport" label="Mobile" caption="Touch layout" width={390} height={844} portrait />
+            <WorkshopMedia src="/screenshots/tablestory-desktop.webp" alt="TableStory on a desktop viewport" label="Desktop" caption="Primary browsing layout" width={1440} height={980} />
           </div>
-          <WorkshopMedia src="/screenshots/tablestory-tv.webp" alt="TableStory television layout" label="TV" caption="Remote-friendly navigation and readable focus states" width={1440} height={900} />
+          <WorkshopMedia src="/screenshots/tablestory-tv.webp" alt="TableStory television layout" label="TV" caption="Remote-friendly navigation and readable focus states" width={1920} height={1044} />
           <Checkpoint>The app passes its tests, works in all three layouts, and has an evidence packet.</Checkpoint>
         </StepSection>
 
