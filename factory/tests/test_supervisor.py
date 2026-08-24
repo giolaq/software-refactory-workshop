@@ -134,6 +134,10 @@ class SupervisorTests(unittest.TestCase):
             prompt = (repo / decision["prompt"]).read_text()
             self.assertIn("## Approved Factory Charter", prompt)
             self.assertIn(
+                "does not require approval before a worker edits that path",
+                prompt,
+            )
+            self.assertIn(
                 FactoryCharter.load(repo, require_approved=True).policy_sha256(),
                 prompt,
             )

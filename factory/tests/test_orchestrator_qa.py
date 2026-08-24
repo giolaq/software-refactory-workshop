@@ -112,6 +112,10 @@ class QaPolicyTests(unittest.TestCase):
             engineering_hash = hashlib.sha256("Prefer public behavior seams.\n".encode()).hexdigest()
             self.assertIn(engineering_hash, prompt)
             self.assertIn("Do not rewrite shared history.", prompt)
+            self.assertIn(
+                "it does not require approval before you edit the file",
+                prompt,
+            )
 
     def test_accepts_new_ticket_numbered_python_and_javascript_tests(self):
         changes = [

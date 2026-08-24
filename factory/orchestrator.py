@@ -785,6 +785,7 @@ class Factory:
                 "pr_merge_commit": old.get("pr_merge_commit", ""),
                 "issue_url": raw.get("url", old.get("issue_url", "")),
                 "failure": old.get("failure", ""), "warnings": old.get("warnings", []),
+                "retry_context": old.get("retry_context", ""),
                 "gate_results": old.get("gate_results", []),
                 "changed_files": old.get("changed_files", []),
                 "current_prompt": old.get("current_prompt", ""),
@@ -1127,8 +1128,24 @@ class Factory:
         gates = "\n".join(f"- {g['name']}: `{g['cmd']}`" for g in self.cfg["gate"])
         retry = f"\n## Previous failure\n```\n{failure[-3000:]}\n```\n" if failure else ""
         protected = ""
+        existing_tests = ""
         contract = role_input(self.repo, "implementation")["text"]
         supervisor = self.supervisor_context(ticket)
+        policy = ticket.get("existing_test_policy", self.charter.existing_tests)
+        if policy == "review":
+            existing_tests = (
+                "\n## Existing repository tests\n"
+                "You may update or remove an existing test when this Ticket intentionally changes "
+                "the behavior that test covers. The factory records those edits for review. A Charter "
+                "`requires_human_approval` path requires the final human merge decision; it does not "
+                "require approval before you edit the file. Do not change the independent QA tests "
+                "listed below.\n"
+            )
+        elif policy == "protect":
+            existing_tests = (
+                "\n## Existing repository tests\n"
+                "Existing tests are protected by the Factory Charter. Do not edit, rename, or delete them.\n"
+            )
         if ticket.get("qa_tests"):
             paths = "\n".join(f"- `{path}`" for path in sorted(ticket["qa_tests"]))
             focused = ticket.get("qa_evidence", {}).get("focused_test_command", "")
@@ -1148,7 +1165,8 @@ class Factory:
             f"# Ticket #{ticket['number']}: {ticket['title']}\n\n{ticket['body']}\n\n"
             f"## Repository Project Contract and inventory\n```json\n{self.project_context}\n```\n\n"
             f"{self.charter_prompt_context()}\n"
-            f"## Verification gates\n{gates}\n{protected}\nCommit as `factory(#{ticket['number']}): <summary>`.\n"
+            f"## Verification gates\n{gates}\n{existing_tests}{protected}\n"
+            f"Commit as `factory(#{ticket['number']}): <summary>`.\n"
             "Work only in the current worktree. Do not change ticket scope.\n" + supervisor + "\n" + contract + retry
         )
         return path
@@ -2341,7 +2359,7 @@ class Factory:
                     ticket, "In Progress",
                     f"QA committed {len(ticket['qa_tests'])} protected test(s); running {ticket['agent']}",
                 )
-        failure = ""
+        failure = ticket.pop("retry_context", "")
         max_attempts = self.cfg["factory"]["max_retries"] + 1
         for attempt in range(1, max_attempts + 1):
             ticket["attempt"] = attempt
@@ -2683,12 +2701,35 @@ def retry_ticket(repo: Path, number: int, mock=False, project_number=None):
         if ticket["number"] == number:
             if ticket["status"] != "Blocked":
                 raise SystemExit(f"#{number} is {ticket['status']}, not Blocked")
-            ticket.update(
-                status="Ready", attempt=0, failure="", qa_attempt=0,
-                qa_commit="", qa_tests={}, qa_failure="", qa_approved=False, base_sha="",
+            worktree = worktree_path(repo, number)
+            preserve_candidate = bool(
+                ticket.get("phase") == "verifying"
+                and ticket.get("branch")
+                and ticket.get("base_sha")
+                and ticket.get("qa_commit")
+                and ticket.get("qa_tests")
+                and worktree.is_dir()
             )
-            (repo / ".factory/qa-approvals" / str(number)).unlink(missing_ok=True)
-            ticket.setdefault("history", []).append({"at": now(), "status": "Ready", "note": "Operator retry"})
+            if preserve_candidate:
+                ticket.update(
+                    status="Ready",
+                    attempt=0,
+                    retry_context=ticket.get("failure", ""),
+                    failure="",
+                    qa_approved=True,
+                )
+                note = "Operator retry from existing candidate and protected QA tests"
+            else:
+                ticket.update(
+                    status="Ready", attempt=0, failure="", retry_context="",
+                    qa_attempt=0, qa_commit="", qa_tests={}, qa_failure="",
+                    qa_approved=False, base_sha="",
+                )
+                (repo / ".factory/qa-approvals" / str(number)).unlink(missing_ok=True)
+                note = "Operator retry from repository base"
+            ticket.setdefault("history", []).append({
+                "at": now(), "status": "Ready", "note": note,
+            })
             if not mock:
                 backend = GitHubBackend(repo, project_number)
                 remote = {item["number"]: item for item in backend.load()}

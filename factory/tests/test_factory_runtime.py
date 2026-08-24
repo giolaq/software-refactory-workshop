@@ -26,6 +26,7 @@ from orchestrator import (
     publish_repository_setup,
     recover_remote_ticket_state,
     resolve_codex_cli,
+    retry_ticket,
     worktree_path,
 )
 from factory_charter import FactoryCharter
@@ -52,6 +53,45 @@ def install_approved_charter(repo: Path, merge_authority: str = "human") -> None
 
 
 class RuntimeTests(unittest.TestCase):
+    def test_retry_preserves_a_verification_candidate_and_qa_tests(self):
+        with tempfile.TemporaryDirectory() as directory:
+            repo = Path(directory) / "repo"
+            state = repo / ".factory/state.json"
+            state.parent.mkdir(parents=True)
+            worktree = worktree_path(repo, 1)
+            qa_test = worktree / "tests/test_ticket_1_contract.py"
+            qa_test.parent.mkdir(parents=True)
+            qa_test.write_text("def test_contract():\n    assert True\n")
+            state.write_text(json.dumps({
+                "tickets": [{
+                    "number": 1,
+                    "status": "Blocked",
+                    "phase": "verifying",
+                    "failure": "legacy test still expects removed behavior",
+                    "attempt": 3,
+                    "branch": "factory/1-contract",
+                    "base_sha": "base-sha",
+                    "qa_attempt": 1,
+                    "qa_commit": "qa-sha",
+                    "qa_tests": {
+                        "tests/test_ticket_1_contract.py": "test-blob",
+                    },
+                    "qa_approved": False,
+                    "history": [],
+                }],
+            }))
+
+            retry_ticket(repo, 1, mock=True)
+
+            ticket = json.loads(state.read_text())["tickets"][0]
+            self.assertEqual(ticket["status"], "Ready")
+            self.assertEqual(ticket["attempt"], 0)
+            self.assertTrue(ticket["qa_approved"])
+            self.assertEqual(ticket["qa_commit"], "qa-sha")
+            self.assertEqual(ticket["base_sha"], "base-sha")
+            self.assertIn("legacy test", ticket["retry_context"])
+            self.assertIn("existing candidate", ticket["history"][-1]["note"])
+
     def test_live_evidence_export_republishes_actual_packet_record(self):
         with tempfile.TemporaryDirectory() as directory:
             repo = Path(directory) / "repo"
