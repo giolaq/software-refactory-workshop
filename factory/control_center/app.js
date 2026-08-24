@@ -439,7 +439,8 @@ function renderTickets(factory) {
   $("#ticket-board").innerHTML = STATES.map((state) => {
     const items = tickets.filter((ticket) => ticket.status === state);
     const cards = items.map((ticket) => `<button class="ticket-card" type="button" data-ticket="${ticket.number}"><div class="ticket-top"><span class="ticket-number">#${ticket.number}</span><span>${esc(ticket.agent || "unassigned")}</span></div><h3>${esc(ticket.title)}</h3><div class="ticket-meta"><div><b>${esc(ticket.phase || ticket.status)}</b><span>Attempt ${ticket.attempt || 0}</span></div><div><span>Needs</span><span class="dependency-list">${ticket.dependencies?.length ? ticket.dependencies.map((number) => `<i>#${number}</i>`).join("") : "None"}</span></div></div></button>`).join("");
-    return `<section class="ticket-column"><header><h2>${esc(state)}</h2><span>${items.length}</span></header><div class="ticket-cards">${cards || '<p class="ticket-empty">No tickets</p>'}</div></section>`;
+    const countLabel = `${items.length} ${items.length === 1 ? "ticket" : "tickets"}`;
+    return `<section class="ticket-column" aria-label="${esc(state)}: ${countLabel}"><header><h2>${esc(state)}</h2><span aria-label="${countLabel}">${items.length}</span></header><div class="ticket-cards">${cards || '<p class="ticket-empty">No tickets in this state</p>'}</div></section>`;
   }).join("");
   $$('[data-ticket]').forEach((card) => card.addEventListener("click", () => openTicket(Number(card.dataset.ticket))));
 }

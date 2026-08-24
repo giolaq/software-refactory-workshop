@@ -1240,6 +1240,17 @@ class ControlCenterTests(unittest.TestCase):
         self.assertIn("finding.summary || finding.title || finding.id", javascript)
         self.assertIn("payload.mode = mode()", javascript)
 
+    def test_ticket_board_headers_stay_in_flow_and_cards_are_contained(self):
+        frontend = Path(__file__).parents[1] / "control_center"
+        stylesheet = (frontend / "styles.css").read_text()
+        javascript = (frontend / "app.js").read_text()
+
+        self.assertIn("grid-auto-columns: minmax(248px,280px)", stylesheet)
+        self.assertIn(".ticket-column > header { position: relative;", stylesheet)
+        self.assertNotIn(".ticket-column > header { position: sticky;", stylesheet)
+        self.assertIn(".ticket-card { display: block; width: 100%; min-width: 0;", stylesheet)
+        self.assertIn("No tickets in this state", javascript)
+
     def test_factory_progress_pulses_only_the_current_running_phase(self):
         frontend = Path(__file__).parents[1] / "control_center"
         source = (frontend / "index.html").read_text()
