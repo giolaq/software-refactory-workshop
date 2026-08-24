@@ -12,8 +12,12 @@ from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).parents[1]))
 
-from doctor import baseline_check, run_doctor, version_tuple
-from codex_cli import codex_auth_ready
+from doctor import Check, baseline_check, run_doctor, version_tuple
+from codex_cli import (
+    codex_auth_ready,
+    codex_region_environment,
+    codex_uses_managed_bedrock,
+)
 from orchestrator import (
     Factory,
     approve_qa_tests,
@@ -915,6 +919,28 @@ class RuntimeTests(unittest.TestCase):
             "Login is not required. OpenAI Codex uses Bedrock via managed credentials.",
         ))
         self.assertFalse(codex_auth_ready(1, "Not logged in"))
+        self.assertTrue(codex_uses_managed_bedrock(
+            "Login is not required. OpenAI Codex uses Bedrock via managed credentials.",
+        ))
+
+    def test_codex_region_uses_environment_then_shared_aws_config(self):
+        with tempfile.TemporaryDirectory() as directory:
+            home = Path(directory)
+            config = home / ".aws/config"
+            config.parent.mkdir()
+            config.write_text("[default]\nregion = us-east-1\n")
+
+            self.assertEqual(
+                codex_region_environment({"HOME": str(home)}),
+                {"AWS_REGION": "us-east-1", "AWS_DEFAULT_REGION": "us-east-1"},
+            )
+            self.assertEqual(
+                codex_region_environment({
+                    "HOME": str(home),
+                    "AWS_DEFAULT_REGION": "eu-west-1",
+                }),
+                {"AWS_REGION": "eu-west-1", "AWS_DEFAULT_REGION": "eu-west-1"},
+            )
 
     def test_codex_resolution_accepts_managed_credentials_wrapper(self):
         candidate = "/managed/bin/codex"
@@ -930,11 +956,97 @@ class RuntimeTests(unittest.TestCase):
             ),
         ]
         with (
-            mock.patch.dict("os.environ", {}, clear=True),
+            mock.patch.dict(
+                "os.environ",
+                {"FACTORY_CODEX_BIN": candidate, "AWS_REGION": "us-east-1"},
+                clear=True,
+            ),
             mock.patch("orchestrator.shutil.which", return_value=candidate),
             mock.patch("orchestrator.subprocess.run", side_effect=results),
         ):
             self.assertEqual(resolve_codex_cli(), candidate)
+
+    def test_codex_resolution_rejects_managed_bedrock_without_a_region(self):
+        candidate = "/managed/bin/codex"
+        results = [
+            subprocess.CompletedProcess(
+                [candidate, "exec", "--help"], 0, "Run Codex non-interactively\nUsage: codex exec", "",
+            ),
+            subprocess.CompletedProcess(
+                [candidate, "login", "status"],
+                1,
+                "",
+                "Login is not required. OpenAI Codex uses Bedrock via managed credentials.",
+            ),
+        ]
+        with tempfile.TemporaryDirectory() as directory:
+            with (
+                mock.patch.dict(
+                    "os.environ",
+                    {"FACTORY_CODEX_BIN": candidate, "HOME": directory},
+                    clear=True,
+                ),
+                mock.patch("orchestrator.subprocess.run", side_effect=results),
+            ):
+                with self.assertRaisesRegex(RuntimeError, "no AWS region is configured"):
+                    resolve_codex_cli()
+
+    def test_full_doctor_reports_missing_region_for_managed_bedrock(self):
+        candidate = "/managed/bin/codex"
+        config = {
+            "agents": {"codex": "codex {prompt}"},
+            "agent_capabilities": {
+                "codex": SimpleNamespace(
+                    execution_environment="local",
+                    filesystem_mode="workspace-write",
+                    allowed_working_roots=("worktree",),
+                    network_expectation="provider-only",
+                    supports_read_only=True,
+                ),
+            },
+            "qa": {
+                "agent": "codex",
+                "max_retries": 1,
+                "test_roots": ["tests"],
+                "test_file_patterns": ["test_ticket_{ticket}.py"],
+            },
+            "gate": [{"name": "tests", "cmd": "true"}],
+        }
+
+        def command(args, _repo, **_kwargs):
+            if args == [candidate, "login", "status"]:
+                return subprocess.CompletedProcess(
+                    args,
+                    1,
+                    "",
+                    "Login is not required. OpenAI Codex uses Bedrock via managed credentials.",
+                )
+            if args == [candidate, "exec", "--help"]:
+                return subprocess.CompletedProcess(args, 0, "Usage: codex exec", "")
+            return subprocess.CompletedProcess(args, 1, "", "unavailable")
+
+        with tempfile.TemporaryDirectory() as directory:
+            repo = Path(directory)
+            ProjectContract.detect(repo).write()
+            install_approved_charter(repo)
+            output = io.StringIO()
+            with (
+                mock.patch.dict("os.environ", {"HOME": directory}, clear=True),
+                mock.patch("doctor.command", side_effect=command),
+                mock.patch("doctor.codex_candidates", return_value=[candidate]),
+                mock.patch("doctor.shutil.which", return_value=None),
+                mock.patch(
+                    "doctor.port_check",
+                    return_value=Check("PASS", "port", "available"),
+                ),
+                contextlib.redirect_stdout(output),
+            ):
+                run_doctor(repo, config, full=True)
+
+        self.assertRegex(
+            output.getvalue(),
+            r"\[FAIL\]\s+codex adapter\s+managed Bedrock credentials require an AWS region",
+        )
 
     def test_basic_doctor_does_not_call_agent_authentication(self):
         config = {

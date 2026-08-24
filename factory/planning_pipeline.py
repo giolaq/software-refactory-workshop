@@ -28,6 +28,7 @@ from project_contract import ProjectContract
 from planner import dependency_waves, issue_body, render_review, validate_plan
 from sensitive_data import redact_credentials
 from adapter_capabilities import role_environment
+from codex_cli import codex_environment
 from triage import classify_controls
 
 
@@ -80,6 +81,20 @@ def append_log(path: Path, message: str):
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("a") as stream:
         stream.write(f"[{now()}] {redact_credentials(message)}\n")
+
+
+def agent_failure_detail(output: str, limit: int = 2000) -> str:
+    """Prefer terminal provider errors over echoed prompts and CLI headers."""
+    redacted = redact_credentials(output.strip())
+    error_lines = []
+    for line in redacted.splitlines():
+        line = line.strip()
+        if re.match(r"(?i)^(?:error|fatal(?: error)?):", line):
+            if line not in error_lines:
+                error_lines.append(line)
+    if error_lines:
+        return "\n".join(error_lines[-5:])[:limit]
+    return redacted[-limit:]
 
 
 def claude_json_schema(path: Path) -> str:
@@ -884,7 +899,7 @@ def _run_stage_agent_impl(
             ]
             result = subprocess.run(
                 command, cwd=repo, input=prompt, text=True, capture_output=True,
-                env=role_environment("CODEX_HOME", "XDG_CONFIG_HOME", "XDG_CACHE_HOME"),
+                env=codex_environment(),
             )
         elif planning_agent == "claude":
             command = [
@@ -901,7 +916,7 @@ def _run_stage_agent_impl(
         if planning_agent == "codex":
             log.write_text(result.stdout + result.stderr)
         if result.returncode:
-            detail = redact_credentials((result.stderr or "").strip())[:2000]
+            detail = agent_failure_detail(result.stderr or result.stdout)
             if detail:
                 append_log(log, f"Agent error: {detail}")
                 raise RuntimeError(f"{stage.replace('_', ' ')} expert failed: {detail}; see {log}")

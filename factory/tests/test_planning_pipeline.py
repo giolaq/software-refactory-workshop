@@ -172,6 +172,41 @@ class PlanningPipelineTests(unittest.TestCase):
         self.assertEqual(receipt["claimed_result"], "Planning stage failed")
         self.assertTrue(receipt["unresolved_risks"])
 
+    def test_codex_planning_surfaces_terminal_provider_error_and_passes_region(self):
+        provider_error = (
+            "OpenAI Codex v0.146.1\n"
+            "--------\n"
+            "user\n"
+            "You are the Product Review expert. Clarify the problem.\n"
+            "PRD content omitted\n"
+            "ERROR: Fatal error: failed to resolve Amazon Bedrock auth: "
+            "AWS SDK config did not resolve a region\n"
+        )
+        failed = subprocess.CompletedProcess(["codex"], 1, "", provider_error)
+        with (
+            patch.dict("os.environ", {
+                "PATH": "/usr/bin",
+                "HOME": str(self.repo),
+                "AWS_DEFAULT_REGION": "us-east-1",
+                "AWS_SECRET_ACCESS_KEY": "must-not-leak",
+            }, clear=True),
+            patch("planning_pipeline.subprocess.run", return_value=failed) as invoked,
+        ):
+            with self.assertRaisesRegex(RuntimeError, "AWS SDK config did not resolve a region"):
+                plan_prd(
+                    self.repo, self.prd, None, "codex", 3, 12,
+                    "codex", "codex", mock=False,
+                )
+
+        environment = invoked.call_args.kwargs["env"]
+        self.assertEqual(environment["AWS_REGION"], "us-east-1")
+        self.assertNotIn("AWS_SECRET_ACCESS_KEY", environment)
+        plan_id = sha_text(self.prd.read_text())[:12]
+        manifest = load_manifest(self.repo / ".factory/plans" / plan_id)
+        error = manifest["stages"]["product_review"]["error"]
+        self.assertIn("AWS SDK config did not resolve a region", error)
+        self.assertNotIn("You are the Product Review expert", error)
+
     def test_retry_preserves_rejected_slices_and_sends_validator_feedback_to_expert(self):
         product = json.loads((FIXTURES / "01-product-review.json").read_text())
         architecture = json.loads((FIXTURES / "02-system-architecture.json").read_text())

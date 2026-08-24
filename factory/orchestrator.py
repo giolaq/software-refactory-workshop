@@ -33,7 +33,11 @@ from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
 
 from doctor import run_doctor
-from codex_cli import codex_auth_ready
+from codex_cli import (
+    codex_auth_ready,
+    codex_region_environment,
+    codex_uses_managed_bedrock,
+)
 from acceptance_evidence import classify_focused_result, focused_test_command
 from adapter_capabilities import load_capabilities
 from evidence_packet import create_canvas, export_evidence
@@ -309,6 +313,7 @@ def resolve_codex_cli() -> str:
         "/Applications/ChatGPT.app/Contents/Resources/codex",
     ]
     compatible = []
+    managed_bedrock_without_region = False
     for candidate in dict.fromkeys(c for c in candidates if c):
         try:
             help_result = subprocess.run(
@@ -326,8 +331,17 @@ def resolve_codex_cli() -> str:
             )
         except (OSError, subprocess.TimeoutExpired):
             continue
-        if codex_auth_ready(status.returncode, status.stdout + status.stderr):
+        auth_output = status.stdout + status.stderr
+        if codex_auth_ready(status.returncode, auth_output):
+            if codex_uses_managed_bedrock(auth_output) and not codex_region_environment():
+                managed_bedrock_without_region = True
+                continue
             return candidate
+    if managed_bedrock_without_region:
+        raise RuntimeError(
+            "Codex uses managed Amazon Bedrock credentials, but no AWS region is configured. "
+            "Set AWS_REGION or configure a region in ~/.aws/config, then retry."
+        )
     if compatible:
         raise RuntimeError(
             f"Codex CLI is not signed in. Run `{shlex.quote(compatible[0])} login`, then retry."
@@ -1620,7 +1634,10 @@ class Factory:
         """Pass only the environment names declared for this Agent Adapter."""
         capability = self.capabilities[agent]
         allowed = set(capability.environment_allowlist) | set(capability.credential_names)
-        return {name: value for name, value in os.environ.items() if name in allowed}
+        environment = {name: value for name, value in os.environ.items() if name in allowed}
+        if agent == "codex":
+            environment.update(codex_region_environment())
+        return environment
 
     def run_agent(self, ticket: dict, worktree: Path, prompt: Path):
         return self.run_adapter(

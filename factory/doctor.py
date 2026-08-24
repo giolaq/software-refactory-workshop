@@ -13,7 +13,11 @@ from pathlib import Path, PurePosixPath
 
 from factory_contracts import profile as factory_profile
 from factory_charter import FactoryCharter, FactoryCharterError
-from codex_cli import codex_auth_ready
+from codex_cli import (
+    codex_auth_ready,
+    codex_region_environment,
+    codex_uses_managed_bedrock,
+)
 from github_repository import (
     GitHubRepositoryError,
     parse_github_repository,
@@ -271,7 +275,18 @@ def run_doctor(
                     help_result = command([candidate, "exec", "--help"], repo)
                     auth_output = status.stdout + status.stderr
                     if codex_auth_ready(status.returncode, auth_output) and help_result.returncode == 0:
-                        available, detail = True, candidate
+                        if codex_uses_managed_bedrock(auth_output):
+                            region = codex_region_environment().get("AWS_REGION", "")
+                            if not region:
+                                detail = (
+                                    "managed Bedrock credentials require an AWS region; "
+                                    "set AWS_REGION or configure a region in ~/.aws/config"
+                                )
+                                continue
+                            detail = f"{candidate} (managed Bedrock; region {region})"
+                        else:
+                            detail = candidate
+                        available = True
                         break
             elif name == "claude":
                 found = shutil.which("claude")

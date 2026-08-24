@@ -27,7 +27,7 @@ execution_environment = "local"
 filesystem_mode = "workspace-write"
 allowed_working_roots = ["worktree"]
 network_expectation = "provider-only"
-environment_allowlist = ["PATH", "HOME", "TMPDIR", "LANG", "TERM", "CODEX_HOME"]
+environment_allowlist = ["PATH", "HOME", "TMPDIR", "LANG", "TERM", "CODEX_HOME", "AWS_REGION", "AWS_DEFAULT_REGION"]
 credential_names = []
 read_only_template = '{codex} exec --sandbox read-only --ephemeral "$(cat {prompt})"'
 
