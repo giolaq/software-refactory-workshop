@@ -733,7 +733,43 @@ class ControlCenter:
     def snapshot(self) -> dict:
         planning = read_json(self.repo / ".factory" / "planning-state.json", {})
         plan_id = planning.get("plan_id", "")
-        manifest = read_json(self.repo / ".factory" / "plans" / plan_id / "manifest.json", {}) if PLAN_ID.fullmatch(plan_id) else {}
+        run_dir = self.repo / ".factory" / "plans" / plan_id
+        manifest = read_json(run_dir / "manifest.json", {}) if PLAN_ID.fullmatch(plan_id) else {}
+        slices = read_json(run_dir / "04-vertical-slices.json", {}) if PLAN_ID.fullmatch(plan_id) else {}
+        publication = slices.get("publication") if isinstance(slices, dict) else None
+        if isinstance(publication, dict):
+            issues = publication.get("issues")
+            issues = issues if isinstance(issues, dict) else {}
+            repository = publication.get("repository", "")
+            published_tickets = []
+            for ticket in slices.get("tickets", []):
+                key = ticket.get("key", "")
+                number = issues.get(key)
+                if not key or not isinstance(number, int):
+                    continue
+                dependencies = [
+                    issues[dependency]
+                    for dependency in ticket.get("dependencies", [])
+                    if dependency in issues
+                ]
+                published_tickets.append({
+                    "number": number,
+                    "key": key,
+                    "title": ticket.get("title", key),
+                    "agent": ticket.get("agent", ""),
+                    "dependencies": dependencies,
+                    "url": (
+                        f"https://github.com/{repository}/issues/{number}"
+                        if repository else ""
+                    ),
+                })
+            planning["publication"] = {
+                "repository": repository,
+                "project_number": publication.get("project_number"),
+                "issues": issues,
+                "ticket_count": len(issues),
+                "tickets": published_tickets,
+            }
         planning_agent = planning.get("planning_agent") or self.session_config().get("planning_agent") or "codex"
         if manifest.get("plan_id") == plan_id:
             planning_agent = manifest.get("planning_agent", "codex")

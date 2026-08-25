@@ -9,6 +9,8 @@ const app = {
   loadedPlanningArtifact: "",
   prdLoaded: false,
   eventSource: null,
+  operationPoll: null,
+  boardMode: localStorage.getItem("factory-board-mode") || "focus",
 };
 
 const $ = (selector, root = document) => root.querySelector(selector);
@@ -90,6 +92,42 @@ function formatTime(value) {
   return Number.isNaN(date.valueOf()) ? value : date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
 }
 
+function setSignal(selector, text, tone = "") {
+  const element = $(selector);
+  if (!element) return;
+  element.innerHTML = `<i class="signal-dot ${esc(tone)}"></i>${esc(text)}`;
+}
+
+function setConnection(status) {
+  const connected = status === "connected";
+  const label = connected ? "Connected" : status === "reconnecting" ? "Reconnecting" : "Connecting";
+  $("#connection-label").textContent = label;
+  $("#connection-status").className = `live-status ${status}`;
+  setSignal("#system-stream", connected ? "Live" : label, connected ? "good" : "warn");
+}
+
+async function refreshSnapshot(silent = true) {
+  try {
+    const snapshot = await request("/api/snapshot");
+    renderSnapshot(snapshot);
+    return snapshot;
+  } catch (error) {
+    if (!silent) toast(error.message, true);
+    return null;
+  }
+}
+
+function syncOperationPolling(operation) {
+  const active = ["running", "stopping"].includes(operation?.status);
+  if (!active) {
+    if (app.operationPoll) window.clearInterval(app.operationPoll);
+    app.operationPoll = null;
+    return;
+  }
+  if (app.operationPoll) return;
+  app.operationPoll = window.setInterval(() => refreshSnapshot(), 1500);
+}
+
 function section(body, title) {
   const match = String(body || "").match(new RegExp(`## ${title}\\s*\\n([\\s\\S]*?)(?=\\n## |$)`, "i"));
   return match?.[1]?.trim() || "Not provided.";
@@ -112,7 +150,7 @@ function renderSnapshot(data) {
   $("#repo-name").textContent = repo.name || "Unknown repository";
   $("#repo-branch").textContent = repo.branch || "—";
   $("#repo-dot").className = `status-dot ${repo.dirty ? "warn" : "good"}`;
-  $("#connection-label").textContent = "Connected";
+  setSignal("#system-repository", repo.dirty ? "Changes present" : "Clean", repo.dirty ? "warn" : "good");
   $("#connect-repo").textContent = repo.name || "—";
   $("#connect-branch").textContent = repo.branch || "—";
   $("#connect-remote").textContent = repo.remote || "No origin remote";
@@ -169,13 +207,16 @@ function renderSnapshot(data) {
   $("#metric-active").textContent = active;
   $("#metric-review").textContent = attention.review_limit ? `${waiting} / ${attention.review_limit}` : waiting;
   $("#metric-done").textContent = tickets.filter((ticket) => ticket.status === "Done").length;
-  $("#state-updated").textContent = data.factory?.updated_at ? `Updated ${formatTime(data.factory.updated_at)}` : "Waiting for state";
+  const updatedLabel = data.factory?.updated_at ? formatTime(data.factory.updated_at) : "Waiting";
+  $("#state-updated").textContent = data.factory?.updated_at ? `Updated ${updatedLabel}` : "Waiting for state";
+  $("#system-updated").textContent = updatedLabel;
 
   renderOperation(data.operation || {});
+  syncOperationPolling(data.operation || {});
   renderJourney(data.journey || {});
   renderDecisions(data);
   renderPlanning(data.planning || {});
-  renderTickets(data.factory || {});
+  renderTickets(data.factory || {}, data.planning || {});
   renderSupervisor(data.supervisor || {}, data.factory || {}, data.config || {});
   renderApplication(data.application || {});
   renderMonitor(data.monitor || {}, data.repo || {});
@@ -190,6 +231,7 @@ function renderSnapshot(data) {
 
 function renderJourney(journey) {
   if (!journey.phases?.length) return;
+  $("#now-surface").className = `surface now-surface run-state-${journey.state || "ready"}`;
   $("#journey-kicker").textContent = `Phase ${journey.phase_number} of ${journey.phase_count} · ${journey.phase_label}`;
   $("#journey-state").textContent = journey.state || "ready";
   $("#journey-state").className = `journey-state ${journey.state || "ready"}`;
@@ -246,6 +288,9 @@ function updateAutonomousWarning() {
 
 function renderOperation(operation) {
   const status = operation.status || "idle";
+  const panel = $("#operation-panel");
+  panel.className = `surface operation-surface ${status}`;
+  if (["running", "stopping", "failed"].includes(status)) panel.open = true;
   $("#operation-title").textContent = operation.title || "No operation running";
   const badge = $("#operation-status");
   badge.textContent = status;
@@ -264,6 +309,14 @@ function renderOperation(operation) {
   if (output.textContent !== newOutput) output.textContent = newOutput;
   if (nearBottom) output.scrollTop = output.scrollHeight;
   $("#stop-operation").hidden = !["running", "stopping"].includes(status);
+  const operationTone = ["running", "stopping"].includes(status)
+    ? "live"
+    : status === "failed" || status === "stopped"
+      ? "bad"
+      : status === "succeeded"
+        ? "good"
+        : "";
+  setSignal("#system-operation", status[0].toUpperCase() + status.slice(1), operationTone);
   $$('[data-action]').forEach((button) => {
     if (button.dataset.action === "doctor") return;
     button.disabled = status === "running" || status === "stopping";
@@ -272,7 +325,12 @@ function renderOperation(operation) {
 
 function renderDecisions(data) {
   const decisions = data.decisions || [];
-  $("#decision-list").innerHTML = decisions.length ? decisions.map((item, index) => `<article class="decision"><b>${esc(item.title)}</b><p>${esc(item.text)}</p><button class="button" type="button" data-decision="${index}">Review</button></article>`).join("") : '<p class="empty-state">No approvals are waiting.</p>';
+  $("#decision-count").textContent = decisions.length;
+  $("#attention-surface").classList.toggle("has-attention", decisions.length > 0);
+  $("#attention-intro").textContent = decisions.length
+    ? `${decisions.length} ${decisions.length === 1 ? "decision is" : "decisions are"} blocking or pacing delivery.`
+    : "Nothing needs you now. The factory can continue without a human decision.";
+  $("#decision-list").innerHTML = decisions.length ? decisions.map((item, index) => `<article class="decision"><b>${esc(item.title)}</b><p>${esc(item.text)}</p><button class="button" type="button" data-decision="${index}">Review decision</button></article>`).join("") : '<p class="empty-state">No decisions are waiting.</p>';
   $$('[data-decision]').forEach((button) => button.addEventListener("click", () => {
     const item = decisions[Number(button.dataset.decision)];
     if (item.ticket) return openTicket(item.ticket.number);
@@ -409,6 +467,7 @@ function renderPlanningGate(item, planning) {
     && planning.status === "alignment_approved"
     && mode() === "live"
   );
+  const projectTitle = planning.project || "Factory Delivery";
   if (approved && !publicationPending) {
     $("#approval-panel").innerHTML = `<span class="section-label">Human gate</span><h2>${esc(item.title)}</h2><div class="safety-note"><b>Approved</b><p>This decision and its artifact hashes are recorded in the plan manifest.</p></div>`;
     return;
@@ -422,7 +481,7 @@ function renderPlanningGate(item, planning) {
     const detail = publicationPending
       ? "Alignment is already approved. Retrying reuses any plan-marked GitHub issues and completes the interrupted publication."
       : `Publishing creates the approved vertical slices as ${mode() === "live" ? "GitHub issues" : "local rehearsal tickets"}.`;
-    $("#approval-panel").innerHTML = `<span class="section-label">Human gate</span><h2>Alignment</h2><p>${detail}</p><div class="approval-card"><label>New GitHub Project title<input id="project-title" value="TableStory Workshop" ${mode() === "live" ? "" : "disabled"}></label><div class="approval-actions"><button class="button button-primary" type="button" id="approve-alignment">${heading}</button></div></div>`;
+    $("#approval-panel").innerHTML = `<span class="section-label">Human gate</span><h2>Alignment</h2><p>${detail}</p><div class="approval-card"><label>New GitHub Project title<input id="project-title" value="${esc(projectTitle)}" ${mode() === "live" ? "" : "disabled"}></label><div class="approval-actions"><button class="button button-primary" type="button" id="approve-alignment">${heading}</button></div></div>`;
     $("#approve-alignment").addEventListener("click", () => action("publish-plan", { project_title: $("#project-title").value }));
   } else {
     const title = item.stage === "system_architecture" ? "System Architecture" : "Program Design";
@@ -431,14 +490,47 @@ function renderPlanningGate(item, planning) {
   }
 }
 
-function renderTickets(factory) {
-  const tickets = factory.tickets || [];
-  $("#state-summary").innerHTML = STATES.map((state) => `<span>${esc(state)} ${tickets.filter((ticket) => ticket.status === state).length}</span>`).join("");
-  $("#ticket-board").innerHTML = STATES.map((state) => {
+function renderTickets(factory, planning = {}) {
+  const localTickets = factory.tickets || [];
+  const publication = planning.publication || {};
+  const publishedCount = publication.ticket_count || Object.keys(publication.issues || {}).length;
+  const loadState = $("#ticket-load-state");
+  const waitingToLoad = !localTickets.length && planning.status === "published" && publishedCount;
+  const tickets = waitingToLoad
+    ? (publication.tickets || []).map((ticket) => ({
+      ...ticket,
+      status: ticket.dependencies?.length ? "Backlog" : "Ready",
+      phase: "Published",
+      preview: true,
+    }))
+    : localTickets;
+  loadState.hidden = !waitingToLoad;
+  loadState.innerHTML = waitingToLoad
+    ? `<div><span class="section-label">Published on GitHub</span><h2>${publishedCount} approved ${publishedCount === 1 ? "ticket is" : "tickets are"} ready to load</h2><p>Run one cycle to load the tickets into the local delivery board and pause at the first independent QA checkpoint.</p></div><button class="button button-primary" type="button" data-load-tickets>Run one cycle</button>`
+    : "";
+  $("[data-load-tickets]", loadState)?.addEventListener("click", () => action("run-once"));
+  const counts = Object.fromEntries(STATES.map((state) => [state, tickets.filter((ticket) => ticket.status === state).length]));
+  $("#state-summary").innerHTML = STATES.map((state) => `<span class="${counts[state] ? "has-items" : ""}">${esc(state)} <b>${counts[state]}</b></span>`).join("");
+  const populatedStates = STATES.filter((state) => counts[state]);
+  const visibleStates = app.boardMode === "all" ? STATES : (populatedStates.length ? populatedStates : ["Backlog"]);
+  $$("[data-board-mode]").forEach((button) => {
+    const active = button.dataset.boardMode === app.boardMode;
+    button.classList.toggle("active", active);
+    button.setAttribute("aria-pressed", String(active));
+  });
+  const board = $("#ticket-board");
+  board.className = `ticket-board mode-${app.boardMode}${visibleStates.length === 1 ? " single-lane" : ""}`;
+  board.innerHTML = visibleStates.map((state) => {
     const items = tickets.filter((ticket) => ticket.status === state);
-    const cards = items.map((ticket) => `<button class="ticket-card" type="button" data-ticket="${ticket.number}"><div class="ticket-top"><span class="ticket-number">#${ticket.number}</span><span>${esc(ticket.agent || "unassigned")}</span></div><h3>${esc(ticket.title)}</h3><div class="ticket-meta"><div><b>${esc(ticket.phase || ticket.status)}</b><span>Attempt ${ticket.attempt || 0}</span></div><div><span>Needs</span><span class="dependency-list">${ticket.dependencies?.length ? ticket.dependencies.map((number) => `<i>#${number}</i>`).join("") : "None"}</span></div></div></button>`).join("");
+    const cards = items.map((ticket) => {
+      const content = `<div class="ticket-top"><span class="ticket-number">#${ticket.number}</span><span>${esc(ticket.agent || "unassigned")}</span></div><h3>${esc(ticket.title)}</h3><div class="ticket-meta"><div><b>${esc((ticket.phase || ticket.status).replaceAll("_", " "))}</b><span>${ticket.preview ? "Awaiting local load" : `Attempt ${ticket.attempt || 0}`}</span></div><div><span>Needs</span><span class="dependency-list">${ticket.dependencies?.length ? ticket.dependencies.map((number) => `<i>#${number}</i>`).join("") : "None"}</span></div></div>`;
+      return ticket.preview
+        ? `<a class="ticket-card" href="${esc(ticket.url)}" target="_blank" rel="noreferrer">${content}</a>`
+        : `<button class="ticket-card" type="button" data-ticket="${ticket.number}">${content}</button>`;
+    }).join("");
     const countLabel = `${items.length} ${items.length === 1 ? "ticket" : "tickets"}`;
-    return `<section class="ticket-column" aria-label="${esc(state)}: ${countLabel}"><header><h2>${esc(state)}</h2><span aria-label="${countLabel}">${items.length}</span></header><div class="ticket-cards">${cards || '<p class="ticket-empty">No tickets in this state</p>'}</div></section>`;
+    const stateClass = state.toLowerCase().replaceAll(" ", "-");
+    return `<section class="ticket-column state-${esc(stateClass)}" aria-label="${esc(state)}: ${countLabel}"><header><h2>${esc(state)}</h2><span aria-label="${countLabel}">${items.length}</span></header><div class="ticket-cards">${cards || '<p class="ticket-empty">No tickets in this state</p>'}</div></section>`;
   }).join("");
   $$('[data-ticket]').forEach((card) => card.addEventListener("click", () => openTicket(Number(card.dataset.ticket))));
 }
@@ -561,6 +653,7 @@ async function action(name, extra = {}) {
       return operation;
     }
     renderOperation(operation);
+    syncOperationPolling(operation);
     showView("overview");
     toast(`${operation.title} started.`);
     return operation;
@@ -743,12 +836,22 @@ async function openArtifact(path) {
 
 function connectEvents() {
   app.eventSource?.close();
+  setConnection("connecting");
   const source = new EventSource("/api/events");
   app.eventSource = source;
+  source.onopen = () => setConnection("connected");
   source.onmessage = (event) => {
-    try { renderSnapshot(JSON.parse(event.data)); } catch { /* next event retries */ }
+    try {
+      setConnection("connected");
+      renderSnapshot(JSON.parse(event.data));
+    } catch (error) {
+      console.error("Could not render the latest Control Center state.", error);
+    }
   };
-  source.onerror = () => { $("#connection-label").textContent = "Reconnecting"; };
+  source.onerror = () => {
+    setConnection("reconnecting");
+    refreshSnapshot();
+  };
 }
 
 function wireEvents() {
@@ -762,10 +865,17 @@ function wireEvents() {
   $("#prd-editor").addEventListener("input", () => { $("#prd-save-state").textContent = "Unsaved changes"; });
   $("#start-planning").addEventListener("click", async () => { try { await savePrd(); setMode($("#planning-mode").value); await action("plan"); } catch (error) { toast(error.message, true); } });
   $("#continue-plan").addEventListener("click", () => action("continue-plan"));
-  $("#publish-plan").addEventListener("click", () => action("publish-plan", { project_title: "TableStory Workshop" }));
+  $("#publish-plan").addEventListener("click", () => action("publish-plan", {
+    project_title: $("#project-title")?.value || app.snapshot?.planning?.project || "Factory Delivery",
+  }));
   $("#planning-mode").addEventListener("change", (event) => { setMode(event.target.value); renderPlanning(app.snapshot?.planning || {}); });
   $("#connect-mode").addEventListener("change", (event) => setMode(event.target.value));
   $("#run-mode").addEventListener("change", (event) => setMode(event.target.value));
+  $$("[data-board-mode]").forEach((button) => button.addEventListener("click", () => {
+    app.boardMode = button.dataset.boardMode === "all" ? "all" : "focus";
+    localStorage.setItem("factory-board-mode", app.boardMode);
+    renderTickets(app.snapshot?.factory || {}, app.snapshot?.planning || {});
+  }));
   $("#stop-operation").addEventListener("click", async () => { if (!window.confirm("Stop the running factory process? The next run will recover interrupted tickets.")) return; try { await request("/api/stop", { method: "POST", body: "{}" }); toast("Stopping operation."); } catch (error) { toast(error.message, true); } });
   $("#copy-operation").addEventListener("click", async () => { const command = app.snapshot?.operation?.command; if (!command) return toast("No command to copy."); await navigator.clipboard.writeText(command); toast("Command copied."); });
   $("#command-help").addEventListener("click", () => { showView("overview"); toast("Every operation displays its exact CLI command above the live output."); });
@@ -788,14 +898,16 @@ function wireEvents() {
     toast("Startup command copied.");
   });
   document.addEventListener("keydown", (event) => { if (event.key === "Escape") { closeDrawer(); closeSidebar(); } });
+  document.addEventListener("visibilitychange", () => { if (!document.hidden) refreshSnapshot(); });
   window.addEventListener("hashchange", () => showView(location.hash.slice(1) || "overview", false));
 }
 
 async function boot() {
   wireEvents();
   setMode(localStorage.getItem("factory-control-mode") || "rehearsal");
+  setConnection("connecting");
   showView(app.view, false);
-  try { renderSnapshot(await request("/api/snapshot")); } catch (error) { toast(error.message, true); }
+  await refreshSnapshot(false);
   connectEvents();
 }
 
