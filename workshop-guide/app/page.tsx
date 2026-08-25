@@ -451,8 +451,8 @@ git -C "$TARGET" ls-tree -r --name-only HEAD`
             inspect={<>Check the target users, required behavior, limits, and proof of success.</>}
             continueWhen={<>The PRD is saved and you can describe the requested product change.</>}
           >{track === "live"
-            ? `sed -n '1,220p' "$CONTROL/recipe-app-prd.md"`
-            : `sed -n '1,220p' recipe-app-prd.md`}</WorkshopPaths>
+            ? `open "$CONTROL/recipe-app-prd.md"`
+            : `open recipe-app-prd.md`}</WorkshopPaths>
           <WorkshopMedia
             src="/screenshots/control-center-prd.jpg"
             alt="Control Center PRD editor with Save PRD and Start Product Review buttons"
