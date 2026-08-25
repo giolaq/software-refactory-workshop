@@ -1087,12 +1087,35 @@ class ControlCenterTests(unittest.TestCase):
                 ],
             }
             (center.repo / ".factory/planning-state.json").write_text(json.dumps(planning))
+            run_dir = center.repo / ".factory/plans/abc12345"
+            run_dir.mkdir(parents=True)
+            (run_dir / "04-vertical-slices.json").write_text(json.dumps({
+                "tickets": [
+                    {"key": "ONE", "title": "First ticket", "agent": "codex", "dependencies": []},
+                    {"key": "TWO", "title": "Second ticket", "agent": "codex", "dependencies": ["ONE"]},
+                ],
+                "publication": {
+                    "repository": "attendee/project",
+                    "project_number": 15,
+                    "issues": {"ONE": 1, "TWO": 2},
+                },
+            }))
 
             snapshot = center.snapshot()
 
             self.assertFalse(snapshot["planning"]["can_continue"])
             self.assertEqual(snapshot["planning"]["continue_label"], "Planning complete")
             self.assertFalse(snapshot["planning"]["failed_stage"])
+            self.assertEqual(snapshot["planning"]["publication"]["ticket_count"], 2)
+            self.assertEqual(snapshot["planning"]["publication"]["project_number"], 15)
+            self.assertEqual(
+                snapshot["planning"]["publication"]["tickets"][1]["dependencies"],
+                [1],
+            )
+            self.assertEqual(
+                snapshot["planning"]["publication"]["tickets"][1]["url"],
+                "https://github.com/attendee/project/issues/2",
+            )
 
     def test_alignment_approved_live_plan_offers_duplicate_safe_publication_retry(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -1236,13 +1259,17 @@ class ControlCenterTests(unittest.TestCase):
             "Current phase",
             "Reset or start again",
             "Start workshop over",
-            "Plan, build, verify, review",
+            "System health",
+            "Needs your decision",
+            "Activity and CLI output",
+            "Active lanes",
+            "All lanes",
             "Supervisor",
             "Handoff Receipts",
             "GitHub repository URL",
             "Monitor repository health",
             "Read-only by contract",
-            "Active Tickets",
+            "Needs review",
             "Seed the guided Pocket Cinema starter",
         ):
             self.assertIn(label, source)
@@ -1287,6 +1314,21 @@ class ControlCenterTests(unittest.TestCase):
         self.assertIn("renderMonitor", javascript)
         self.assertIn("finding.summary || finding.title || finding.id", javascript)
         self.assertIn("payload.mode = mode()", javascript)
+        self.assertIn('setSignal("#system-operation"', javascript)
+        self.assertIn('setConnection("reconnecting")', javascript)
+        self.assertIn("syncOperationPolling(data.operation || {})", javascript)
+        self.assertIn("window.setInterval(() => refreshSnapshot(), 1500)", javascript)
+        self.assertIn('document.addEventListener("visibilitychange"', javascript)
+        self.assertIn('planning.project || "Factory Delivery"', javascript)
+        self.assertNotIn('project_title: "TableStory Workshop"', javascript)
+        self.assertIn("approved ${publishedCount === 1", javascript)
+        self.assertIn("Run one cycle to load the tickets", javascript)
+        self.assertIn('status: ticket.dependencies?.length ? "Backlog" : "Ready"', javascript)
+        self.assertIn('phase: "Published"', javascript)
+        self.assertIn('target="_blank" rel="noreferrer"', javascript)
+        self.assertIn('id="ticket-load-state"', source)
+        self.assertIn('localStorage.setItem("factory-board-mode"', javascript)
+        self.assertIn('["running", "stopping", "failed"].includes(status)', javascript)
 
     def test_ticket_board_headers_stay_in_flow_and_cards_are_contained(self):
         frontend = Path(__file__).parents[1] / "control_center"
@@ -1305,7 +1347,7 @@ class ControlCenterTests(unittest.TestCase):
         javascript = (frontend / "app.js").read_text()
         styles = (frontend / "styles.css").read_text()
 
-        self.assertIn(">Factory progress<", source)
+        self.assertIn(">Delivery trace<", source)
         self.assertNotIn(">Workshop progress<", source)
         self.assertIn(
             'journey.state === "running" && phase.status === "current"',
@@ -1315,7 +1357,7 @@ class ControlCenterTests(unittest.TestCase):
         self.assertIn(".journey-step.running i", styles)
         self.assertIn("@keyframes active-phase-pulse", styles)
         self.assertIn(
-            ".journey-step.running i, .now-pulse.running { animation: none; }",
+            ".journey-step.running i, .now-pulse.running, .signal-dot.live, .operation-surface.running .operation-summary-mark { animation: none; }",
             styles,
         )
 

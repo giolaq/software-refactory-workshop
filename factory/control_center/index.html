@@ -17,20 +17,23 @@
     </a>
     <div class="repo-chip"><span class="status-dot" id="repo-dot"></span><span id="repo-name">Connecting…</span><b id="repo-branch"></b></div>
     <div class="top-actions">
-      <span class="live-status"><i></i><span id="connection-label">Connecting</span></span>
+      <span class="live-status" id="connection-status" aria-live="polite"><i></i><span id="connection-label">Connecting</span></span>
       <button class="button button-primary" id="global-next" type="button">Open current phase</button>
     </div>
   </header>
 
   <aside class="sidebar" id="sidebar">
     <nav aria-label="Control Center">
-      <p class="nav-label">Factory</p>
+      <p class="nav-label">Run</p>
       <a href="#overview" class="active" data-view-link="overview"><span>⌂</span>Overview</a>
+      <p class="nav-label">Prepare</p>
       <a href="#connect" data-view-link="connect"><span>◇</span>Connect</a>
       <a href="#prd" data-view-link="prd"><span>≡</span>PRD</a>
       <a href="#planning" data-view-link="planning"><span>⌘</span>Planning</a>
+      <p class="nav-label">Deliver</p>
       <a href="#tickets" data-view-link="tickets"><span>▦</span>Tickets</a>
       <a href="#supervisor" data-view-link="supervisor"><span>◎</span>Supervisor</a>
+      <p class="nav-label">Finish</p>
       <a href="#evidence" data-view-link="evidence"><span>▶</span>Run app</a>
       <a href="#monitor" data-view-link="monitor"><span>◌</span>Monitor</a>
     </nav>
@@ -46,59 +49,64 @@
   <main id="workspace">
     <section class="view active" data-view="overview" aria-labelledby="overview-title">
       <div class="page-heading">
-        <div><span class="eyebrow">Current run</span><h1 id="overview-title">Factory overview</h1><p>See what is happening now, what needs attention, and what comes next.</p></div>
-        <div class="heading-actions"><button class="button" id="open-reset-overview" type="button">Reset or start again</button></div>
+        <div><span class="eyebrow">Current run</span><h1 id="overview-title">Run overview</h1><p>Follow live delivery state, resolve decisions, and inspect the exact work behind each change.</p></div>
+        <div class="heading-actions"><button class="text-button reset-link" id="open-reset-overview" type="button">Reset or start again</button></div>
       </div>
 
-      <section class="surface macro-phase-strip" aria-labelledby="macro-phases-title">
-        <div><span class="section-label">Delivery loop</span><h2 id="macro-phases-title">Plan, build, verify, review</h2></div>
-        <ol>
-          <li><b>Plan</b><span>PRD to approved slices</span></li>
-          <li><b>Build</b><span>Agents work in isolation</span></li>
-          <li><b>Verify</b><span>Tests and gates produce evidence</span></li>
-          <li><b>Review</b><span>Reviewer approves or sends work back</span></li>
-        </ol>
+      <section class="system-strip" aria-labelledby="system-health-title">
+        <div class="system-strip-title"><span class="section-label">System health</span><h2 id="system-health-title">Factory signals</h2></div>
+        <dl class="system-signals">
+          <div><dt>Repository</dt><dd id="system-repository"><i class="signal-dot"></i>Inspecting</dd></div>
+          <div><dt>Event stream</dt><dd id="system-stream"><i class="signal-dot"></i>Connecting</dd></div>
+          <div><dt>Operation</dt><dd id="system-operation"><i class="signal-dot"></i>Idle</dd></div>
+          <div><dt>Last update</dt><dd id="system-updated">Waiting for state</dd></div>
+        </dl>
       </section>
 
-      <section class="surface now-surface" aria-live="polite">
-        <div class="now-main">
-          <div class="now-heading"><span class="now-pulse" id="journey-pulse"></span><span class="section-label" id="journey-kicker">Current phase</span><span class="journey-state" id="journey-state">Loading</span></div>
-          <h2 id="journey-headline">Reading factory state…</h2>
-          <p id="journey-detail">The Control Center is combining planning, ticket, and running-operation state.</p>
-        </div>
-        <aside class="next-checkpoint">
-          <span class="section-label">Next checkpoint</span>
-          <h3 id="journey-next-label">Wait for state</h3>
-          <p id="journey-next-detail">Your next decision will appear here.</p>
-          <button class="button button-primary" id="journey-next" type="button">Open current phase</button>
+      <div class="run-grid">
+        <section class="surface now-surface" id="now-surface" aria-live="polite">
+          <div class="now-main">
+            <div class="now-heading"><span class="now-pulse" id="journey-pulse"></span><span class="section-label" id="journey-kicker">Current phase</span><span class="journey-state" id="journey-state">Loading</span></div>
+            <h2 id="journey-headline">Reading factory state…</h2>
+            <p id="journey-detail">The Control Center is combining planning, ticket, and running-operation state.</p>
+          </div>
+          <div class="next-checkpoint">
+            <div><span class="section-label">Next safe action</span><h3 id="journey-next-label">Wait for state</h3><p id="journey-next-detail">Your next decision will appear here.</p></div>
+            <button class="button button-primary" id="journey-next" type="button">Open current phase</button>
+          </div>
+          <div class="run-metrics" aria-label="Run totals">
+            <article><span>Plan</span><strong id="metric-plan">No plan</strong></article>
+            <article><span>Active</span><strong id="metric-active">0</strong></article>
+            <article><span>Needs review</span><strong id="metric-review">0</strong></article>
+            <article><span>Completed</span><strong id="metric-done">0</strong></article>
+          </div>
+        </section>
+        <aside class="surface attention-surface" id="attention-surface">
+          <div class="surface-heading"><div><span class="section-label">Attention queue</span><h2>Needs your decision</h2></div><span class="attention-count" id="decision-count">0</span></div>
+          <p class="attention-intro" id="attention-intro">Human gates and blocked work appear here in priority order.</p>
+          <div class="decision-list" id="decision-list"><p class="empty-state">No decisions are waiting.</p></div>
         </aside>
-      </section>
+      </div>
 
       <section class="surface journey-surface">
-        <div class="surface-heading"><div><span class="section-label">Factory progress</span><h2>PRD → Plan → Tickets → Verified change</h2></div><span class="updated" id="state-updated">Waiting for state</span></div>
+        <div class="surface-heading"><div><span class="section-label">Delivery trace</span><h2>Repository to running application</h2></div><span class="updated" id="state-updated">Waiting for state</span></div>
         <ol class="journey-steps" id="journey-steps" aria-label="Factory phases"></ol>
       </section>
 
-      <div class="health-grid">
-        <article><span class="health-icon blue">P</span><div><strong id="metric-plan">No plan</strong><span>Planning</span></div></article>
-        <article><span class="health-icon purple">A</span><div><strong id="metric-active">0</strong><span>Active Tickets</span></div></article>
-        <article><span class="health-icon amber">Q</span><div><strong id="metric-review">0</strong><span>Awaiting review</span></div></article>
-        <article><span class="health-icon green">✓</span><div><strong id="metric-done">0</strong><span>Completed</span></div></article>
-      </div>
-
-      <div class="overview-grid">
-        <section class="surface operation-surface">
-          <div class="surface-heading"><div><span class="section-label">Operation</span><h2 id="operation-title">No operation running</h2></div><span class="operation-status idle" id="operation-status">Idle</span></div>
+      <details class="surface operation-surface" id="operation-panel">
+        <summary>
+          <span class="operation-summary-mark" aria-hidden="true"></span>
+          <span class="operation-summary-copy"><span class="section-label">Activity and CLI output</span><strong id="operation-title">No operation running</strong></span>
+          <span class="operation-status idle" id="operation-status">Idle</span>
+          <span class="summary-chevron" aria-hidden="true">⌄</span>
+        </summary>
+        <div class="operation-body">
           <p class="operation-context" id="operation-context">No command is running. Use the next checkpoint above.</p>
           <div class="command-line" id="operation-command">Actions show their exact CLI command here.</div>
           <pre class="console" id="operation-output" tabindex="0">Select a workflow action to begin.</pre>
           <div class="operation-actions"><button class="button button-danger" id="stop-operation" type="button" hidden>Stop operation</button><button class="text-button" id="copy-operation" type="button">Copy command</button></div>
-        </section>
-        <section class="surface decisions-surface">
-          <div class="surface-heading"><div><span class="section-label">Human decisions</span><h2>Waiting for you</h2></div></div>
-          <div class="decision-list" id="decision-list"><p class="empty-state">No approvals are waiting.</p></div>
-        </section>
-      </div>
+        </div>
+      </details>
     </section>
 
     <section class="view" data-view="connect" aria-labelledby="connect-title" hidden>
@@ -166,7 +174,11 @@
 
     <section class="view tickets-view" data-view="tickets" aria-labelledby="tickets-title" hidden>
       <div class="page-heading"><div><span class="eyebrow">Steps 6–7</span><h1 id="tickets-title">Operate the factory</h1><p>Watch every ticket and inspect the evidence behind its state.</p></div><div class="heading-actions"><label class="inline-select">Mode<select id="run-mode"><option value="rehearsal">Rehearsal</option><option value="live">Live</option></select></label><button class="button" type="button" data-action="run-once">Run one cycle</button><button class="button button-primary" type="button" data-action="run">Run factory</button></div></div>
-      <div class="board-toolbar"><div class="state-summary" id="state-summary"></div><span>Updates stream from <code>.factory/state.json</code></span></div>
+      <div class="board-toolbar">
+        <div><span class="section-label">Lane visibility</span><div class="segmented-control" aria-label="Ticket lane visibility"><button class="active" type="button" data-board-mode="focus" aria-pressed="true">Active lanes</button><button type="button" data-board-mode="all" aria-pressed="false">All lanes</button></div></div>
+        <div class="board-observability"><div class="state-summary" id="state-summary"></div><span>Live from <code>.factory/state.json</code></span></div>
+      </div>
+      <section class="ticket-load-state" id="ticket-load-state" hidden></section>
       <div class="ticket-board" id="ticket-board"></div>
     </section>
 
