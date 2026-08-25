@@ -391,8 +391,8 @@ FocusFlow
 Select **Approve and create tickets**.
 
 This action records the exact Alignment approval, creates the six GitHub
-Issues, and adds them to the new GitHub Project. It does not start an
-implementation agent or merge product code.
+Issues, and adds them to the new GitHub Project. It does not start work through
+the Implementation role or merge product code.
 
 Publication completed successfully:
 
