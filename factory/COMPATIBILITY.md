@@ -1,6 +1,6 @@
 # Compatibility and updates
 
-Release: `workshop-v1.1.0`
+Release: `workshop-v1.1.1`
 
 The factory preserves remote Issues, Projects, pull requests, claims, reviews,
 and run summaries across local upgrades. It does not reinterpret old local
@@ -23,7 +23,7 @@ It contains no file contents or credentials.
 Clone the desired tagged release beside the attendee repository:
 
 ```sh
-git clone --branch workshop-v1.1.0 \
+git clone --branch workshop-v1.1.1 \
   https://github.com/giolaq/software-refactory-workshop.git \
   ../software-refactory-release
 ```
