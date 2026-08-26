@@ -75,11 +75,14 @@ MAX_PLANNING_FEEDBACK = 12_000
 ACTION_REGISTRY = frozenset({
     "doctor", "init-project", "approve-charter", "publish-setup", "prepare-project",
     "configure", "plan", "restart-plan", "revise-product", "revise-stage",
-    "approve-product", "approve-stage", "continue-plan", "publish-plan", "approve-tests", "merge",
+    "approve-product", "approve-stage", "continue-plan", "publish-plan",
+    "approve-tests", "request-test-changes", "merge",
     "run", "run-once", "dry-run", "retry", "release-claim", "evidence", "start-app",
     "monitor", "publish-monitor", "recover-latest", "reset-run", "reset-all",
 })
-COMPANION_ACTIONS = frozenset({"approve-tests", "merge", "retry"})
+COMPANION_ACTIONS = frozenset({
+    "approve-tests", "request-test-changes", "merge", "retry",
+})
 
 
 def utc_now() -> str:
@@ -1439,6 +1442,25 @@ class ControlCenter:
             issue = self._positive_int(payload, "issue", required=True)
             self._ticket_action_context(issue, mode)
             return f"Approve tests for ticket #{issue}", [base + ["approve-tests", str(issue), "--yes"]]
+        if action == "request-test-changes":
+            issue = self._positive_int(payload, "issue", required=True)
+            ticket = self._ticket_action_context(issue, mode)
+            if ticket.get("status") != "QA Review":
+                raise InputError(
+                    f"Ticket #{issue} is {ticket.get('status') or 'not available'}, "
+                    "not QA Review."
+                )
+            feedback = self._string(
+                payload, "feedback", required=True, max_length=4000,
+            )
+            return f"Request revised tests for ticket #{issue}", [[
+                *base,
+                "request-test-changes",
+                str(issue),
+                "--feedback",
+                feedback,
+                "--yes",
+            ]]
         if action == "merge":
             issue = self._positive_int(payload, "issue", required=True)
             ticket = self._ticket_action_context(issue, mode)

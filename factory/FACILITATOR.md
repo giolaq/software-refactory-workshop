@@ -222,6 +222,11 @@ Approve a reviewed test set from another terminal:
 ./factory/factory approve-tests ISSUE_NUMBER
 ```
 
+If the tests do not represent the approved Ticket, request a replacement from
+the Ticket's **QA Review** panel and describe the correction. Do not edit the
+protected file directly or on GitHub. Edit the GitHub issue only when the
+Ticket requirements themselves must change.
+
 After a green pull request is merged, wait for **PR merged and synchronized**
 before showing the next ticket move to Ready.
 

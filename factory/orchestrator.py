@@ -108,6 +108,7 @@ RECOVERY_RUNTIME_PATHS = (
     "reviews",
     "prompts",
     "qa-approvals",
+    "qa-revision-events",
     "merge-events",
     "control-center/workshop-prd.md",
     "control-center/factory-canvas.md",
@@ -307,6 +308,7 @@ def restart_ticket_from_repository_base(
         qa_evidence={},
         qa_failure="",
         qa_approved=False,
+        qa_revision_feedback="",
         existing_tests={},
         existing_test_changes=[],
         gate_results=[],
@@ -342,7 +344,13 @@ def restart_ticket_from_repository_base(
         finished_at="",
     )
     if specification_changed:
-        ticket.update(budget_override=None, receipts=[])
+        ticket.update(
+            budget_override=None,
+            receipts=[],
+            qa_revision=0,
+            qa_revision_feedback="",
+            qa_revision_history=[],
+        )
 
 
 def apply_retry_event_to_ticket(repo: Path, ticket: dict, event: dict) -> str:
@@ -367,6 +375,7 @@ def apply_retry_event_to_ticket(repo: Path, ticket: dict, event: dict) -> str:
     )
     previous_failure = event.get("failure") or ticket.get("failure", "")
     reset_qa = event.get("reset_qa") is True
+    previous_qa_revision = max(1, int(ticket.get("qa_revision") or 1))
     if preserve_candidate:
         ticket.update(
             status="Ready",
@@ -384,6 +393,7 @@ def apply_retry_event_to_ticket(repo: Path, ticket: dict, event: dict) -> str:
         )
         if reset_qa:
             ticket["receipts"] = []
+            ticket["qa_revision"] = previous_qa_revision + 1
             ticket["qa_retry_context"] = str(
                 event.get("qa_retry_context") or previous_failure
             )[-3000:]
@@ -1507,6 +1517,11 @@ class Factory:
                 "qa_commit": old.get("qa_commit", ""), "qa_tests": old.get("qa_tests", {}),
                 "qa_evidence": old.get("qa_evidence", {}),
                 "qa_approved": old.get("qa_approved", False),
+                "qa_revision": old.get(
+                    "qa_revision", 1 if old.get("qa_commit") else 0,
+                ),
+                "qa_revision_feedback": old.get("qa_revision_feedback", ""),
+                "qa_revision_history": old.get("qa_revision_history", []),
                 "existing_test_policy": old.get("existing_test_policy", self.charter.existing_tests),
                 "existing_tests": old.get("existing_tests", {}),
                 "existing_test_changes": old.get("existing_test_changes", []),
@@ -1821,6 +1836,66 @@ class Factory:
             ticket["qa_approved"] = True
             self.transition(ticket, "Ready", "Human approved independent Acceptance Tests")
 
+    def apply_qa_revision_events(self):
+        """Regenerate a rejected protected test revision from the repository base."""
+        event_dir = self.repo / ".factory/qa-revision-events"
+        for marker in sorted(event_dir.glob("*.json")):
+            try:
+                event = json.loads(marker.read_text())
+                number = int(event["ticket"])
+                expected_commit = str(event["qa_commit"])
+                feedback = str(event["feedback"]).strip()
+            except (OSError, ValueError, KeyError, json.JSONDecodeError) as exc:
+                raise ValueError(f"Invalid Acceptance Test revision event {marker.name}") from exc
+            ticket = self.tickets.get(number)
+            if not ticket:
+                marker.unlink(missing_ok=True)
+                continue
+            if (
+                ticket.get("status") != "QA Review"
+                or ticket.get("qa_commit") != expected_commit
+            ):
+                marker.unlink(missing_ok=True)
+                ticket["failure"] = (
+                    "A stale Acceptance Test revision request did not match the "
+                    "currently reviewed QA commit."
+                )
+                self._sync_store()
+                continue
+            worktree = worktree_path(self.repo, number)
+            failure = self.verify_qa_tests_unchanged(ticket, worktree)
+            if failure:
+                marker.unlink(missing_ok=True)
+                ticket["failure"] = failure
+                self.transition(
+                    ticket, "Blocked",
+                    "Acceptance Tests changed before revision feedback was recorded",
+                )
+                continue
+
+            revision = max(1, int(ticket.get("qa_revision") or 1))
+            revision_history = list(ticket.get("qa_revision_history") or [])
+            revision_history.append({
+                "revision": revision,
+                "qa_commit": expected_commit,
+                "qa_tests": dict(ticket.get("qa_tests") or {}),
+                "red": dict(ticket.get("qa_evidence", {}).get("red") or {}),
+                "feedback": feedback,
+                "requested_at": str(event.get("created_at") or now()),
+            })
+            restart_ticket_from_repository_base(ticket, status="QA Review")
+            ticket.update(
+                qa_revision=revision + 1,
+                qa_revision_feedback=feedback,
+                qa_revision_history=revision_history,
+            )
+            (self.repo / ".factory/qa-approvals" / str(number)).unlink(missing_ok=True)
+            marker.unlink(missing_ok=True)
+            self.transition(
+                ticket, "Ready",
+                f"Human requested Acceptance Test revision {revision + 1}",
+            )
+
     def apply_human_merge_events(self):
         event_dir = self.repo / ".factory/merge-events"
         changed = False
@@ -2082,7 +2157,13 @@ class Factory:
 
     def make_qa_prompt(self, ticket: dict, failure: str) -> Path:
         attempt = ticket["qa_attempt"]
-        path = self.repo / ".factory/prompts" / f"{ticket['number']}-qa-attempt{attempt}.md"
+        revision = max(1, int(ticket.get("qa_revision") or 1))
+        artifact = (
+            f"{ticket['number']}-qa-attempt{attempt}"
+            if revision == 1
+            else f"{ticket['number']}-qa-revision{revision}-attempt{attempt}"
+        )
+        path = self.repo / ".factory/prompts" / f"{artifact}.md"
         path.parent.mkdir(parents=True, exist_ok=True)
         roots = "\n".join(f"- `{root}/`" for root in self.cfg["qa"]["test_roots"])
         patterns = "\n".join(
@@ -2091,6 +2172,14 @@ class Factory:
         )
         gates = "\n".join(f"- {g['name']}: `{g['cmd']}`" for g in self.cfg["gate"])
         retry = f"\n## Previous QA failure\n```\n{failure[-3000:]}\n```\n" if failure else ""
+        review_feedback = str(ticket.get("qa_revision_feedback") or "").strip()
+        revision_context = (
+            "\n## Human review feedback\n"
+            "A person rejected the previous protected test revision. Replace it with a new "
+            "test set that addresses this feedback while preserving the approved Ticket:\n"
+            f"```\n{review_feedback[-4000:]}\n```\n"
+            if review_feedback else ""
+        )
         contract = role_input(self.repo, "qa")["text"]
         supervisor = self.supervisor_context(ticket)
         path.write_text(
@@ -2114,7 +2203,8 @@ class Factory:
             "infrastructure-broken tests are rejected.\n"
             "- Do not skip tests, soften assertions, change production files, or commit; the factory commits "
             "the accepted QA files separately.\n\n"
-            f"## Later verification gates\n{gates}\n" + supervisor + "\n" + contract + retry
+            f"## Later verification gates\n{gates}\n"
+            + revision_context + supervisor + "\n" + contract + retry
         )
         return path
 
@@ -2850,6 +2940,7 @@ class Factory:
         base_sha: str,
         initial_failure: str = "",
     ) -> str:
+        ticket["qa_revision"] = max(1, int(ticket.get("qa_revision") or 1))
         ticket.update(qa_attempt=0, qa_commit="", qa_tests={}, qa_failure="")
         failure = initial_failure
         max_attempts = int(self.cfg["qa"]["max_retries"]) + 1
@@ -2859,7 +2950,15 @@ class Factory:
             prompt = self.make_qa_prompt(ticket, failure)
             code, output = self.run_adapter(
                 self.qa_agent, ticket, worktree, prompt,
-                f"{ticket['number']}-qa-attempt{attempt}.log", "qa",
+                (
+                    f"{ticket['number']}-qa-attempt{attempt}.log"
+                    if ticket["qa_revision"] == 1
+                    else (
+                        f"{ticket['number']}-qa-revision"
+                        f"{ticket['qa_revision']}-attempt{attempt}.log"
+                    )
+                ),
+                "qa",
             )
             if code:
                 failure = output[-3000:]
@@ -3284,6 +3383,7 @@ class Factory:
                     self.transition(ticket, "Blocked", "Independent QA could not produce valid acceptance tests")
                     return
                 ticket["qa_retry_context"] = ""
+                ticket["qa_revision_feedback"] = ""
                 implementation_base_sha = ticket["qa_commit"]
                 if self.review_qa_tests:
                     ticket["phase"] = "qa-review"
@@ -3615,6 +3715,7 @@ class Factory:
             self.apply_retry_events()
             self.apply_human_merge_events()
             self.sync_merged()
+            self.apply_qa_revision_events()
             self.apply_qa_approvals()
             self.refresh_readiness()
             if self.delivery_complete():
@@ -4254,6 +4355,81 @@ def human_merge_ticket(
         run(["git", "push", "origin", "--delete", branch], repo, check=False)
     print(f"Ticket #{number} merged at {merged_head}.")
     return merged_head
+
+
+def request_qa_test_changes(
+    repo: Path,
+    number: int,
+    feedback: str,
+    *,
+    assume_yes: bool = False,
+):
+    feedback = feedback.strip()
+    if not feedback:
+        raise ValueError("Acceptance Test revision feedback is required")
+    if len(feedback) > 4000:
+        raise ValueError("Acceptance Test revision feedback is too long")
+    store = StateStore(repo)
+    ticket = next(
+        (item for item in store.data.get("tickets", []) if item["number"] == number),
+        None,
+    )
+    if not ticket:
+        raise ValueError(f"Ticket #{number} not found in factory state")
+    if ticket.get("status") != "QA Review":
+        raise ValueError(f"Ticket #{number} is {ticket.get('status')}, not QA Review")
+    qa_commit = str(ticket.get("qa_commit") or "")
+    if not qa_commit or not ticket.get("qa_tests"):
+        raise ValueError(f"Ticket #{number} has no protected Acceptance Test revision")
+    worktree = worktree_path(repo, number)
+    if not worktree.is_dir():
+        raise ValueError(f"QA worktree is missing: {worktree}")
+    failures = []
+    for path, expected in ticket["qa_tests"].items():
+        file = worktree / path
+        if not file.is_file():
+            failures.append(f"{path} is missing")
+            continue
+        actual = run(["git", "hash-object", path], worktree).stdout.strip()
+        if actual != expected:
+            failures.append(f"{path} changed after QA committed it")
+    if failures:
+        raise ValueError("; ".join(failures))
+    if not assume_yes:
+        try:
+            answer = input(
+                f"Reject the current Acceptance Tests for Ticket #{number} and "
+                "request a new revision? Type REQUEST TEST CHANGES: "
+            )
+        except EOFError as exc:
+            raise ValueError(
+                "interactive confirmation required; rerun in a terminal or pass --yes"
+            ) from exc
+        if answer != "REQUEST TEST CHANGES":
+            raise ValueError("Acceptance Test revision request cancelled")
+
+    event_dir = repo / ".factory/qa-revision-events"
+    event_dir.mkdir(parents=True, exist_ok=True)
+    event_path = event_dir / f"{number}.json"
+    if event_path.exists():
+        raise ValueError(
+            f"Ticket #{number} already has a pending Acceptance Test revision request"
+        )
+    event = {
+        "schema_version": 1,
+        "event_id": uuid.uuid4().hex,
+        "ticket": number,
+        "qa_commit": qa_commit,
+        "feedback": feedback,
+        "created_at": now(),
+    }
+    tmp = event_path.with_suffix(".tmp")
+    tmp.write_text(json.dumps(event, indent=2) + "\n")
+    os.replace(tmp, event_path)
+    print(
+        f"Requested revised Acceptance Tests for #{number}. "
+        "The running factory will regenerate them automatically."
+    )
 
 
 def approve_qa_tests(repo: Path, number: int, assume_yes=False):
@@ -5542,6 +5718,16 @@ def parser():
     approve_tests = sub.add_parser("approve-tests", help="approve protected Acceptance Tests for one ticket")
     approve_tests.add_argument("issue", type=int); approve_tests.add_argument("--repo", default=".")
     approve_tests.add_argument("--yes", action="store_true")
+    request_test_changes = sub.add_parser(
+        "request-test-changes",
+        help="reject protected Acceptance Tests and request a revised test set",
+    )
+    request_test_changes.add_argument("issue", type=int)
+    request_test_changes.add_argument("--repo", default=".")
+    test_feedback = request_test_changes.add_mutually_exclusive_group(required=True)
+    test_feedback.add_argument("--feedback")
+    test_feedback.add_argument("--feedback-file")
+    request_test_changes.add_argument("--yes", action="store_true")
     doctor = sub.add_parser("doctor", help="check workshop prerequisites and safety")
     doctor.add_argument("--repo", default="."); doctor.add_argument("--full", action="store_true")
     doctor.add_argument("--agent", help="registered implementation adapter name")
@@ -5769,6 +5955,16 @@ def main():
             print(f"Next: ./factory/factory run --mock --scenario {args.scenario} --dry-run")
         elif args.command == "approve-tests":
             approve_qa_tests(repo, args.issue, args.yes)
+        elif args.command == "request-test-changes":
+            feedback_text = args.feedback
+            if args.feedback_file:
+                feedback_text = Path(args.feedback_file).read_text()
+            request_qa_test_changes(
+                repo,
+                args.issue,
+                feedback_text,
+                assume_yes=args.yes,
+            )
         elif args.command == "doctor":
             raise SystemExit(
                 run_doctor(
