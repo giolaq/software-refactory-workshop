@@ -629,7 +629,15 @@ def implementation_no_change_failure(output: str) -> str:
             "Regenerate the protected QA tests before retrying.\n\n"
             + excerpt
         )
-    scope_conflict = any(marker in lowered_handoff for marker in (
+    ownership_conflict = bool(re.search(
+        r"(?:is|are)\s+outside\s+(?:the\s+)?ticket(?:\s+#\d+)?(?:'s)?\s+"
+        r"(?:file\s+)?ownership|"
+        r"(?:is|are|was|were)\s+not\s+(?:included\s+)?(?:in|within)\s+"
+        r"(?:the\s+)?ticket(?:\s+#\d+)?(?:'s)?\s+(?:file\s+)?ownership",
+        lowered_handoff,
+    ))
+    scope_conflict = ownership_conflict or any(
+        marker in lowered_handoff for marker in (
         "blocked by scope conflict",
         "blocked by scope inconsistency",
         "scope conflict",
@@ -638,7 +646,8 @@ def implementation_no_change_failure(output: str) -> str:
         "requires permission",
         "path constraint",
     ))
-    explicitly_blocked = any(marker in lowered_handoff for marker in (
+    explicitly_blocked = ownership_conflict or any(
+        marker in lowered_handoff for marker in (
         "status: blocked",
         "blocked by",
         "resolution requires",
@@ -741,6 +750,20 @@ def ticket_recovery(ticket: dict, repo: Path | None = None) -> dict:
     claim_owner = claim.get("owner_run_id") or claim.get("run_id")
     budget = ticket.get("diff_budget") or {}
 
+    failure_headline = next(
+        (line.strip() for line in failure.splitlines() if line.strip()),
+        "The Factory could not complete this Ticket.",
+    )
+    for prefix in (
+        "TICKET_SCOPE_CONFLICT:",
+        "QA_EVIDENCE_DEFECT:",
+        "DIFF_BUDGET_EXCEEDED:",
+    ):
+        if failure_headline.upper().startswith(prefix):
+            failure_headline = failure_headline[len(prefix):].strip()
+            break
+    failure_headline = failure_headline[:500]
+
     def recovery(
         kind: str,
         action: str,
@@ -751,11 +774,15 @@ def ticket_recovery(ticket: dict, repo: Path | None = None) -> dict:
         requires_restart: bool = False,
         **extra,
     ) -> dict:
+        cause = str(extra.pop("cause", "") or failure_headline)
+        solution = str(extra.pop("solution", "") or summary)
         return {
             "kind": kind,
             "action": action,
             "title": title,
             "summary": summary,
+            "cause": cause,
+            "solution": solution,
             "retry_allowed": retry_allowed,
             "requires_restart": requires_restart,
             **extra,
@@ -784,14 +811,22 @@ def ticket_recovery(ticket: dict, repo: Path | None = None) -> dict:
             qa_reset_allowed=True,
         )
     if "ticket_scope_conflict:" in lowered:
+        raw_paths = set(re.findall(
+            r"(?<![\w./-])((?:[A-Za-z0-9_.-]+/)+[A-Za-z0-9_.-]+)(?![\w/-])",
+            failure,
+        ))
+        raw_paths.update(re.findall(
+            r"(?<![\w./-])(\.[A-Za-z0-9][A-Za-z0-9_.-]*)(?![\w/-])",
+            failure,
+        ))
         reported_paths = sorted({
             normalized
-            for raw in re.findall(
-                r"(?<![\w./-])((?:[A-Za-z0-9_.-]+/)+[A-Za-z0-9_.-]+)(?![\w/-])",
-                failure,
-            )
+            for raw in raw_paths
             if (normalized := raw.rstrip(".,:;"))
-            and PurePosixPath(normalized).suffix
+            and (
+                PurePosixPath(normalized).suffix
+                or PurePosixPath(normalized).name.startswith(".")
+            )
         })
         declared_paths = set(
             (ticket.get("triage") or {}).get("declared_paths") or []
@@ -807,6 +842,22 @@ def ticket_recovery(ticket: dict, repo: Path | None = None) -> dict:
             + " to File ownership. "
             if required_paths else ""
         )
+        required_label = ", ".join(required_paths)
+        cause = (
+            f"Implementation requires {required_label}, but the Ticket does not own "
+            "that path. The agent cannot commit a durable correction outside the "
+            "approved File ownership."
+            if required_paths else
+            "The agent cannot make the required functional change within the "
+            "Ticket's approved File ownership."
+        )
+        suggested_retry_reason = (
+            f"Added {required_label} to Ticket File ownership so implementation can "
+            "commit the required durable change."
+            if required_paths else
+            "Expanded the Ticket File ownership so implementation can commit the "
+            "required functional change."
+        )
         return recovery(
             "ticket_specification", "edit_ticket_and_retry",
             "Expand the Ticket file ownership",
@@ -815,8 +866,10 @@ def ticket_recovery(ticket: dict, repo: Path | None = None) -> dict:
             + "Edit the GitHub issue's Spec and File ownership, preserve the hidden "
             "Factory comments, then reload the issue and retry.",
             retry_allowed=True,
+            cause=cause,
             scope_conflict=True,
             required_paths=required_paths,
+            suggested_retry_reason=suggested_retry_reason,
         )
     configuration_failure = any(marker in lowered for marker in (
         "outside the configured test roots",

@@ -927,6 +927,20 @@ async function renderDrawer({ preservePosition = false } = {}) {
           <textarea id="retry-reason" rows="3" placeholder="${esc(placeholder)}"></textarea>
         </label>
       </div>`;
+    const failureHeadline = String(ticket.failure || "The Factory could not complete this Ticket.")
+      .split(/\r?\n/)
+      .find((line) => line.trim()) || "The Factory could not complete this Ticket.";
+    const recoveryGuidance = (fallbackSolution) => {
+      const cause = recoveryInfo.cause || failureHeadline;
+      const solution = recoveryInfo.solution || recoveryInfo.summary || fallbackSolution;
+      const suggestedReason = recoveryInfo.suggested_retry_reason || "";
+      return `
+        <div class="recovery-guidance">
+          <p><strong>Why it stopped</strong><span>${esc(cause)}</span></p>
+          <p><strong>Proposed recovery</strong><span>${esc(solution)}</span></p>
+          ${suggestedReason ? `<p><strong>Suggested retry reason</strong><code>${esc(suggestedReason)}</code></p>` : ""}
+        </div>`;
+    };
     let recovery = "";
     if (ticket.status === "In Review" && !mergeState.allowed) recovery = `
       <section class="recovery-panel" aria-labelledby="recovery-title">
@@ -943,7 +957,7 @@ async function renderDrawer({ preservePosition = false } = {}) {
       <section class="recovery-panel" aria-labelledby="recovery-title">
         <p class="recovery-kicker">Remote ownership</p>
         <h3 id="recovery-title">Resolve the existing claim</h3>
-        <p>${esc(recoveryInfo.summary || "Resume the owning run, or release the claim only after confirming it is abandoned.")}</p>
+        ${recoveryGuidance("Resume the owning run, or release the claim only after confirming it is abandoned.")}
         <div class="form-actions">
           <button class="button button-danger" type="button" data-ticket-action="release-claim">Release abandoned claim</button>
         </div>
@@ -952,7 +966,7 @@ async function renderDrawer({ preservePosition = false } = {}) {
       <section class="recovery-panel" aria-labelledby="recovery-title">
         <p class="recovery-kicker">Human decision required</p>
         <h3 id="recovery-title">Set a bounded ticket exception</h3>
-        <p>The implementation is larger than this ticket's approved limit. Protected QA tests are measured separately.</p>
+        ${recoveryGuidance("Approve a bounded ticket-only exception, or split and replan the work.")}
         <dl class="budget-meter">
           <div><dt>Implementation</dt><dd>${esc(implementationLines)} lines</dd></div>
           <div><dt>Current limit</dt><dd>${esc(budget.effective_limit)} lines</dd></div>
@@ -975,7 +989,7 @@ async function renderDrawer({ preservePosition = false } = {}) {
       <section class="recovery-panel" aria-labelledby="recovery-title">
         <p class="recovery-kicker">QA evidence repair</p>
         <h3 id="recovery-title">${esc(recoveryInfo.title || "Regenerate the protected QA tests")}</h3>
-        <p>${esc(recoveryInfo.summary || "Discard the defective protected tests and regenerate them from the repository base.")}</p>
+        ${recoveryGuidance("Discard the defective protected tests and regenerate them from the repository base.")}
         ${retryReasonField("Explain the protected-test defect that regeneration must correct.")}
         <div class="form-actions">
           <button class="button button-primary" type="button" data-ticket-action="retry-reset-qa">Regenerate QA tests and retry</button>
@@ -985,7 +999,7 @@ async function renderDrawer({ preservePosition = false } = {}) {
       <section class="recovery-panel" aria-labelledby="recovery-title">
         <p class="recovery-kicker">Configuration repair</p>
         <h3 id="recovery-title">${esc(recoveryInfo.title || "Repair the Project Contract")}</h3>
-        <p>${esc(recoveryInfo.summary || "Update and commit factory.project.toml before retrying.")}</p>
+        ${recoveryGuidance("Update and commit factory.project.toml before retrying.")}
         ${recoveryInfo.configuration_changed ? retryReasonField("Describe the reviewed Project Contract repair.") : ""}
         <div class="form-actions">
           ${recoveryInfo.configuration_changed ? `<button class="button button-primary" type="button" data-ticket-action="retry">Reload contract and retry</button>` : `<button class="button" type="button" data-recovery-view="connect">Open Connect</button>`}
@@ -996,7 +1010,7 @@ async function renderDrawer({ preservePosition = false } = {}) {
       <section class="recovery-panel" aria-labelledby="recovery-title">
         <p class="recovery-kicker">Ticket correction</p>
         <h3 id="recovery-title">${esc(recoveryInfo.title || "Complete the GitHub Ticket")}</h3>
-        <p>${esc(recoveryInfo.summary || "Add the missing specification and acceptance criteria in GitHub.")}</p>
+        ${recoveryGuidance("Add the missing specification and acceptance criteria in GitHub.")}
         ${recoveryInfo.required_paths?.length ? `<p><strong>Add to File ownership:</strong> ${recoveryInfo.required_paths.map((path) => `<code>${esc(path)}</code>`).join(", ")}</p>` : ""}
         ${retryReasonField("Describe the GitHub Ticket correction that should be reloaded.")}
         <div class="form-actions">
@@ -1008,14 +1022,14 @@ async function renderDrawer({ preservePosition = false } = {}) {
       <section class="recovery-panel" aria-labelledby="recovery-title">
         <p class="recovery-kicker">Plan correction</p>
         <h3 id="recovery-title">${esc(recoveryInfo.title || "Repair the dependency plan")}</h3>
-        <p>${esc(recoveryInfo.summary || "Correct the dependency graph before resuming.")}</p>
+        ${recoveryGuidance("Correct the dependency graph before resuming.")}
         <div class="form-actions">${ticket.issue_url ? `<a class="button button-primary" href="${esc(ticket.issue_url)}" target="_blank" rel="noreferrer">Open issue</a>` : ""}</div>
       </section>`;
     else if (recoveryInfo.kind === "revision_rebuild") recovery = `
       <section class="recovery-panel" aria-labelledby="recovery-title">
         <p class="recovery-kicker">Revision recovery</p>
         <h3 id="recovery-title">${esc(recoveryInfo.title || "Rebuild the exact revision")}</h3>
-        <p>${esc(recoveryInfo.summary || "The Factory will rebuild this ticket and rerun its evidence.")}</p>
+        ${recoveryGuidance("The Factory will rebuild this ticket and rerun its evidence.")}
         ${retryReasonField("Explain why rebuilding the exact revision should now succeed.")}
         <div class="form-actions">
           ${ticket.pr_url ? `<a class="button" href="${esc(ticket.pr_url)}" target="_blank" rel="noreferrer">Inspect pull request</a>` : ""}
@@ -1026,7 +1040,7 @@ async function renderDrawer({ preservePosition = false } = {}) {
       <section class="recovery-panel" aria-labelledby="recovery-title">
         <p class="recovery-kicker">Revision safety</p>
         <h3 id="recovery-title">${esc(recoveryInfo.title || "Create a replacement Ticket")}</h3>
-        <p>${esc(recoveryInfo.summary || "A different revision was already merged. Preserve it and plan corrective work as a new ticket.")}</p>
+        ${recoveryGuidance("A different revision was already merged. Preserve it and plan corrective work as a new ticket.")}
         <div class="form-actions">
           ${ticket.pr_url ? `<a class="button" href="${esc(ticket.pr_url)}" target="_blank" rel="noreferrer">Inspect merged pull request</a>` : ""}
           <button class="button button-primary" type="button" data-recovery-view="planning">Open Planning</button>
@@ -1036,7 +1050,7 @@ async function renderDrawer({ preservePosition = false } = {}) {
       <section class="recovery-panel" aria-labelledby="recovery-title">
         <p class="recovery-kicker">Recovery available</p>
         <h3 id="recovery-title">${esc(recoveryInfo.title || "Retry from the safest checkpoint")}</h3>
-        <p>${esc(recoveryInfo.summary || "The Factory will preserve eligible QA evidence and candidate work, then rerun verification.")}</p>
+        ${recoveryGuidance("The Factory will preserve eligible QA evidence and candidate work, then rerun verification.")}
         ${retryReasonField()}
         <div class="form-actions">
           <button class="button button-primary" type="button" data-ticket-action="retry">Retry ticket</button>

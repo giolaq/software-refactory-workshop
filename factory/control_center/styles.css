@@ -410,6 +410,11 @@ input:focus, select:focus, textarea:focus { border-color: var(--blue); outline: 
 .recovery-kicker { margin: 0 0 4px; color: var(--red); font-size: 10px; font-weight: 800; text-transform: uppercase; }
 .recovery-panel h3 { margin: 0; font-size: 20px; line-height: 1.25; }
 .recovery-panel > p:not(.recovery-kicker) { max-width: 62ch; margin: 8px 0 0; color: var(--secondary); }
+.recovery-guidance { display: grid; gap: 10px; max-width: 70ch; margin: 16px 0; padding: 14px 0; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+.recovery-guidance p { display: grid; gap: 3px; margin: 0; color: var(--secondary); }
+.recovery-guidance strong { color: var(--text); font-size: 11px; }
+.recovery-guidance span, .recovery-guidance code { overflow-wrap: anywhere; }
+.recovery-guidance code { padding: 8px 10px; border: 1px solid var(--line-soft); border-radius: 4px; background: var(--surface); color: var(--secondary); white-space: normal; }
 .budget-meter { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); margin: 18px 0; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); background: var(--surface); }
 .budget-meter div { min-width: 0; padding: 12px; border-left: 1px solid var(--line-soft); }
 .budget-meter div:first-child { border-left: 0; }

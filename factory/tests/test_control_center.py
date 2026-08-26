@@ -533,6 +533,9 @@ class ControlCenterTests(unittest.TestCase):
         self.assertIn('id="retry-reason"', javascript)
         self.assertIn("Latest retry reason", javascript)
         self.assertIn("why another attempt can succeed", javascript)
+        self.assertIn("Why it stopped", javascript)
+        self.assertIn("Proposed recovery", javascript)
+        self.assertIn("Suggested retry reason", javascript)
         self.assertIn("Reload issue and retry", javascript)
         self.assertIn("Reload contract and retry", javascript)
         self.assertIn("Release abandoned claim", javascript)
@@ -541,6 +544,7 @@ class ControlCenterTests(unittest.TestCase):
         self.assertIn("Rebuild and retry", javascript)
         self.assertIn("Create a replacement Ticket", javascript)
         self.assertIn(".recovery-panel", styles)
+        self.assertIn(".recovery-guidance", styles)
 
     def test_completed_application_ui_has_start_stop_and_copy_controls(self):
         html = (Path(__file__).parents[1] / "control_center/index.html").read_text()
@@ -1056,6 +1060,14 @@ class ControlCenterTests(unittest.TestCase):
             )
             self.assertEqual(
                 tickets[5]["next_human_action"], "edit_ticket_and_retry",
+            )
+            self.assertEqual(
+                tickets[5]["recovery"]["cause"],
+                "Add a Spec and an observable Acceptance criterion.",
+            )
+            self.assertIn(
+                "observable Acceptance criteria",
+                tickets[5]["recovery"]["solution"],
             )
             self.assertEqual(
                 tickets[6]["recovery"]["action"], "approve_budget_or_split",
