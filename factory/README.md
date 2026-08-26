@@ -404,11 +404,18 @@ more tests, but changing, renaming, or deleting an Acceptance Test fails verific
 is fed back into the normal retry loop.
 
 With `--review-qa-tests`, a ticket pauses in **QA Review**. Inspect its test diff
-from the Control Center or terminal, then continue it explicitly:
+from the Control Center or terminal. Approve the exact revision, or send focused
+feedback so independent QA replaces the rejected tests and proves RED again:
 
 ```sh
 ./factory/factory approve-tests ISSUE
+./factory/factory request-test-changes ISSUE \
+  --feedback "Describe the required test correction"
 ```
+
+Do not edit pending protected tests in GitHub or in the Factory worktree. Edit
+the GitHub issue only when the requirement or acceptance criteria are wrong;
+the next run reloads an edited issue and discards evidence tied to its old spec.
 
 QA prompts and logs are separate from implementation artifacts:
 
@@ -750,6 +757,8 @@ factory revise PLAN_ID product|architecture|program|slices
 factory approve PLAN_ID [--project-number N] [--new-project-title TITLE] [--yes]
 factory approve-rehearsal PLAN_ID [--scenario recipe-rebrand|tv] [--yes]
 factory approve-tests ISSUE [--yes]
+factory request-test-changes ISSUE
+                            (--feedback TEXT|--feedback-file PATH) [--yes]
 factory status [--repo PATH]
 factory retry ISSUE [--repo PATH] [--project-number N] [--mock]
                     [--reset-qa --yes]

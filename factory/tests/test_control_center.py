@@ -66,6 +66,57 @@ class ControlCenterTests(unittest.TestCase):
         self.assertTrue(args.reset_qa)
         self.assertTrue(args.yes)
 
+    def test_parser_exposes_human_qa_revision_feedback(self):
+        args = parser().parse_args([
+            "request-test-changes",
+            "6",
+            "--repo",
+            "/tmp/workshop",
+            "--feedback",
+            "Cover the public boundary instead of internals.",
+            "--yes",
+        ])
+
+        self.assertEqual(args.command, "request-test-changes")
+        self.assertEqual(args.issue, 6)
+        self.assertIn("public boundary", args.feedback)
+        self.assertTrue(args.yes)
+
+    def test_control_center_builds_human_qa_revision_command(self):
+        with tempfile.TemporaryDirectory() as directory:
+            center = ControlCenter(self.make_repo(directory))
+            state = center.repo / ".factory/state.json"
+            state.parent.mkdir(parents=True, exist_ok=True)
+            state.write_text(json.dumps({
+                "mode": "mock",
+                "tickets": [{
+                    "number": 6,
+                    "status": "QA Review",
+                    "qa_commit": "a" * 40,
+                }],
+            }))
+
+            _, commands = center.build_commands("request-test-changes", {
+                "issue": 6,
+                "mode": "rehearsal",
+                "feedback": "Cover the public boundary instead of internals.",
+            })
+
+            command = commands[0]
+            self.assertIn("request-test-changes", command)
+            self.assertIn("--feedback", command)
+            self.assertIn(
+                "Cover the public boundary instead of internals.",
+                command,
+            )
+            self.assertIn("--yes", command)
+
+            javascript = (
+                Path(__file__).parents[1] / "control_center/app.js"
+            ).read_text()
+            self.assertIn("Request test changes", javascript)
+            self.assertIn("qa-revision-feedback", javascript)
+
     def test_completed_node_application_is_detected_and_can_be_started(self):
         with tempfile.TemporaryDirectory() as directory:
             center = ControlCenter(self.make_repo(directory))

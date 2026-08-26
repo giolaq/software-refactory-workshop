@@ -33,6 +33,7 @@ from orchestrator import (
     recover_latest_state,
     recover_remote_ticket_state,
     release_ticket_claim,
+    request_qa_test_changes,
     restore_recovery_checkpoint,
     resolve_codex_cli,
     retry_ticket,
@@ -2084,6 +2085,125 @@ class RuntimeTests(unittest.TestCase):
             state_path.write_text(json.dumps(state))
             approve_qa_tests(repo, 12, assume_yes=True)
             self.assertTrue((repo / ".factory/qa-approvals/12").is_file())
+
+    def test_human_can_request_an_exact_qa_revision_with_feedback(self):
+        with tempfile.TemporaryDirectory() as directory:
+            repo = Path(directory) / "repo"
+            worktree = Path(directory) / "repo-wt-12"
+            repo.mkdir(); worktree.mkdir()
+            git(worktree, "init", "-q", "-b", "factory/12-search")
+            git(worktree, "config", "user.name", "Factory Test")
+            git(worktree, "config", "user.email", "factory@example.test")
+            test = worktree / "tests/test_ticket_12_search.py"
+            test.parent.mkdir(parents=True)
+            test.write_text("def test_search():\n    assert False\n")
+            git(worktree, "add", ".")
+            git(worktree, "commit", "-qm", "qa tests")
+            commit = git(worktree, "rev-parse", "HEAD")
+            blob = git(worktree, "hash-object", "tests/test_ticket_12_search.py")
+            ticket = {
+                "number": 12,
+                "title": "Search",
+                "status": "QA Review",
+                "phase": "qa-review",
+                "branch": "factory/12-search",
+                "branch_generation": 0,
+                "qa_revision": 1,
+                "qa_commit": commit,
+                "qa_tests": {"tests/test_ticket_12_search.py": blob},
+                "qa_evidence": {
+                    "red": {
+                        "result": "RED PROVED",
+                        "classification": "behavior_assertion",
+                        "revision": commit,
+                    },
+                },
+                "qa_approved": False,
+                "history": [],
+            }
+            state_path = repo / ".factory/state.json"
+            state_path.parent.mkdir(parents=True)
+            state_path.write_text(json.dumps({"tickets": [ticket]}))
+            approval = repo / ".factory/qa-approvals/12"
+            approval.parent.mkdir(parents=True)
+            approval.write_text("pending\n")
+
+            request_qa_test_changes(
+                repo,
+                12,
+                "Use public search behavior and cover the empty-query boundary.",
+                assume_yes=True,
+            )
+
+            event_path = repo / ".factory/qa-revision-events/12.json"
+            event = json.loads(event_path.read_text())
+            self.assertEqual(event["qa_commit"], commit)
+            self.assertIn("empty-query boundary", event["feedback"])
+
+            factory = Factory.__new__(Factory)
+            factory.repo = repo
+            factory.tickets = {12: ticket}
+            factory.backend = None
+            factory._sync_store = mock.Mock()
+
+            def transition(item, status, note):
+                item["status"] = status
+                item["phase"] = status.lower().replace(" ", "-")
+                item.setdefault("history", []).append({
+                    "at": "now",
+                    "status": status,
+                    "note": note,
+                })
+
+            factory.transition = transition
+            factory.apply_qa_revision_events()
+
+            self.assertEqual(ticket["status"], "Ready")
+            self.assertEqual(ticket["qa_revision"], 2)
+            self.assertEqual(
+                ticket["qa_revision_feedback"],
+                "Use public search behavior and cover the empty-query boundary.",
+            )
+            self.assertEqual(ticket["qa_commit"], "")
+            self.assertEqual(ticket["qa_tests"], {})
+            self.assertEqual(ticket["qa_evidence"], {})
+            self.assertEqual(ticket["branch_generation"], 1)
+            self.assertEqual(ticket["qa_revision_history"][0]["qa_commit"], commit)
+            self.assertFalse(event_path.exists())
+            self.assertFalse(approval.exists())
+
+    def test_qa_revision_request_rejects_a_manually_edited_test(self):
+        with tempfile.TemporaryDirectory() as directory:
+            repo = Path(directory) / "repo"
+            worktree = Path(directory) / "repo-wt-3"
+            repo.mkdir(); worktree.mkdir()
+            git(worktree, "init", "-q", "-b", "factory/3-input")
+            test = worktree / "tests/test_ticket_3_input.py"
+            test.parent.mkdir(parents=True)
+            test.write_text("def test_input():\n    assert False\n")
+            expected = git(worktree, "hash-object", "tests/test_ticket_3_input.py")
+            state = {
+                "tickets": [{
+                    "number": 3,
+                    "status": "QA Review",
+                    "qa_commit": "a" * 40,
+                    "qa_tests": {"tests/test_ticket_3_input.py": expected},
+                }],
+            }
+            state_path = repo / ".factory/state.json"
+            state_path.parent.mkdir(parents=True)
+            state_path.write_text(json.dumps(state))
+            test.write_text("def test_input():\n    assert True\n")
+
+            with self.assertRaisesRegex(
+                ValueError, "changed after QA committed it",
+            ):
+                request_qa_test_changes(
+                    repo,
+                    3,
+                    "Cover repeated remote events.",
+                    assume_yes=True,
+                )
 
     def test_version_parser_handles_cli_prefixes(self):
         self.assertEqual(version_tuple("v22.4.1"), (22, 4, 1))
