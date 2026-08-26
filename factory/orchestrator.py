@@ -75,7 +75,7 @@ from planning_pipeline import (
     review as review_plan,
 )
 from project_contract import ProjectContract, ProjectContractError
-from triage import GATE_ORDER, classify_controls, triage_ticket
+from triage import GATE_ORDER, classify_controls, declared_paths, triage_ticket
 from run_summary import factory_run_summary, render_factory_run_summary
 from monitor import FactoryMonitor
 from session_config import (
@@ -739,6 +739,31 @@ def _saved_implementation_failure(ticket: dict, repo: Path | None) -> str:
     return _logged_implementation_blocker(ticket, repo) or failure
 
 
+def propose_file_ownership_update(body: str, required_paths: list[str]) -> str:
+    """Return a Ticket body with missing required paths added to File ownership."""
+    existing = set(declared_paths(body))
+    missing = [
+        path for path in sorted(dict.fromkeys(required_paths))
+        if path and path not in existing
+    ]
+    if not missing:
+        return body
+    additions = "\n".join(f"- {path}" for path in missing)
+    section = re.search(
+        r"(?ims)^## File ownership\s*\n.*?(?=^## |\Z)",
+        body or "",
+    )
+    if section:
+        replacement = section.group(0).rstrip() + "\n" + additions + "\n\n"
+        return body[:section.start()] + replacement + body[section.end():]
+    marker = re.search(r"(?m)^<!--\s*factory-(?:plan|governance):", body or "")
+    insertion_at = marker.start() if marker else len(body)
+    prefix = body[:insertion_at].rstrip()
+    suffix = body[insertion_at:].lstrip()
+    proposal = prefix + "\n\n## File ownership\n" + additions + "\n"
+    return proposal + ("\n" + suffix if suffix else "")
+
+
 def ticket_recovery(ticket: dict, repo: Path | None = None) -> dict:
     """Return the one operator action that can make a blocked Ticket progress."""
     failure = _saved_implementation_failure(ticket, repo)
@@ -869,6 +894,10 @@ def ticket_recovery(ticket: dict, repo: Path | None = None) -> dict:
             cause=cause,
             scope_conflict=True,
             required_paths=required_paths,
+            proposed_ticket_body=propose_file_ownership_update(
+                str(ticket.get("body") or ""),
+                required_paths,
+            ),
             suggested_retry_reason=suggested_retry_reason,
         )
     configuration_failure = any(marker in lowered for marker in (

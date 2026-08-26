@@ -227,6 +227,12 @@ decision without presenting a retry that will deterministically fail. The open
 drawer preserves its tab and scroll position while snapshots and Live logs
 refresh.
 
+For an exact File ownership blocker, Summary proposes the corrected GitHub
+Ticket body and a retry reason. The attendee can accept or edit both, then
+choose **Save ticket and retry**. The Control Center validates the required
+paths, exact Factory identity and governance markers, and configured repository
+before saving GitHub. Retry runs only after the save command succeeds.
+
 If an In Review ticket has `rehearsal://` review evidence while the Control
 Center is set to Live, the drawer suppresses the merge action. Finish it in
 Rehearsal, or open **Reset**, clear local run state, and load the published

@@ -58,6 +58,7 @@ from orchestrator import (
     ticket_diff_budget,
     ticket_recovery,
 )
+from triage import declared_paths
 
 
 PLAN_ID = re.compile(r"[a-f0-9]{8,64}")
@@ -77,11 +78,13 @@ ACTION_REGISTRY = frozenset({
     "configure", "plan", "restart-plan", "revise-product", "revise-stage",
     "approve-product", "approve-stage", "continue-plan", "publish-plan",
     "approve-tests", "request-test-changes", "merge",
-    "run", "run-once", "dry-run", "retry", "release-claim", "evidence", "start-app",
+    "run", "run-once", "dry-run", "retry", "save-ticket-and-retry",
+    "release-claim", "evidence", "start-app",
     "monitor", "publish-monitor", "recover-latest", "reset-run", "reset-all",
 })
 COMPANION_ACTIONS = frozenset({
     "approve-tests", "request-test-changes", "merge", "retry",
+    "save-ticket-and-retry",
 })
 
 
@@ -1496,6 +1499,92 @@ class ControlCenter:
             if payload.get("review_qa_tests"):
                 command.append("--review-qa-tests")
             return {"run": "Run the factory", "run-once": "Run one scheduling cycle", "dry-run": "Preview execution waves"}[action], [command]
+        if action == "save-ticket-and-retry":
+            if mock:
+                raise InputError("Saving a Ticket correction requires a Live GitHub run.")
+            issue = self._positive_int(payload, "issue", required=True)
+            ticket = self._ticket_action_context(issue, mode)
+            if ticket.get("status") != "Blocked":
+                raise InputError(
+                    f"Ticket #{issue} is {ticket.get('status') or 'not available'}, "
+                    "not Blocked."
+                )
+            recovery = ticket_recovery(ticket, self.repo)
+            if (
+                recovery.get("kind") != "ticket_specification"
+                or not recovery.get("proposed_ticket_body")
+            ):
+                raise InputError(
+                    "This blocker does not have a structured Ticket correction to save."
+                )
+            corrected_body = self._string(
+                payload, "ticket_body", required=True, max_length=60_000,
+            )
+            current_body = str(ticket.get("body") or "").strip()
+            if corrected_body == current_body:
+                raise InputError(
+                    "The corrected Ticket body is unchanged. Review the proposed "
+                    "recovery before saving."
+                )
+            marker_pattern = re.compile(
+                r"<!--\s*factory-(?:plan|governance):.*?-->",
+                re.DOTALL,
+            )
+            expected_markers = marker_pattern.findall(current_body)
+            corrected_markers = marker_pattern.findall(corrected_body)
+            if corrected_markers != expected_markers:
+                raise InputError(
+                    "The corrected Ticket must preserve its hidden Factory identity "
+                    "and governance markers unchanged."
+                )
+            required_paths = list(recovery.get("required_paths") or [])
+            missing_paths = sorted(set(required_paths) - set(declared_paths(corrected_body)))
+            if missing_paths:
+                raise InputError(
+                    "The corrected Ticket must add these paths to File ownership: "
+                    + ", ".join(missing_paths)
+                )
+            configured_url = self.session_config().get("github_repository")
+            if not configured_url:
+                raise InputError(
+                    "Connect the Live GitHub repository before saving a Ticket correction."
+                )
+            if not self.repo_info().get("github_connected"):
+                raise InputError(
+                    "The managed checkout does not match the configured GitHub "
+                    "repository. Reconnect it before saving a Ticket correction."
+                )
+            repository = parse_github_repository(configured_url)
+            reason = self._string(
+                payload, "reason", required=True, max_length=300,
+            )
+            if len(reason) < 12:
+                raise InputError(
+                    "Retry reason must explain why another attempt can succeed."
+                )
+            _, retry_commands = self.build_commands("retry", {
+                **payload,
+                "issue": issue,
+                "mode": "live",
+                "reason": reason,
+            })
+            correction_dir = (
+                self.repo / ".factory" / "control-center" / "ticket-corrections"
+            )
+            correction_dir.mkdir(parents=True, exist_ok=True)
+            correction_file = correction_dir / (
+                f"ticket-{issue}-{uuid.uuid4().hex[:12]}.md"
+            )
+            correction_file.write_text(corrected_body.rstrip() + "\n")
+            save_command = [
+                "gh", "issue", "edit", str(issue),
+                "--repo", repository.slug,
+                "--body-file", str(correction_file),
+            ]
+            return f"Save correction and retry ticket #{issue}", [
+                save_command,
+                retry_commands[0],
+            ]
         if action == "retry":
             issue = self._positive_int(payload, "issue", required=True)
             ticket = self._ticket_action_context(issue, mode)
