@@ -921,6 +921,12 @@ async function renderDrawer({ preservePosition = false } = {}) {
     const mergeState = mergeEligibility(ticket);
     const implementationLines = Number(budget.implementation_lines || 0);
     const suggestedLimit = Math.ceil(Math.max(implementationLines, implementationLines * 1.15) / 100) * 100;
+    const retryReasonField = (placeholder = "Explain what changed and why another attempt can succeed.") => `
+      <div class="recovery-fields">
+        <label>Reason for retry
+          <textarea id="retry-reason" rows="3" placeholder="${esc(placeholder)}"></textarea>
+        </label>
+      </div>`;
     let recovery = "";
     if (ticket.status === "In Review" && !mergeState.allowed) recovery = `
       <section class="recovery-panel" aria-labelledby="recovery-title">
@@ -970,6 +976,7 @@ async function renderDrawer({ preservePosition = false } = {}) {
         <p class="recovery-kicker">QA evidence repair</p>
         <h3 id="recovery-title">${esc(recoveryInfo.title || "Regenerate the protected QA tests")}</h3>
         <p>${esc(recoveryInfo.summary || "Discard the defective protected tests and regenerate them from the repository base.")}</p>
+        ${retryReasonField("Explain the protected-test defect that regeneration must correct.")}
         <div class="form-actions">
           <button class="button button-primary" type="button" data-ticket-action="retry-reset-qa">Regenerate QA tests and retry</button>
         </div>
@@ -979,6 +986,7 @@ async function renderDrawer({ preservePosition = false } = {}) {
         <p class="recovery-kicker">Configuration repair</p>
         <h3 id="recovery-title">${esc(recoveryInfo.title || "Repair the Project Contract")}</h3>
         <p>${esc(recoveryInfo.summary || "Update and commit factory.project.toml before retrying.")}</p>
+        ${recoveryInfo.configuration_changed ? retryReasonField("Describe the reviewed Project Contract repair.") : ""}
         <div class="form-actions">
           ${recoveryInfo.configuration_changed ? `<button class="button button-primary" type="button" data-ticket-action="retry">Reload contract and retry</button>` : `<button class="button" type="button" data-recovery-view="connect">Open Connect</button>`}
         </div>
@@ -990,6 +998,7 @@ async function renderDrawer({ preservePosition = false } = {}) {
         <h3 id="recovery-title">${esc(recoveryInfo.title || "Complete the GitHub Ticket")}</h3>
         <p>${esc(recoveryInfo.summary || "Add the missing specification and acceptance criteria in GitHub.")}</p>
         ${recoveryInfo.required_paths?.length ? `<p><strong>Add to File ownership:</strong> ${recoveryInfo.required_paths.map((path) => `<code>${esc(path)}</code>`).join(", ")}</p>` : ""}
+        ${retryReasonField("Describe the GitHub Ticket correction that should be reloaded.")}
         <div class="form-actions">
           ${ticket.issue_url ? `<a class="button" href="${esc(ticket.issue_url)}" target="_blank" rel="noreferrer">Edit issue</a>` : ""}
           <button class="button button-primary" type="button" data-ticket-action="retry">Reload issue and retry</button>
@@ -1007,6 +1016,7 @@ async function renderDrawer({ preservePosition = false } = {}) {
         <p class="recovery-kicker">Revision recovery</p>
         <h3 id="recovery-title">${esc(recoveryInfo.title || "Rebuild the exact revision")}</h3>
         <p>${esc(recoveryInfo.summary || "The Factory will rebuild this ticket and rerun its evidence.")}</p>
+        ${retryReasonField("Explain why rebuilding the exact revision should now succeed.")}
         <div class="form-actions">
           ${ticket.pr_url ? `<a class="button" href="${esc(ticket.pr_url)}" target="_blank" rel="noreferrer">Inspect pull request</a>` : ""}
           <button class="button button-primary" type="button" data-ticket-action="retry">Rebuild and retry</button>
@@ -1027,7 +1037,10 @@ async function renderDrawer({ preservePosition = false } = {}) {
         <p class="recovery-kicker">Recovery available</p>
         <h3 id="recovery-title">${esc(recoveryInfo.title || "Retry from the safest checkpoint")}</h3>
         <p>${esc(recoveryInfo.summary || "The Factory will preserve eligible QA evidence and candidate work, then rerun verification.")}</p>
-        <button class="button button-primary" type="button" data-ticket-action="retry">Retry ticket</button>
+        ${retryReasonField()}
+        <div class="form-actions">
+          <button class="button button-primary" type="button" data-ticket-action="retry">Retry ticket</button>
+        </div>
       </section>`;
     const qaDecision = ticket.status === "QA Review" ? `<section class="detail-panel"><h3>Acceptance Test decision</h3><label for="qa-revision-feedback">Revision feedback</label><textarea id="qa-revision-feedback" rows="4" placeholder="Describe what the revised tests must change or cover."></textarea><p class="field-help">Request a new test revision here. Edit the GitHub issue only when its requirements or acceptance criteria are wrong.</p><div class="form-actions"><button class="button" type="button" data-ticket-action="request-test-changes">Request test changes</button><button class="button button-primary" type="button" data-ticket-action="approve-tests">Approve tests</button></div></section>` : "";
     const actions = ticket.status === "In Review" && ticket.merge_authority === "human" && mergeState.allowed ? `<button class="button button-primary" type="button" data-ticket-action="merge">Merge exact revision</button>` : "";
@@ -1036,7 +1049,8 @@ async function renderDrawer({ preservePosition = false } = {}) {
     const controls = triage.controls || {};
     const metrics = ticket.metrics || {};
     const timing = `<section class="detail-panel"><h3>Time by owner</h3><div class="detail-grid"><p><b>${esc(metrics.agent_seconds || 0)}s</b><br><small>Useful agent work</small></p><p><b>${esc(metrics.gate_seconds || ticket.verification_duration_seconds || 0)}s</b><br><small>Verification overhead</small></p><p><b>${esc(metrics.human_wait_seconds || 0)}s</b><br><small>Human wait</small></p><p><b>${esc(metrics.retry_count || 0)}</b><br><small>Retries · ${esc(metrics.verifier_rejections || 0)} verifier rejections</small></p></div></section>`;
-    replaceDrawerContent(content, `${recovery}<div class="detail-grid"><section class="detail-panel"><h3>Implementation</h3><p><span class="pill">${esc(ticket.agent)}</span> attempt ${ticket.attempt || 0}</p></section><section class="detail-panel"><h3>Independent QA</h3><p><span class="pill">${esc(ticket.qa_agent || "disabled")}</span> attempt ${ticket.qa_attempt || 0}</p></section></div><section class="detail-panel"><h3>Triage and controls</h3><p><span class="pill">${esc(triage.result || "not run")}</span> ${esc(controls.risk || "unclassified")} risk · ${esc(ticket.verification_level || controls.gate_level || "unselected")} verification</p><p>${esc(controls.reason || triage.reason || "Controls are selected before dispatch and checked again from the actual diff.")}</p></section>${timing}${merge}${qaDecision}<section class="detail-panel"><h3>Specification</h3><pre>${esc(section(ticket.body, "Spec"))}</pre></section><section class="detail-panel"><h3>Acceptance criteria</h3><pre>${esc(section(ticket.body, "Acceptance criteria"))}</pre></section>${ticket.failure ? `<section class="detail-panel"><h3>Last failure</h3><pre>${esc(ticket.failure)}</pre></section>` : ""}<div class="form-actions">${actions}${ticket.issue_url ? `<a class="button" href="${esc(ticket.issue_url)}" target="_blank" rel="noreferrer">Open issue</a>` : ""}${ticket.pr_url ? `<a class="button" href="${esc(ticket.pr_url)}" target="_blank" rel="noreferrer">Open pull request</a>` : ""}</div>`, preservePosition);
+    const retryDecision = ticket.last_retry_reason ? `<section class="detail-panel"><h3>Latest retry reason</h3><p>${esc(ticket.last_retry_reason)}</p></section>` : "";
+    replaceDrawerContent(content, `${recovery}<div class="detail-grid"><section class="detail-panel"><h3>Implementation</h3><p><span class="pill">${esc(ticket.agent)}</span> attempt ${ticket.attempt || 0}</p></section><section class="detail-panel"><h3>Independent QA</h3><p><span class="pill">${esc(ticket.qa_agent || "disabled")}</span> attempt ${ticket.qa_attempt || 0}</p></section></div><section class="detail-panel"><h3>Triage and controls</h3><p><span class="pill">${esc(triage.result || "not run")}</span> ${esc(controls.risk || "unclassified")} risk · ${esc(ticket.verification_level || controls.gate_level || "unselected")} verification</p><p>${esc(controls.reason || triage.reason || "Controls are selected before dispatch and checked again from the actual diff.")}</p></section>${timing}${retryDecision}${merge}${qaDecision}<section class="detail-panel"><h3>Specification</h3><pre>${esc(section(ticket.body, "Spec"))}</pre></section><section class="detail-panel"><h3>Acceptance criteria</h3><pre>${esc(section(ticket.body, "Acceptance criteria"))}</pre></section>${ticket.failure ? `<section class="detail-panel"><h3>Last failure</h3><pre>${esc(ticket.failure)}</pre></section>` : ""}<div class="form-actions">${actions}${ticket.issue_url ? `<a class="button" href="${esc(ticket.issue_url)}" target="_blank" rel="noreferrer">Open issue</a>` : ""}${ticket.pr_url ? `<a class="button" href="${esc(ticket.pr_url)}" target="_blank" rel="noreferrer">Open pull request</a>` : ""}</div>`, preservePosition);
     $('[data-ticket-action="approve-tests"]', content)?.addEventListener("click", () => action("approve-tests", { issue: ticket.number }));
     $('[data-ticket-action="request-test-changes"]', content)?.addEventListener("click", () => {
       const feedback = $("#qa-revision-feedback", content)?.value.trim() || "";
@@ -1047,8 +1061,17 @@ async function renderDrawer({ preservePosition = false } = {}) {
       }
       action("request-test-changes", { issue: ticket.number, feedback });
     });
-    $('[data-ticket-action="retry"]', content)?.addEventListener("click", () => action("retry", { issue: ticket.number }));
-    $('[data-ticket-action="retry-reset-qa"]', content)?.addEventListener("click", () => action("retry", { issue: ticket.number, reset_qa: true }));
+    const submitRetry = (resetQa = false) => {
+      const reason = $("#retry-reason", content)?.value.trim() || "";
+      if (reason.length < 12) {
+        toast("Explain what changed and why another attempt can succeed.", true);
+        $("#retry-reason", content)?.focus();
+        return;
+      }
+      action("retry", { issue: ticket.number, reason, reset_qa: resetQa });
+    };
+    $('[data-ticket-action="retry"]', content)?.addEventListener("click", () => submitRetry());
+    $('[data-ticket-action="retry-reset-qa"]', content)?.addEventListener("click", () => submitRetry(true));
     $('[data-open-ticket-reset]', content)?.addEventListener("click", openResetDialog);
     $('[data-ticket-mode]', content)?.addEventListener("click", (event) => {
       setMode(event.currentTarget.dataset.ticketMode);

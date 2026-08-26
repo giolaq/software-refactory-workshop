@@ -1501,16 +1501,18 @@ class ControlCenter:
             ticket = self._ticket_action_context(issue, mode)
             reset_qa = payload.get("reset_qa") is True
             budget_lines = self._positive_int(payload, "budget_lines")
-            reason = self._string(payload, "reason", max_length=300)
+            reason = self._string(
+                payload, "reason", required=True, max_length=300,
+            )
+            if len(reason) < 12:
+                raise InputError(
+                    "Retry reason must explain why another attempt can succeed."
+                )
             recovery = ticket_recovery(ticket, self.repo)
             if reset_qa and recovery.get("kind") != "qa_evidence":
                 raise InputError(
                     "Protected QA regeneration is available only when the recorded "
                     "blocker is a QA evidence defect."
-                )
-            if bool(budget_lines) != bool(reason):
-                raise InputError(
-                    "Enter both the ticket budget and the reason for the exception."
                 )
             if reset_qa and budget_lines:
                 raise InputError(
@@ -1522,14 +1524,14 @@ class ControlCenter:
             project = self._positive_int(payload, "project_number") or self.session_config().get("project_number")
             if project and not mock:
                 command += ["--project-number", str(project)]
+            command += ["--reason", reason]
             if budget_lines:
                 command += [
                     "--budget-lines", str(budget_lines),
-                    "--reason", reason,
-                    "--yes",
                 ]
             if reset_qa:
-                command += ["--reset-qa", "--yes"]
+                command.append("--reset-qa")
+            command.append("--yes")
             return f"Retry ticket #{issue}", [command]
         if action == "release-claim":
             if mock:

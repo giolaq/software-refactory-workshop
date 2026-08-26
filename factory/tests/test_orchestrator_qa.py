@@ -98,6 +98,9 @@ class QaPolicyTests(unittest.TestCase):
                 "body": "## Spec\nSearch by ingredient.",
                 "attempt": 1,
                 "qa_tests": {},
+                "last_retry_reason": (
+                    "The corrected public search fixture is now available"
+                ),
             }, "").read_text()
 
             self.assertIn("## Agent Role contract · Implementation", prompt)
@@ -106,6 +109,8 @@ class QaPolicyTests(unittest.TestCase):
             self.assertIn("### Verification responsibility", prompt)
             self.assertIn("### Handoff Receipt", prompt)
             self.assertIn("Policy version: `policy-test-v1`", prompt)
+            self.assertIn("## Human retry direction", prompt)
+            self.assertIn("corrected public search fixture", prompt)
             charter = FactoryCharter.load(repo, require_approved=True)
             self.assertIn("## Approved Factory Charter", prompt)
             self.assertIn(charter.policy_sha256(), prompt)

@@ -416,7 +416,16 @@ class RuntimeTests(unittest.TestCase):
                 }],
             }))
 
-            retry_ticket(repo, 1, mock=True)
+            with self.assertRaisesRegex(SystemExit, "reason must explain"):
+                retry_ticket(repo, 1, mock=True)
+
+            retry_ticket(
+                repo,
+                1,
+                mock=True,
+                reason="Re-run verification against the preserved candidate",
+                assume_yes=True,
+            )
 
             ticket = json.loads(state.read_text())["tickets"][0]
             self.assertEqual(ticket["status"], "Ready")
@@ -426,6 +435,10 @@ class RuntimeTests(unittest.TestCase):
             self.assertEqual(ticket["base_sha"], "base-sha")
             self.assertIn("legacy test", ticket["retry_context"])
             self.assertIn("existing candidate", ticket["history"][-1]["note"])
+            self.assertEqual(
+                ticket["last_retry_reason"],
+                "Re-run verification against the preserved candidate",
+            )
 
     def test_diff_budget_excludes_protected_qa_and_retry_records_bounded_exception(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -489,7 +502,13 @@ class RuntimeTests(unittest.TestCase):
             self.assertEqual(budget["status"], "exceeded")
 
             with self.assertRaisesRegex(SystemExit, "cannot be retried"):
-                retry_ticket(repo, 4, mock=True)
+                retry_ticket(
+                    repo,
+                    4,
+                    mock=True,
+                    reason="The candidate must be measured before another attempt",
+                    assume_yes=True,
+                )
 
             retry_ticket(
                 repo, 4, mock=True, budget_lines=10,
@@ -515,6 +534,7 @@ class RuntimeTests(unittest.TestCase):
                 "event_id": "retry-event-7",
                 "ticket": 7,
                 "created_at": "2026-08-25T12:00:00+00:00",
+                "retry_reason": "The repaired gate should now pass verification",
                 "failure": "required gate failed",
                 "budget_override": None,
             }
@@ -538,6 +558,11 @@ class RuntimeTests(unittest.TestCase):
 
             self.assertEqual(ticket["status"], "Ready")
             self.assertEqual(ticket["last_retry_event"], "retry-event-7")
+            self.assertEqual(
+                ticket["last_retry_reason"],
+                "The repaired gate should now pass verification",
+            )
+            self.assertIn("retry reason", ticket["history"][-1]["note"])
             self.assertFalse(marker.exists())
             factory._sync_store.assert_called_once_with()
 
@@ -597,7 +622,14 @@ class RuntimeTests(unittest.TestCase):
             }]
 
             with mock.patch("orchestrator.GitHubBackend", return_value=backend):
-                retry_ticket(repo, 7, mock=False, project_number=3)
+                retry_ticket(
+                    repo,
+                    7,
+                    mock=False,
+                    project_number=3,
+                    reason="Reload the corrected GitHub Ticket specification",
+                    assume_yes=True,
+                )
 
             saved = json.loads(state.read_text())["tickets"][0]
             self.assertEqual(saved["status"], "Ready")
@@ -779,13 +811,25 @@ class RuntimeTests(unittest.TestCase):
             state.write_text(json.dumps({"tickets": [ticket]}))
 
             with self.assertRaisesRegex(SystemExit, "cannot be retried unchanged"):
-                retry_ticket(repo, 5, mock=True)
+                retry_ticket(
+                    repo,
+                    5,
+                    mock=True,
+                    reason="Reload the repaired Project Contract test roots",
+                    assume_yes=True,
+                )
 
             contract.write_text(contract.read_text().replace(
                 'test_roots = ["tests"]',
                 'test_roots = ["tests", "demo-app/tests"]',
             ))
-            retry_ticket(repo, 5, mock=True)
+            retry_ticket(
+                repo,
+                5,
+                mock=True,
+                reason="Reload the repaired Project Contract test roots",
+                assume_yes=True,
+            )
 
             event = json.loads((repo / ".factory/retry-events/5.json").read_text())
             self.assertTrue(event["reload_project_configuration"])
@@ -996,9 +1040,22 @@ class RuntimeTests(unittest.TestCase):
             with self.assertRaisesRegex(
                 SystemExit, "cannot be retried unchanged",
             ):
-                retry_ticket(repo, 6, mock=True)
+                retry_ticket(
+                    repo,
+                    6,
+                    mock=True,
+                    reason="Regenerate the defective protected QA evidence",
+                    assume_yes=True,
+                )
 
-            retry_ticket(repo, 6, mock=True, reset_qa=True, assume_yes=True)
+            retry_ticket(
+                repo,
+                6,
+                mock=True,
+                reset_qa=True,
+                reason="Regenerate the defective protected QA evidence",
+                assume_yes=True,
+            )
 
             saved = json.loads(state.read_text())["tickets"][0]
             self.assertEqual(saved["status"], "Ready")
@@ -1027,7 +1084,14 @@ class RuntimeTests(unittest.TestCase):
             state.write_text(json.dumps({"tickets": [saved]}))
             (repo / ".factory/retry-events/6.json").unlink()
 
-            retry_ticket(repo, 6, mock=True, reset_qa=True, assume_yes=True)
+            retry_ticket(
+                repo,
+                6,
+                mock=True,
+                reset_qa=True,
+                reason="Resume regeneration after the interrupted QA repair",
+                assume_yes=True,
+            )
 
             interrupted = json.loads(state.read_text())["tickets"][0]
             self.assertEqual(interrupted["status"], "Ready")
