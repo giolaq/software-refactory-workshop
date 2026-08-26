@@ -181,6 +181,18 @@ fits.
 - Human decisions use a warning border and explicit action label.
 - Empty, loading, running, failed, and complete states must all be visible.
 
+### Ticket Recovery
+
+- Place recovery before ticket metadata when a blocker needs a human decision.
+- Show implementation lines, effective limit, and protected QA lines as three
+  separate tabular values.
+- Never show a generic retry when deterministic policy says it will fail.
+- A ticket-only exception requires an exact line limit and a written reason.
+- Keep split or replan as the visible alternative to a budget exception.
+- Use a `4px` semantic left rail, one tonal semantic surface, and the standard
+  `6px` work-surface radius.
+- Stack metrics and fields at the `390px` mobile baseline.
+
 ## Responsive Rules
 
 - Verification baseline: `390px` mobile and `1440px` desktop.

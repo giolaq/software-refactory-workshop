@@ -17,6 +17,9 @@ def factory_run_summary(state: dict, ticket: dict) -> dict:
     qa = ticket.get("qa_evidence", {})
     claim = ticket.get("remote_claim") or {}
     metrics = ticket.get("metrics", {})
+    diff_budget = ticket.get("diff_budget") or {}
+    budget_override = ticket.get("budget_override")
+    budget_override = budget_override if isinstance(budget_override, dict) else {}
     recorded_evidence = ticket.get("evidence_packet")
     recorded_evidence = recorded_evidence if isinstance(recorded_evidence, dict) else {}
     evidence_available = (
@@ -104,6 +107,9 @@ def factory_run_summary(state: dict, ticket: dict) -> dict:
             "retry_count": metrics.get("retry_count", 0),
             "verifier_rejections": metrics.get("verifier_rejections", 0),
             "peak_review_queue": state.get("metrics", {}).get("peak_review_queue", 0),
+            "implementation_lines": diff_budget.get("implementation_lines"),
+            "protected_qa_lines": diff_budget.get("protected_qa_lines"),
+            "effective_diff_limit": diff_budget.get("effective_limit"),
         },
         "human_decisions": {
             "qa_approved": bool(ticket.get("qa_approved")),
@@ -112,6 +118,13 @@ def factory_run_summary(state: dict, ticket: dict) -> dict:
             "effective_merge_authority": ticket.get(
                 "merge_authority", governance.get("merge_authority", ""),
             ),
+            "diff_budget_override": {
+                "lines": budget_override.get("lines"),
+                "charter_limit": budget_override.get("charter_limit"),
+                "reason": redact_credentials(str(budget_override.get("reason", "")))[:300],
+                "approved_at": budget_override.get("approved_at", ""),
+                "approved_by": budget_override.get("approved_by", ""),
+            } if budget_override else None,
         },
         "unresolved_risks": unresolved_risks,
         "unresolved_risk_count": len(unresolved_risks),

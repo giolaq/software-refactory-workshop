@@ -121,7 +121,7 @@ class FactoryCharter:
             planning_approvals=("product_review", "alignment"),
             gate_level="full",
             max_retries=2,
-            max_diff_lines=800,
+            max_diff_lines=1200,
             max_awaiting_human_review=3,
             max_blocked_for_human=2,
             oldest_review_hours=24,

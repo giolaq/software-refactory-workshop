@@ -49,7 +49,7 @@ class FactoryCharterTests(unittest.TestCase):
             self.assertEqual(loaded.gate_level, "full")
             self.assertIn("factory.charter.toml", loaded.never_modify)
 
-            path.write_text(path.read_text().replace("max_diff_lines = 800", "max_diff_lines = 801"))
+            path.write_text(path.read_text().replace("max_diff_lines = 1200", "max_diff_lines = 1201"))
             with self.assertRaisesRegex(FactoryCharterError, "changed after approval"):
                 FactoryCharter.load(repo, require_approved=True)
 

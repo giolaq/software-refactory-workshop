@@ -491,6 +491,7 @@ def stage_prompt(
     maximum: int,
     profile_name: str = "standard",
     repository_context: str = "",
+    max_diff_lines: int = 1200,
 ) -> str:
     shared = """Use the repository only as implementation context; product scope comes from the PRD and approved upstream artifacts. Preserve stable IDs exactly. Every new object ID must start with an uppercase letter and contain only uppercase letters, digits, underscores, or hyphens (for example USER_HOME_COOK or COMPONENT_API). Ticket keys follow the same rule and must be at most 16 characters.
 Inspect the current codebase when technical or file-level detail is required. Do not invent scope. Put decisions that require a human in blocking_questions.
@@ -499,11 +500,11 @@ Return only JSON matching the supplied schema. This artifact is an auditable con
         "product_review": """You are the Product Review expert. Clarify the problem, users, observable behavior, scope, journeys, success evidence, mockup needs, assumptions, and blocking questions. Give requirements stable IDs R1, R2, and so on. Cite the PRD section or phrase in each requirement's source. Do not design architecture or create implementation tickets.""",
         "system_architecture": """You are the System Architecture expert. Inspect the existing repository and, using the approved product review, define components, ownership boundaries, data models, explicit component contracts, architectural decisions, constraints, and risks. Map every item to product requirement IDs. Every requirement must have an owning component. Do not assign tickets or write low-level implementation code.""",
         "program_design": """You are the Program Design expert. Inspect the existing code and turn the approved architecture into a concrete code design: modules and paths, types, function signatures, call relationships, error behavior, call flows, and test seams. Use stable IDs (MOD-, TYPE-, FN-, FLOW-, TEST-), reference contracts and requirements, and prefix calls outside this design with external:. modules[].components must contain only component IDs copied from System Architecture. Never put function IDs, type IDs, constants, or prose in modules[].components. Every type and function module reference must name a MOD- ID defined in this artifact. Do not create tickets.""",
-        "vertical_slices": f"""You are the Vertical Slices expert. Divide the aligned product, architecture, and program design into {minimum}-{maximum} small end-to-end tickets. Each ticket must deliver an observable vertical outcome, own explicit files, name QA evidence, and map requirement, contract, and program-element IDs. Every program element and requirement must have an owner. Overlapping file ownership is allowed only when one ticket depends on the other. Keep the dependency graph acyclic and maximize safe parallel work. Default agent to {default_agent}.""",
+        "vertical_slices": f"""You are the Vertical Slices expert. Divide the aligned product, architecture, and program design into {minimum}-{maximum} small end-to-end tickets. Each ticket must deliver an observable vertical outcome, own explicit files, name QA evidence, and map requirement, contract, and program-element IDs. Every program element and requirement must have an owner. Each ticket must be implementable within {max_diff_lines} implementation-owned changed lines; independently authored protected QA acceptance tests are measured separately. Split a ticket when its production implementation is likely to exceed that measurable limit. Overlapping file ownership is allowed only when one ticket depends on the other. Keep the dependency graph acyclic and maximize safe parallel work. Default agent to {default_agent}.""",
     }
     planning_roles = set(factory_profile(profile_name)["planning_roles"])
     if stage == "vertical_slices" and "system_architecture" not in planning_roles:
-        roles[stage] = f"""You are the Vertical Slices expert for the Lean Factory Profile. Divide the approved product intent into {minimum}-{maximum} small end-to-end tickets. Each ticket must deliver an observable outcome, own explicit files, name evidence from existing tests, and map product requirement IDs. Set contract_ids and program_element_ids to empty arrays because this profile intentionally omits architecture and program-design roles. Keep dependencies acyclic and default agent to {default_agent}."""
+        roles[stage] = f"""You are the Vertical Slices expert for the Lean Factory Profile. Divide the approved product intent into {minimum}-{maximum} small end-to-end tickets. Each ticket must deliver an observable outcome, own explicit files, name evidence from existing tests, and map product requirement IDs. Each ticket must be implementable within {max_diff_lines} implementation-owned changed lines; split work that is likely to exceed that measurable limit. Set contract_ids and program_element_ids to empty arrays because this profile intentionally omits architecture and program-design roles. Keep dependencies acyclic and default agent to {default_agent}."""
     identifier_guidance = ""
     if stage == "vertical_slices" and "system_architecture" in planning_roles:
         architecture = inputs.get("system_architecture", {})
@@ -826,13 +827,14 @@ def _run_stage_agent_impl(
     json_path, _ = _stage_paths(run_dir, stage)
     raw = run_dir / f".{stage}-raw.json"
     inputs = _stage_inputs(run_dir, stage)
+    charter = FactoryCharter.load(repo, require_approved=True)
     prompt = stage_prompt(
         stage, (run_dir / "source-prd.md").read_text(), inputs,
         manifest["default_ticket_agent"], manifest["ticket_limits"]["minimum"], manifest["ticket_limits"]["maximum"],
         manifest.get("profile", "standard"),
         ProjectContract.load(repo).context(),
+        max_diff_lines=charter.max_diff_lines,
     )
-    charter = FactoryCharter.load(repo, require_approved=True)
     prompt += (
         "\n## Approved Factory Charter\n\n```json\n"
         f"{charter.context()}\n```\n"

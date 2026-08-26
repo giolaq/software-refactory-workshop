@@ -34,6 +34,18 @@ class RunSummaryTests(unittest.TestCase):
             "remote_claim": {"owner_run_id": "run-123", "claimed_at": "2026-08-23T12:00:00+00:00"},
             "merge_authority": "human",
             "policy_required_human_merge": True,
+            "diff_budget": {
+                "implementation_lines": 990,
+                "protected_qa_lines": 799,
+                "effective_limit": 1200,
+            },
+            "budget_override": {
+                "lines": 1200,
+                "charter_limit": 800,
+                "reason": "The approved UI workflow remains one outcome",
+                "approved_at": "2026-08-25T21:00:00+00:00",
+                "approved_by": "human",
+            },
         }
 
         summary = factory_run_summary(state, ticket)
@@ -46,12 +58,14 @@ class RunSummaryTests(unittest.TestCase):
         self.assertNotIn("failure", summary)
         self.assertEqual(summary["metrics"]["agent_seconds"], 2.5)
         self.assertEqual(summary["metrics"]["retry_count"], 1)
+        self.assertEqual(summary["metrics"]["implementation_lines"], 990)
         self.assertEqual(summary["claim"]["claimed_at"], "2026-08-23T12:00:00+00:00")
         self.assertEqual(summary["input_hashes"]["charter"], "c" * 64)
         self.assertEqual(summary["input_hashes"]["base_revision"], "a" * 40)
         self.assertEqual(summary["unresolved_risks"], ["local log contained [REDACTED]"])
         self.assertTrue(summary["human_decisions"]["policy_required_human_merge"])
         self.assertEqual(summary["human_decisions"]["effective_merge_authority"], "human")
+        self.assertEqual(summary["human_decisions"]["diff_budget_override"]["lines"], 1200)
         self.assertEqual(summary["evidence_packet"]["status"], "pending")
         self.assertEqual(summary["evidence_packet"]["path"], "")
 

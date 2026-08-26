@@ -234,8 +234,47 @@ class GitHubBackend:
         for comment in ordered:
             payload = parse_factory_run_summary(str(comment.get("body", "")), ticket=int(number))
             if payload is not None:
-                return payload
+                return {
+                    **payload,
+                    "_remote_updated_at": str(
+                        comment.get("updated_at") or comment.get("created_at") or ""
+                    ),
+                }
         return None
+
+    def select_project_read_only(self) -> dict:
+        """Resolve an existing Project without creating fields, labels, or items."""
+        projects = self.json(
+            "project", "list", "--owner", self.owner, "--format", "json",
+        ).get("projects", [])
+        project = next(
+            (
+                item for item in projects
+                if self.project_number is not None
+                and item.get("number") == self.project_number
+            ),
+            None,
+        )
+        if project is None and self.project_number is None:
+            project = next(
+                (
+                    item for item in projects
+                    if item.get("title") == "Software (re)-Factory"
+                ),
+                None,
+            )
+        if not project:
+            requested = (
+                f"#{self.project_number}"
+                if self.project_number is not None
+                else "named Software (re)-Factory"
+            )
+            raise GitHubError(
+                f"Existing GitHub Project {requested} was not found for {self.owner}"
+            )
+        self.project_number = int(project["number"])
+        self.project_id = project.get("id")
+        return project
 
     def ensure_project(self):
         projects = self.json("project", "list", "--owner", self.owner, "--format", "json").get("projects", [])
@@ -335,6 +374,49 @@ class GitHubBackend:
         self._ensure_labels()
         return tickets
 
+    def load_recovery_state(self) -> list[dict]:
+        """Read the full durable Ticket state without mutating GitHub."""
+        self.preflight()
+        self.select_project_read_only()
+        issues = self.json(
+            "issue", "list", "--repo", f"{self.owner}/{self.name}",
+            "--state", "all", "--limit", 200,
+            "--json", "number,title,body,state,url,labels,updatedAt",
+        )
+        raw_items = self._load_project_items()
+        statuses = {
+            int(item.get("content", {}).get("number")): item.get("status")
+            for item in raw_items
+            if item.get("content", {}).get("type") == "Issue"
+            and item.get("content", {}).get("number")
+        }
+        tickets = []
+        for issue in issues:
+            number = int(issue["number"])
+            if number not in self.items:
+                continue
+            labels = [
+                label.get("name", "") if isinstance(label, dict) else str(label)
+                for label in issue.get("labels", [])
+            ]
+            pull_request = self.existing_pr(number) or {}
+            summary = self.read_run_summary(number) or {}
+            claim = self.read_claim(number) or {}
+            tickets.append({
+                **issue,
+                "status": (
+                    statuses.get(number)
+                    if statuses.get(number) in STATES
+                    else "Backlog"
+                ),
+                "labels": labels,
+                "pr_url": pull_request.get("url", ""),
+                "pull_request": pull_request,
+                "remote_run_summary": summary,
+                "remote_claim": claim,
+            })
+        return tickets
+
     def _load_project_items(self):
         raw_items = self.json(
             "project", "item-list", self.project_number, "--owner", self.owner,
@@ -391,7 +473,18 @@ class GitHubBackend:
             "pr", "list", "--repo", f"{self.owner}/{self.name}", "--state", "all", "--limit", 100,
             "--json", "number,title,url,state,mergedAt,mergeCommit,headRefName,headRefOid,baseRefName,reviewDecision",
         )
-        return next((p for p in prs if p["headRefName"].startswith(f"factory/{number}-")), None)
+        matches = [
+            item for item in prs
+            if item["headRefName"].startswith(f"factory/{number}-")
+        ]
+        return (
+            next(
+                (item for item in matches if str(item.get("state")).upper() == "OPEN"),
+                None,
+            )
+            or next((item for item in matches if item.get("mergedAt")), None)
+            or (matches[0] if matches else None)
+        )
 
     def publish(self, ticket, worktree: Path):
         pushed = subprocess.run(
@@ -402,7 +495,26 @@ class GitHubBackend:
             raise GitHubError(pushed.stderr.strip() or pushed.stdout.strip())
         existing = self.existing_pr(ticket["number"])
         if existing:
-            return existing["url"]
+            state = str(existing.get("state") or "").upper()
+            if state == "OPEN" and existing.get("headRefName") == ticket["branch"]:
+                return existing["url"]
+            if existing.get("mergedAt"):
+                raise GitHubError(
+                    f"Ticket #{ticket['number']} already has a merged pull request. "
+                    "Create a new governed Ticket for corrective work."
+                )
+            if state == "OPEN":
+                closed = self.gh(
+                    "pr", "close", existing["url"], "--comment",
+                    "Superseded by a Factory recovery that rebuilds this Ticket from "
+                    "the default branch and reruns all evidence.",
+                    check=False,
+                )
+                if closed.returncode:
+                    raise GitHubError(
+                        closed.stderr.strip() or closed.stdout.strip()
+                        or "Could not close the superseded pull request"
+                    )
         result = self.gh(
             "pr", "create", "--repo", f"{self.owner}/{self.name}",
             "--title", f"#{ticket['number']}: {ticket['title']}", "--body", f"Closes #{ticket['number']}",

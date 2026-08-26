@@ -281,7 +281,10 @@ approval needs a distinct reviewer identity supplied through the uncommitted
 | Product Review is blocked | Resolve the blocking question; don't continue to architecture. |
 | A planning retry repeats the same error | Read the failed expert's recovery card. For validation, use the prefilled **Apply correction and continue** instruction. For a session or rate limit, select **Fix with Codex** (or another configured adapter). After the same process failure occurs twice, the Control Center disables same-adapter retry and preserves completed upstream artifacts. If governance changed, use **Restart planning safely**. |
 | QA Review takes too long | Review one test set, then finish without `--review-qa-tests`. |
-| A ticket is blocked | Inspect the final log and gate output before using `factory retry`. |
+| A ticket is blocked | Open Summary and follow its cause-specific recovery. Corrected Issues reload from GitHub and discard old-spec evidence; Project Contract repairs reload gates; stale PRs rebuild on a replacement branch; claims and dependency blockers never offer blind retry. |
+| Live merge shows Rehearsal evidence | Do not merge it as Live. In Ticket Summary, either **Finish Rehearsal** or select **Open Reset**, clear only local run state, and rerun the published GitHub ticket. Source files and remote artifacts are preserved. |
+| An attendee reset the wrong scope | Open **Reset**, verify the checkpoint timestamp and plan, then choose **Recover latest state**. With no checkpoint, a connected Live repository reconstructs from GitHub. Do not claim that deleted local receipts were restored. |
+| Live restart says the checkout is not on `main` | Run local reset again. A clean checkout preserves divergent local `main` under `recovery/pre-reset-main-*`, then aligns `main` exactly with `origin/main`. A dirty checkout must be committed or stashed by its owner first. |
 | A port is occupied | Stop the old process or use a fresh checkout. |
 | The state is stale | Use **Reset current run** in the Control Center after confirming demo changes can be discarded. |
 | The agenda is late | Show one Acceptance Test approval and one dependency unlock, then verify the application. |
@@ -298,6 +301,17 @@ configuration. The equivalent execution reset is:
 ```sh
 ./setup_demo.sh --scenario recipe-rebrand --force
 ```
+
+The attendee-safe recovery command is:
+
+```sh
+./factory/factory recover --repo /path/to/attendee-repository --yes
+```
+
+Before the workshop, rehearse one reset and recovery. Confirm the dialog names
+the checkpoint source, ticket count, and plan; confirm recovery creates an undo
+checkpoint; and confirm a Live reset leaves the checkout on the exact remote
+default revision without deleting the preserved branch.
 
 The TV scenario remains available as an optional failure lab. Ticket 8 is
 rejected because “It feels right” isn't an objective acceptance criterion.

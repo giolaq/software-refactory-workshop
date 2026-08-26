@@ -14,6 +14,7 @@ import os
 import re
 import shlex
 import signal
+import socket
 import subprocess
 import sys
 import threading
@@ -50,6 +51,13 @@ from planning_presentation import (
     planning_recovery,
 )
 from project_contract import CONTRACT_PATH, ProjectContract, ProjectContractError
+from orchestrator import (
+    current_runtime_is_latest,
+    factory_execution_mode,
+    latest_recovery_checkpoint,
+    ticket_diff_budget,
+    ticket_recovery,
+)
 
 
 PLAN_ID = re.compile(r"[a-f0-9]{8,64}")
@@ -68,10 +76,10 @@ ACTION_REGISTRY = frozenset({
     "doctor", "init-project", "approve-charter", "publish-setup", "prepare-project",
     "configure", "plan", "restart-plan", "revise-product", "revise-stage",
     "approve-product", "approve-stage", "continue-plan", "publish-plan", "approve-tests", "merge",
-    "run", "run-once", "dry-run", "retry", "release-claim", "evidence",
-    "monitor", "publish-monitor", "reset-run", "reset-all",
+    "run", "run-once", "dry-run", "retry", "release-claim", "evidence", "start-app",
+    "monitor", "publish-monitor", "recover-latest", "reset-run", "reset-all",
 })
-COMPANION_ACTIONS = frozenset({"approve-tests", "merge"})
+COMPANION_ACTIONS = frozenset({"approve-tests", "merge", "retry"})
 
 
 def utc_now() -> str:
@@ -124,6 +132,7 @@ class ControlCenter:
         self.process: subprocess.Popen | None = None
         self.worker: threading.Thread | None = None
         self._pending_activation: Path | None = None
+        self._application_port: int | None = None
         self._bind_repo(self._saved_active_repo() or self.control_repo)
         self.operation: dict = read_json(self.operation_path, {})
         if self.operation.get("status") in {"running", "stopping"}:
@@ -146,7 +155,10 @@ class ControlCenter:
         return candidate if (candidate / ".git").exists() else None
 
     def _bind_repo(self, repo: Path):
-        self.repo = repo.resolve()
+        resolved = repo.resolve()
+        if getattr(self, "repo", None) != resolved:
+            self._application_port = None
+        self.repo = resolved
         self.runtime = self.repo / ".factory" / "control-center"
         self.runtime.mkdir(parents=True, exist_ok=True)
         (self.repo / ".factory" / "logs").mkdir(parents=True, exist_ok=True)
@@ -281,6 +293,7 @@ class ControlCenter:
                 "merge_authority": charter.merge_authority,
                 "gate_level": charter.gate_level,
                 "planning_approvals": list(charter.planning_approvals),
+                "max_diff_lines": charter.max_diff_lines,
                 "max_awaiting_human_review": charter.max_awaiting_human_review,
                 "max_blocked_for_human": charter.max_blocked_for_human,
                 "oldest_review_hours": charter.oldest_review_hours,
@@ -339,9 +352,146 @@ class ControlCenter:
                 })
         return sorted(candidates, key=lambda item: item["updated_at"], reverse=True)
 
-    def application_instructions(self) -> dict:
+    def _documented_application_urls(
+        self,
+        contract: ProjectContract,
+        default_port: int,
+    ) -> tuple[list[dict], int, int]:
+        urls = []
+        seen = set()
+        readme = next(
+            (
+                candidate for candidate in (
+                    self.repo / "README.md",
+                    self.repo / "README",
+                    self.repo / "readme.md",
+                )
+                if candidate.is_file()
+            ),
+            None,
+        )
+        if readme:
+            try:
+                text = readme.read_text(errors="replace")[:256_000]
+            except OSError:
+                text = ""
+            for raw in re.findall(
+                r"https?://(?:127\.0\.0\.1|localhost):[1-9]\d{0,4}(?:/[^\s`<>\"']*)?",
+                text,
+                flags=re.IGNORECASE,
+            ):
+                candidate = raw.rstrip(".,;)]}")
+                parsed = urlparse(candidate)
+                if parsed.hostname not in {"127.0.0.1", "localhost"}:
+                    continue
+                try:
+                    port = parsed.port
+                except ValueError:
+                    continue
+                if not port or candidate in seen:
+                    continue
+                seen.add(candidate)
+                urls.append({"label": "Application", "url": candidate})
+        for port in contract.ports:
+            candidate = f"http://127.0.0.1:{port}/"
+            if candidate not in seen:
+                seen.add(candidate)
+                urls.append({"label": f"Port {port}", "url": candidate})
+        if not urls:
+            urls.append({
+                "label": "Application",
+                "url": f"http://127.0.0.1:{default_port}/",
+            })
+        preferred_port = urlparse(urls[0]["url"]).port or default_port
+        selected_port = self._select_application_port(preferred_port)
+        if selected_port != preferred_port:
+            for item in urls:
+                parsed = urlparse(item["url"])
+                try:
+                    item_port = parsed.port
+                except ValueError:
+                    continue
+                if (
+                    parsed.hostname in {"127.0.0.1", "localhost"}
+                    and item_port == preferred_port
+                ):
+                    item["url"] = parsed._replace(
+                        netloc=f"{parsed.hostname}:{selected_port}",
+                    ).geturl()
+        return urls, preferred_port, selected_port
+
+    @staticmethod
+    def _port_available(port: int) -> bool:
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
+                probe.bind(("127.0.0.1", port))
+        except OSError:
+            return False
+        return True
+
+    def _select_application_port(self, preferred_port: int) -> int:
+        if self._application_port is not None:
+            return self._application_port
+        for port in range(preferred_port, min(preferred_port + 100, 65_536)):
+            if self._port_available(port):
+                self._application_port = port
+                return port
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
+            probe.bind(("127.0.0.1", 0))
+            self._application_port = int(probe.getsockname()[1])
+        return self._application_port
+
+    def _application_entrypoint(self) -> dict | None:
         contract = ProjectContract.load(self.repo)
-        port = contract.ports[0] if contract.ports else 5000
+        package_path = self.repo / "package.json"
+        if package_path.is_file():
+            try:
+                package = json.loads(package_path.read_text())
+            except (OSError, json.JSONDecodeError):
+                package = {}
+            scripts = package.get("scripts") if isinstance(package, dict) else {}
+            if isinstance(scripts, dict):
+                selected = next(
+                    (
+                        script for script in ("start", "dev", "serve")
+                        if isinstance(scripts.get(script), str)
+                        and scripts[script].strip()
+                    ),
+                    "",
+                )
+                if selected:
+                    base_command = (
+                        ["npm", "start"]
+                        if selected == "start" else
+                        ["npm", "run", selected]
+                    )
+                    urls, preferred_port, selected_port = (
+                        self._documented_application_urls(
+                            contract,
+                            contract.ports[0] if contract.ports else 3000,
+                        )
+                    )
+                    command = (
+                        ["env", f"PORT={selected_port}", *base_command]
+                        if selected_port != preferred_port else
+                        base_command
+                    )
+                    display_command = (
+                        f"PORT={selected_port} {shlex.join(base_command)}"
+                        if selected_port != preferred_port else
+                        shlex.join(base_command)
+                    )
+                    return {
+                        "argv": command,
+                        "command": (
+                            f"cd {shlex.quote(str(self.repo))}\n"
+                            f"{display_command}"
+                        ),
+                        "urls": urls,
+                        "kind": "node",
+                        "preferred_port": preferred_port,
+                        "port": selected_port,
+                    }
         python = self.control_repo / ".factory" / "venv" / "bin" / "python"
         if not python.is_file():
             python = Path(sys.executable)
@@ -356,24 +506,57 @@ class ControlCenter:
             None,
         )
         if entrypoint is None:
+            return None
+        relative = entrypoint.relative_to(self.repo)
+        base_command = [str(python), str(relative)]
+        urls, preferred_port, selected_port = self._documented_application_urls(
+            contract, contract.ports[0] if contract.ports else 5000,
+        )
+        command = (
+            ["env", f"PORT={selected_port}", *base_command]
+            if selected_port != preferred_port else
+            base_command
+        )
+        if relative == Path("demo-app/app.py"):
+            base_url = urls[0]["url"]
+            separator = "&" if "?" in base_url else "?"
+            urls.append({
+                "label": "Television",
+                "url": f"{base_url}{separator}mode=tv",
+            })
+        return {
+            "argv": command,
+            "command": (
+                f"cd {shlex.quote(str(self.repo))}\n"
+                + (
+                    f"PORT={selected_port} {shlex.join(base_command)}"
+                    if selected_port != preferred_port else
+                    shlex.join(base_command)
+                )
+            ),
+            "urls": urls,
+            "kind": "python",
+            "preferred_port": preferred_port,
+            "port": selected_port,
+        }
+
+    def application_instructions(self) -> dict:
+        entrypoint = self._application_entrypoint()
+        if entrypoint is None:
             return {
                 "available": False,
                 "repository": str(self.repo),
                 "command": "",
                 "urls": [],
             }
-        relative = entrypoint.relative_to(self.repo)
         return {
             "available": True,
             "repository": str(self.repo),
-            "command": (
-                f"cd {shlex.quote(str(self.repo))}\n"
-                f"{shlex.quote(str(python))} {shlex.quote(str(relative))}"
-            ),
-            "urls": [
-                {"label": "Mobile and desktop", "url": f"http://127.0.0.1:{port}/"},
-                {"label": "Television", "url": f"http://127.0.0.1:{port}/?mode=tv"},
-            ],
+            "command": entrypoint["command"],
+            "urls": entrypoint["urls"],
+            "kind": entrypoint["kind"],
+            "preferred_port": entrypoint["preferred_port"],
+            "port": entrypoint["port"],
         }
 
     def canvas(self) -> dict:
@@ -540,7 +723,12 @@ class ControlCenter:
             headline = f"Ticket #{ticket_number} is blocked"
             failure = str(blocked.get("failure") or "").strip()
             detail = (failure.splitlines()[-1][:420] if failure else "Read the ticket history and final log to find the recorded cause.")
-            next_label, next_detail, next_view = f"Inspect blocker #{ticket_number}", "Fix the cause before retrying the ticket.", "tickets"
+            recovery = blocked.get("recovery") or {}
+            next_detail = (
+                recovery.get("summary")
+                or "Review the recorded cause and available recovery action."
+            )
+            next_label, next_view = f"Resolve blocker #{ticket_number}", "tickets"
         elif active:
             phase_index = 4
             state = "running"
@@ -796,13 +984,47 @@ class ControlCenter:
         ):
             planning[key] = presentation[key]
         factory = read_json(self.repo / ".factory" / "state.json", {"tickets": []})
+        factory["execution_mode"] = factory_execution_mode(factory)
         operation = self.operation_snapshot()
         prd = {key: value for key, value in self.prd().items() if key != "text"}
         evidence = self.evidence_files()
         monitor = read_json(self.repo / ".factory" / "monitor" / "report.json", {})
         config = self.session_config()
+        checkpoint = latest_recovery_checkpoint(self.repo)
+        current_is_latest = current_runtime_is_latest(self.repo, checkpoint)
+        recovery = {
+            "available": bool(
+                (checkpoint and not current_is_latest)
+                or (not checkpoint and config.get("github_repository"))
+            ),
+            "source": "current" if current_is_latest else "checkpoint" if checkpoint else (
+                "github" if config.get("github_repository") else ""
+            ),
+            "checkpoint_id": (checkpoint or {}).get("checkpoint_id", ""),
+            "created_at": (checkpoint or {}).get("created_at", ""),
+            "snapshot_at": (checkpoint or {}).get("snapshot_at", ""),
+            "ticket_count": (checkpoint or {}).get("ticket_count", 0),
+            "plan_id": (checkpoint or {}).get("plan_id", ""),
+            "mode": (checkpoint or {}).get("mode", ""),
+            "github_available": bool(config.get("github_repository")),
+            "project_number": config.get("project_number"),
+        }
         project = self.project_contract()
         charter = self.factory_charter()
+        if charter.get("approved"):
+            try:
+                approved_charter = FactoryCharter.load(
+                    self.repo, require_approved=True,
+                )
+                for ticket in factory.get("tickets", []):
+                    if ticket.get("status") == "Blocked":
+                        ticket["diff_budget"] = ticket_diff_budget(
+                            self.repo, ticket, approved_charter,
+                        )
+                        ticket["recovery"] = ticket_recovery(ticket, self.repo)
+                        ticket["next_human_action"] = ticket["recovery"]["action"]
+            except FactoryCharterError:
+                pass
         factory["human_attention"] = human_attention_snapshot(
             self.repo,
             factory.get("tickets", []),
@@ -831,6 +1053,7 @@ class ControlCenter:
             "evidence": evidence,
             "application": self.application_instructions(),
             "monitor": monitor,
+            "recovery": recovery,
             "decisions": decisions,
             "journey": self.journey(
                 planning, factory, operation, prd, evidence, config, supervisor,
@@ -931,6 +1154,34 @@ class ControlCenter:
             return ["--mock", "--scenario", scenario]
         return []
 
+    def _ticket_action_context(
+        self,
+        issue: int,
+        requested_mode: str,
+    ) -> dict:
+        state = read_json(self.repo / ".factory" / "state.json", {"tickets": []})
+        evidence_mode = factory_execution_mode(state)
+        if evidence_mode == "mixed":
+            raise InputError(
+                "Local state contains mixed Live and Rehearsal evidence. Open Reset, clear "
+                "local run state, and reload the intended run."
+            )
+        if evidence_mode and evidence_mode != requested_mode:
+            source = "Rehearsal" if evidence_mode == "rehearsal" else "Live"
+            target = "Live" if requested_mode == "live" else "Rehearsal"
+            raise InputError(
+                f"Ticket #{issue} belongs to a {source} run, but the Control Center is set "
+                f"to {target}. Switch back to {source} to finish that run, or open Reset "
+                f"and clear local run state before starting {target}."
+            )
+        return next(
+            (
+                ticket for ticket in state.get("tickets", [])
+                if ticket.get("number") == issue
+            ),
+            {},
+        )
+
     def _autonomous_flags(self, payload: dict) -> list[str]:
         """Require a fresh operator delegation for every Autonomous Demo start."""
         profile = self.session_config().get("profile") or "standard"
@@ -980,6 +1231,14 @@ class ControlCenter:
         if action == "prepare-project":
             ProjectContract.load(self.repo, require=True)
             return "Prepare project", [base + ["prepare", "--repo", str(self.repo), "--yes"]]
+        if action == "start-app":
+            application = self._application_entrypoint()
+            if application is None:
+                raise InputError(
+                    "No supported application entry point was detected. Add a package.json "
+                    "start/dev/serve script or a Python app.py entry point."
+                )
+            return "Run the completed application", [application["argv"]]
         if action == "configure":
             command = base + ["configure"]
             commands = []
@@ -1178,9 +1437,24 @@ class ControlCenter:
             return "Publish tickets to GitHub", [command]
         if action == "approve-tests":
             issue = self._positive_int(payload, "issue", required=True)
+            self._ticket_action_context(issue, mode)
             return f"Approve tests for ticket #{issue}", [base + ["approve-tests", str(issue), "--yes"]]
         if action == "merge":
             issue = self._positive_int(payload, "issue", required=True)
+            ticket = self._ticket_action_context(issue, mode)
+            review = ticket.get("code_review") or {}
+            review_references = (
+                str(ticket.get("review_ref") or ""),
+                str(review.get("pull_request") or "") if isinstance(review, dict) else "",
+            )
+            if not mock and ticket and (
+                not ticket.get("pr_url")
+                or any(reference.startswith("rehearsal://") for reference in review_references)
+            ):
+                raise InputError(
+                    f"Ticket #{issue} has no Live GitHub pull request. Open Reset, clear the "
+                    "local Rehearsal run state, then load and rerun the Live ticket."
+                )
             command = base + ["merge", str(issue), "--repo", str(self.repo), "--yes"]
             if mock:
                 command.append("--mock")
@@ -1202,9 +1476,38 @@ class ControlCenter:
             return {"run": "Run the factory", "run-once": "Run one scheduling cycle", "dry-run": "Preview execution waves"}[action], [command]
         if action == "retry":
             issue = self._positive_int(payload, "issue", required=True)
-            command = base + ["retry", str(issue)]
+            ticket = self._ticket_action_context(issue, mode)
+            reset_qa = payload.get("reset_qa") is True
+            budget_lines = self._positive_int(payload, "budget_lines")
+            reason = self._string(payload, "reason", max_length=300)
+            recovery = ticket_recovery(ticket, self.repo)
+            if reset_qa and recovery.get("kind") != "qa_evidence":
+                raise InputError(
+                    "Protected QA regeneration is available only when the recorded "
+                    "blocker is a QA evidence defect."
+                )
+            if bool(budget_lines) != bool(reason):
+                raise InputError(
+                    "Enter both the ticket budget and the reason for the exception."
+                )
+            if reset_qa and budget_lines:
+                raise InputError(
+                    "QA regeneration cannot be combined with a ticket budget exception."
+                )
+            command = base + ["retry", str(issue), "--repo", str(self.repo)]
             if mock:
                 command.append("--mock")
+            project = self._positive_int(payload, "project_number") or self.session_config().get("project_number")
+            if project and not mock:
+                command += ["--project-number", str(project)]
+            if budget_lines:
+                command += [
+                    "--budget-lines", str(budget_lines),
+                    "--reason", reason,
+                    "--yes",
+                ]
+            if reset_qa:
+                command += ["--reset-qa", "--yes"]
             return f"Retry ticket #{issue}", [command]
         if action == "release-claim":
             if mock:
@@ -1237,6 +1540,16 @@ class ControlCenter:
                 command.append("--publish")
                 return "Publish monitor findings", [command]
             return "Preview repository health", [command]
+        if action == "recover-latest":
+            command = [
+                str(self.factory), "recover",
+                "--repo", str(self.repo),
+                "--yes",
+            ]
+            project = self.session_config().get("project_number")
+            if project:
+                command += ["--project-number", str(project)]
+            return "Recover latest Factory state", [command]
         if action in {"reset-run", "reset-all"}:
             local_only = payload.get("local_only") is True
             if mode == "live" and not local_only:

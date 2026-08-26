@@ -1,0 +1,247 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "AI Software Factory Runtime Architecture",
+    "locale": "en",
+    "output": "architecture/ai-software-factory-runtime.html",
+    "animation": "none",
+    "quality_profile": "showcase",
+    "viewBox": [1390, 760]
+  },
+  "components": [
+    {
+      "id": "operator",
+      "type": "external",
+      "label": "Human Operator",
+      "sublabel": "approvals + merge",
+      "pos": [20, 340],
+      "size": [130, 68]
+    },
+    {
+      "id": "control_surface",
+      "type": "frontend",
+      "label": "Control Center + CLI",
+      "sublabel": "loopback action API",
+      "pos": [180, 340],
+      "size": [145, 68]
+    },
+    {
+      "id": "governance",
+      "type": "security",
+      "label": "Governance Contracts",
+      "sublabel": "Charter + Project Contract",
+      "pos": [345, 115],
+      "size": [160, 72]
+    },
+    {
+      "id": "planning",
+      "type": "backend",
+      "label": "Planning Pipeline",
+      "sublabel": "4 expert contracts",
+      "pos": [355, 340],
+      "size": [140, 68]
+    },
+    {
+      "id": "orchestrator",
+      "type": "backend",
+      "label": "Lifecycle Orchestrator",
+      "sublabel": "scheduler + authority",
+      "tag": "deterministic",
+      "pos": [525, 340],
+      "size": [155, 68]
+    },
+    {
+      "id": "role_adapters",
+      "type": "backend",
+      "label": "Agent Role Adapters",
+      "sublabel": "supervisor, QA, build",
+      "pos": [710, 340],
+      "size": [145, 68]
+    },
+    {
+      "id": "model_providers",
+      "type": "external",
+      "label": "Model Providers",
+      "sublabel": "Claude, Codex, Cursor",
+      "pos": [710, 25],
+      "size": [145, 68]
+    },
+    {
+      "id": "worktrees",
+      "type": "cloud",
+      "label": "Ticket Worktrees",
+      "sublabel": "branch + protected tests",
+      "pos": [885, 340],
+      "size": [145, 68]
+    },
+    {
+      "id": "verification",
+      "type": "security",
+      "label": "Verification + Review",
+      "sublabel": "gates + exact-head review",
+      "pos": [1060, 340],
+      "size": [155, 68]
+    },
+    {
+      "id": "github",
+      "type": "external",
+      "label": "GitHub",
+      "sublabel": "Issues, Project, PRs",
+      "pos": [1245, 340],
+      "size": [120, 68]
+    },
+    {
+      "id": "evidence_store",
+      "type": "database",
+      "label": "Local Evidence Store",
+      "sublabel": ".factory state + receipts",
+      "pos": [523, 585],
+      "size": [160, 72]
+    }
+  ],
+  "boundaries": [
+    {
+      "kind": "region",
+      "label": "Local workstation / loopback-only factory",
+      "wraps": [
+        "control_surface",
+        "governance",
+        "planning",
+        "orchestrator",
+        "role_adapters",
+        "worktrees",
+        "verification",
+        "evidence_store"
+      ],
+      "pad": 24
+    },
+    {
+      "kind": "security-group",
+      "label": "Approved governance / read-only to agents",
+      "wraps": ["governance"],
+      "pad": 14
+    },
+    {
+      "kind": "security-group",
+      "label": "Agent execution scope / Git isolation only",
+      "wraps": ["role_adapters", "worktrees"],
+      "pad": 14
+    }
+  ],
+  "connections": [
+    {
+      "id": "operator_to_control",
+      "from": "operator",
+      "to": "control_surface",
+      "label": "browser / CLI",
+      "labelAt": [165, 445],
+      "variant": "emphasis"
+    },
+    {
+      "id": "control_to_planning",
+      "from": "control_surface",
+      "to": "planning",
+      "label": "PRD + approvals",
+      "labelAt": [340, 445],
+      "variant": "emphasis"
+    },
+    {
+      "id": "planning_to_orchestrator",
+      "from": "planning",
+      "to": "orchestrator",
+      "label": "approved ticket graph",
+      "labelAt": [510, 445],
+      "variant": "emphasis"
+    },
+    {
+      "id": "orchestrator_to_roles",
+      "from": "orchestrator",
+      "to": "role_adapters",
+      "label": "validated assignments",
+      "labelAt": [695, 445],
+      "variant": "emphasis"
+    },
+    {
+      "id": "roles_to_worktrees",
+      "from": "role_adapters",
+      "to": "worktrees",
+      "label": "bounded edits",
+      "labelAt": [870, 445],
+      "variant": "emphasis"
+    },
+    {
+      "id": "worktrees_to_verification",
+      "from": "worktrees",
+      "to": "verification",
+      "label": "candidate revision",
+      "labelAt": [1045, 445],
+      "variant": "emphasis"
+    },
+    {
+      "id": "verification_to_github",
+      "from": "verification",
+      "to": "github",
+      "label": "PR + review evidence",
+      "labelAt": [1230, 445],
+      "variant": "emphasis"
+    },
+    {
+      "id": "governance_to_planning",
+      "from": "governance",
+      "to": "planning",
+      "label": "approved contracts",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "labelAt": [425, 245],
+      "variant": "security"
+    },
+    {
+      "id": "roles_to_providers",
+      "from": "role_adapters",
+      "to": "model_providers",
+      "label": "structured model calls",
+      "labelAt": [783, 220],
+      "variant": "dashed"
+    },
+    {
+      "id": "orchestrator_to_evidence",
+      "from": "orchestrator",
+      "to": "evidence_store",
+      "label": "state + receipts",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "labelAt": [603, 500],
+      "variant": "dashed"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "rose",
+      "title": "Authority And Trust",
+      "items": [
+        "The approved Charter outranks profiles, role contracts, adapter output, and CLI choices",
+        "Agents propose artifacts or decisions; deterministic validators own lifecycle transitions",
+        "Humans approve product intent, final alignment, optional QA tests, and the exact merge revision"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "Execution And Evidence",
+      "items": [
+        "Each ticket gets a branch and sibling worktree; this is Git isolation, not a security sandbox",
+        "Independent QA proves acceptance tests red, then hashes protect them during implementation",
+        "Required gates and read-only code review bind approval to one candidate head"
+      ]
+    },
+    {
+      "dot": "cyan",
+      "title": "External Crossings",
+      "items": [
+        "Configured local CLIs call model providers; credentials never pass through the browser",
+        "The GitHub backend synchronizes Issues, Project status, claims, pull requests, and reviews",
+        "Rehearsal mode substitutes deterministic mock adapters and local tickets for both crossings"
+      ]
+    }
+  ]
+}

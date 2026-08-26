@@ -219,11 +219,27 @@ operation.
 
 If an agent is still running, select **Stop operation**. A later Factory Run
 recovers interrupted ticket work through the normal orchestrator logic. Use the
-ticket History and Live log tabs to find the recorded blocker, then use
-**Retry ticket** after the cause is fixed.
+ticket History and Live log tabs to find the recorded blocker, then follow the
+cause-specific recovery panel at the top of Summary. It reloads an edited
+GitHub Issue, reloads a repaired Project Contract, records a bounded diff
+exception, rebuilds a stale PR revision, or routes an ownership/dependency
+decision without presenting a retry that will deterministically fail. The open
+drawer preserves its tab and scroll position while snapshots and Live logs
+refresh.
+
+If an In Review ticket has `rehearsal://` review evidence while the Control
+Center is set to Live, the drawer suppresses the merge action. Finish it in
+Rehearsal, or open **Reset**, clear local run state, and load the published
+Live ticket from GitHub. A Rehearsal candidate never becomes a Live candidate:
+the Live run must create and approve an exact GitHub pull request.
 
 Use **Reset or start again** from the Overview or sidebar:
 
+- **Recover latest state** restores the newest local pre-reset checkpoint.
+  The dialog shows its timestamp, ticket count, and plan. If no checkpoint
+  exists for a connected Live repository, it reconstructs the latest governed
+  plan from read-only GitHub evidence. Recovery creates an undo checkpoint
+  first and never invents missing receipts or review history.
 - **Reset current run** restores Pocket Cinema and clears ticket execution,
   worktrees, branches, test approvals, implementation evidence, and run state.
   It keeps the PRD, approved expert plan, Factory Canvas, agents, and Project
@@ -235,8 +251,16 @@ Use **Reset or start again** from the Overview or sidebar:
 The workshop Project Contract delegates Rehearsal reset to its reviewed Pocket
 Cinema adapter, which refuses to overwrite uncommitted `demo-app` changes. For
 a Live Run, reset bypasses every repository adapter and clears only `.factory`
-runtime state and factory-owned worktrees. It does not change tracked source,
-switch modes, or delete GitHub issues, Projects, branches, or pull requests.
+runtime state and factory-owned worktrees. A clean managed checkout returns to
+the exact `origin` default revision; a divergent local default branch is
+preserved under `recovery/pre-reset-*` first. Uncommitted source stops the reset.
+Reset never deletes GitHub issues, Projects, branches, or pull requests.
+
+The equivalent recovery command is:
+
+```sh
+./factory/factory recover --repo /path/to/repository --yes
+```
 
 The Control Center is the supported workshop dashboard. Compatibility and
 migration behavior are documented in `COMPATIBILITY.md`.

@@ -97,6 +97,52 @@ class GitHubReviewTests(unittest.TestCase):
             for call in backend.json.call_args_list
         ))
 
+    def test_recovery_load_reads_full_project_state_without_writes(self):
+        backend = GitHubBackend(Path.cwd(), project_number=5)
+        backend.owner, backend.name = "giolaq", "test1"
+        backend.preflight = mock.Mock()
+        backend.select_project_read_only = mock.Mock(
+            return_value={"number": 5, "id": "project-5"},
+        )
+        backend._load_project_items = mock.Mock(return_value=[{
+            "id": "item-9",
+            "status": "In Review",
+            "content": {"type": "Issue", "number": 9},
+        }])
+        backend.items = {9: "item-9"}
+        backend.existing_pr = mock.Mock(return_value={
+            "url": "https://github.test/pull/10",
+            "state": "OPEN",
+            "headRefName": "factory/9-slice",
+        })
+        backend.read_run_summary = mock.Mock(return_value={
+            "schema_version": 1,
+            "run_id": "live-run",
+            "ticket": 9,
+        })
+        backend.read_claim = mock.Mock(return_value={
+            "ticket": 9,
+            "run_id": "live-run",
+        })
+        backend._ensure_labels = mock.Mock()
+        backend.json = mock.Mock(return_value=[{
+            "number": 9,
+            "title": "Approved smoke ticket",
+            "body": "<!-- factory-plan:smoke:T1 -->",
+            "state": "OPEN",
+            "url": "https://github.test/issues/9",
+            "labels": [{"name": "agent-ready"}],
+            "updatedAt": "2026-08-23T11:00:00Z",
+        }])
+
+        tickets = backend.load_recovery_state()
+
+        self.assertEqual(tickets[0]["status"], "In Review")
+        self.assertEqual(tickets[0]["pr_url"], "https://github.test/pull/10")
+        self.assertEqual(tickets[0]["remote_run_summary"]["run_id"], "live-run")
+        self.assertEqual(tickets[0]["remote_claim"]["run_id"], "live-run")
+        backend._ensure_labels.assert_not_called()
+
     def test_remote_claim_is_atomic_resumable_and_explicitly_released(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -271,6 +317,61 @@ class GitHubReviewTests(unittest.TestCase):
         backend.gh.assert_called_once_with(
             "pr", "merge", "https://github.test/example/pull/7", "--merge", check=False,
         )
+
+    def test_rebuilt_ticket_closes_a_stale_open_pr_before_creating_its_replacement(self):
+        backend = GitHubBackend(Path.cwd())
+        backend.owner, backend.name = "attendee", "project"
+        backend.existing_pr = mock.Mock(return_value={
+            "url": "https://github.test/pull/7",
+            "state": "OPEN",
+            "mergedAt": None,
+            "headRefName": "factory/7-old-title",
+        })
+        backend.gh = mock.Mock(side_effect=[
+            completed(),
+            completed(stdout="https://github.test/pull/8\n"),
+            completed(),
+        ])
+        ticket = {
+            "number": 7,
+            "title": "Corrected title",
+            "branch": "factory/7-corrected-title-r1",
+        }
+
+        with mock.patch("github_backend.subprocess.run", return_value=completed()):
+            url = backend.publish(ticket, Path.cwd())
+
+        self.assertEqual(url, "https://github.test/pull/8")
+        self.assertEqual(
+            backend.gh.call_args_list[0].args[:3],
+            ("pr", "close", "https://github.test/pull/7"),
+        )
+        self.assertEqual(
+            backend.gh.call_args_list[1].args[:2],
+            ("pr", "create"),
+        )
+
+    def test_rebuilt_ticket_never_reuses_a_merged_pr(self):
+        backend = GitHubBackend(Path.cwd())
+        backend.owner, backend.name = "attendee", "project"
+        backend.existing_pr = mock.Mock(return_value={
+            "url": "https://github.test/pull/7",
+            "state": "MERGED",
+            "mergedAt": "2026-08-26T10:00:00Z",
+            "headRefName": "factory/7-old-title",
+        })
+        backend.gh = mock.Mock()
+        ticket = {
+            "number": 7,
+            "title": "Corrected title",
+            "branch": "factory/7-corrected-title-r1",
+        }
+
+        with mock.patch("github_backend.subprocess.run", return_value=completed()):
+            with self.assertRaisesRegex(GitHubError, "new governed Ticket"):
+                backend.publish(ticket, Path.cwd())
+
+        backend.gh.assert_not_called()
 
     def test_merged_pr_lookup_is_read_only_until_orchestrator_validation(self):
         backend = GitHubBackend(Path.cwd())

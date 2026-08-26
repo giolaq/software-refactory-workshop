@@ -137,16 +137,18 @@ The orchestration flow is intentionally direct:
 5. Commit and protect the Acceptance Tests; optionally pause for explicit human approval.
 6. Run the Implementation adapter with the supervisor's Ticket instruction. The factory rejects any implementation that
    modifies or deletes a protected test.
-7. Execute configured gates in order; feed the last 3,000 failure characters
+7. Measure implementation-owned changed lines separately from protected QA
+   tests and stop candidates that exceed the ticket limit.
+8. Execute configured gates in order; feed the last 3,000 failure characters
    back to the agent for up to two retries.
-8. On green gates, push or update the PR and give its exact candidate revision
+9. On green gates, push or update the PR and give its exact candidate revision
    to the read-only Code Review role. Review comments return to the same
    Implementation adapter and consume the bounded retry budget; gates and review rerun.
-9. After an `APPROVE` decision with no comments, the Supervisor may recommend
+10. After an `APPROVE` decision with no comments, the Supervisor may recommend
    a revision-bound `MERGE`. The orchestrator rechecks the live PR head. Lean,
    Standard, and Assured then stop for the human exact-revision merge action;
    only an explicitly opted-in Autonomous Demo executes the recommendation.
-10. Reconcile the merge, unlock dependants, and mirror each transition and
+11. Reconcile the merge, unlock dependants, and mirror each transition and
     artifact path to `.factory/state.json` for the Control Center.
 
 The Control Center teaches four macro phases—**Plan, Build, Verify, Review**—before
@@ -510,11 +512,101 @@ Run a no-write dependency preview before dispatch:
 ./factory/factory run --dry-run
 ```
 
-When a ticket is Blocked, edit its issue spec or acceptance criteria and then:
+## Recover a blocked Live Ticket
+
+Every transition to `Blocked` records one `recovery` classification and
+`next_human_action` in `.factory/state.json`. The Control Center shows that
+action above the ticket metadata and does not offer Retry when the unchanged
+state would fail again.
+
+| Recorded cause | Recovery |
+| --- | --- |
+| Missing or ambiguous Ticket specification | Edit the GitHub Issue, preserve its Factory Plan and governance comments, then choose **Reload issue and retry**. An unchanged issue is refused. |
+| Owned files cannot produce a functional change | Expand the GitHub Issue's Spec and File ownership to include the required integration path reported in **Last failure**, preserve its hidden Factory comments, then choose **Reload issue and retry**. The Factory stops after the first deterministic scope conflict and refuses an unchanged retry. |
+| Project Contract does not describe the repository | Update, review, and commit `factory.project.toml`, then choose **Reload contract and retry**. The running Factory reloads its gates and test roots. |
+| Protected QA tests are defective | Choose **Regenerate QA tests and retry**. The Factory discards only that ticket's candidate and protected QA evidence, restarts from the repository base, and gives the recorded defect to the next independent QA attempt. |
+| Implementation diff exceeds the ticket limit | Split and replan the work, or enter an exact ticket-only limit and written reason. Protected QA lines are reported separately. |
+| Dependency cycle or missing merged prerequisite | Correct the `Depends-on` graph or restore the prerequisite. Blind retry remains disabled. |
+| Another Factory Run owns the remote claim | Resume the named run, or explicitly release only a confirmed abandoned claim. |
+| PR was closed or its head changed after review | Choose **Rebuild and retry**. The Factory starts from the default branch on a versioned replacement branch, reruns QA and all gates, and closes a stale open PR as superseded. |
+| A different revision was already merged | Preserve the merge history and create a new governed Ticket for corrective work. The original Ticket cannot be retried. |
+| Retryable adapter or gate failure | Choose **Retry ticket**. Eligible protected QA and candidate work are preserved; otherwise the Factory restarts from the repository base. |
+
+For a corrected GitHub Ticket:
+
+1. Open its Summary in the Control Center and choose **Edit issue**.
+2. Correct the title, Spec, Acceptance criteria, dependencies, or registered
+   `agent:` line. Do not remove the hidden Factory Plan or governance comments.
+3. Choose **Reload issue and retry**. The Factory reloads GitHub rather than
+   trusting the local copy.
+4. If the specification fingerprint changed, the old branch, QA evidence,
+   gates, review, PR metadata, receipts, and ticket-only budget exception are
+   cleared. The Ticket restarts from the current default branch.
+
+The same change is detected after a Factory process restart: the edited Ticket
+returns to `Backlog`, stale evidence is cleared, and normal triage decides when
+it becomes `Ready`. A still-running process consumes the retry event without a
+restart.
+
+The basic CLI recovery is:
 
 ```sh
 ./factory/factory retry 8
 ```
+
+When the blocked-ticket recovery says the protected QA harness is defective,
+use the dedicated recovery instead of generic Retry:
+
+```sh
+./factory/factory retry 8 --reset-qa --yes
+```
+
+`--reset-qa` is refused for every other blocker. It clears the ticket's old QA
+commit, test hashes, RED/GREEN evidence, candidate, gates, review, and QA
+approval, then regenerates independent tests from the current repository base.
+The defect report is included in the first replacement QA prompt.
+
+The command refuses a retry that cannot fit the measured diff budget. Either
+split the ticket, or approve a ticket-only exception with an exact limit and
+reason:
+
+```sh
+./factory/factory retry 8 \
+  --budget-lines 1200 \
+  --reason "The approved UI outcome requires the existing accessible workflow" \
+  --yes
+```
+
+The Charter does not change. The exception is recorded on Ticket `#8`. The
+Control Center recovery panel invokes this exact CLI contract.
+
+## Recover after an accidental reset
+
+Every `factory reset` first snapshots recoverable runtime state under
+`.factory/recovery/checkpoints/`. Open **Reset or start again** and choose
+**Recover latest state**, or run:
+
+```sh
+./factory/factory recover --repo /path/to/attendee-repository --yes
+```
+
+Recovery restores the newest pre-reset checkpoint and creates an undo
+checkpoint first. It restores Factory-owned state, plans, prompts, approvals,
+reviews, receipts, and saved Control Center documents that existed in that
+checkpoint. It does not change tracked source or GitHub.
+
+For a Live Run made before checkpoint support, `factory recover` reads the
+configured GitHub Project, governed issue markers, Project statuses, pull
+requests, sanitized run summaries, and active claims. It selects the latest
+published plan and reconstructs local ticket and planning dashboards without a
+GitHub write. Surviving planner logs can restore structured artifacts. Deleted
+local Handoff Receipts and review history are reported as unavailable and are
+never fabricated.
+
+A Live local-state reset also returns a clean managed checkout to the exact
+`origin` default revision. If local `main` diverged, its previous revision is
+preserved under `recovery/pre-reset-main-*` before `main` is aligned. A dirty
+checkout stops the reset before runtime state is deleted.
 
 Per-ticket `agent: adapter-name` overrides the default when that lowercase name
 is registered under `[agents]` in `factory.toml`. Before a live session,
@@ -660,7 +752,11 @@ factory approve-rehearsal PLAN_ID [--scenario recipe-rebrand|tv] [--yes]
 factory approve-tests ISSUE [--yes]
 factory status [--repo PATH]
 factory retry ISSUE [--repo PATH] [--project-number N] [--mock]
+                    [--reset-qa --yes]
+                    [--budget-lines N --reason TEXT --yes]
+factory release-claim ISSUE --owner-run-id RUN_ID --reason TEXT --yes
 factory reset [--repo PATH] [--start-over] [--local-state-only]
+factory recover [--repo PATH] [--project-number N] [--yes]
 factory profiles [--json]
 factory canvas [--output PATH] [--force]
 factory evidence PLAN_ID --canvas PATH [--ticket ISSUE] [--output DIRECTORY]
