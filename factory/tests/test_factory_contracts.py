@@ -50,17 +50,17 @@ class FactoryContractTests(unittest.TestCase):
             capture_output=True,
             check=True,
         )
-        self.assertEqual(result.stdout.strip(), "factory workshop-v1.1.1")
+        self.assertEqual(result.stdout.strip(), "factory workshop-v1.1.2")
 
     def test_release_check_audits_clean_versioned_tree(self):
         with tempfile.TemporaryDirectory() as directory:
             repo = Path(directory)
             (repo / "factory").mkdir()
             (repo / "workshop-guide/app").mkdir(parents=True)
-            (repo / "factory/factory_contracts.py").write_text('WORKSHOP_VERSION = "workshop-v1.1.1"\n')
-            (repo / "factory/WORKSHOP_OUTLINE.md").write_text("# workshop-v1.1.1\n")
-            (repo / "factory/FACILITATOR.md").write_text("# workshop-v1.1.1\n")
-            (repo / "workshop-guide/app/page.tsx").write_text("workshop-v1.1.1\n")
+            (repo / "factory/factory_contracts.py").write_text('WORKSHOP_VERSION = "workshop-v1.1.2"\n')
+            (repo / "factory/WORKSHOP_OUTLINE.md").write_text("# workshop-v1.1.2\n")
+            (repo / "factory/FACILITATOR.md").write_text("# workshop-v1.1.2\n")
+            (repo / "workshop-guide/app/page.tsx").write_text("workshop-v1.1.2\n")
             subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
             subprocess.run(["git", "add", "."], cwd=repo, check=True)
             subprocess.run(
@@ -85,10 +85,10 @@ class FactoryContractTests(unittest.TestCase):
             repo = Path(directory)
             (repo / "factory").mkdir()
             (repo / "workshop-guide/app").mkdir(parents=True)
-            (repo / "factory/factory_contracts.py").write_text('WORKSHOP_VERSION = "workshop-v1.1.1"\n')
-            (repo / "factory/WORKSHOP_OUTLINE.md").write_text("# workshop-v1.1.1\n[Missing](NOPE.md)\n")
-            (repo / "factory/FACILITATOR.md").write_text("# workshop-v1.1.1\n")
-            (repo / "workshop-guide/app/page.tsx").write_text("workshop-v1.1.1\n")
+            (repo / "factory/factory_contracts.py").write_text('WORKSHOP_VERSION = "workshop-v1.1.2"\n')
+            (repo / "factory/WORKSHOP_OUTLINE.md").write_text("# workshop-v1.1.2\n[Missing](NOPE.md)\n")
+            (repo / "factory/FACILITATOR.md").write_text("# workshop-v1.1.2\n")
+            (repo / "workshop-guide/app/page.tsx").write_text("workshop-v1.1.2\n")
             subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
             subprocess.run(["git", "add", "."], cwd=repo, check=True)
             subprocess.run(
@@ -111,11 +111,11 @@ class FactoryContractTests(unittest.TestCase):
             (repo / "workshop-guide/app").mkdir(parents=True)
             (repo / "docs/plans").mkdir(parents=True)
             (repo / "factory/factory_contracts.py").write_text(
-                'WORKSHOP_VERSION = "workshop-v1.1.1"\n',
+                'WORKSHOP_VERSION = "workshop-v1.1.2"\n',
             )
-            (repo / "factory/WORKSHOP_OUTLINE.md").write_text("# workshop-v1.1.1\n")
-            (repo / "factory/FACILITATOR.md").write_text("# workshop-v1.1.1\n")
-            (repo / "workshop-guide/app/page.tsx").write_text("workshop-v1.1.1\n")
+            (repo / "factory/WORKSHOP_OUTLINE.md").write_text("# workshop-v1.1.2\n")
+            (repo / "factory/FACILITATOR.md").write_text("# workshop-v1.1.2\n")
+            (repo / "workshop-guide/app/page.tsx").write_text("workshop-v1.1.2\n")
             (repo / "docs/plans/private.md").write_text(
                 "[private source](/Users/example/.codex/attachments/source.txt)\n",
             )
@@ -199,10 +199,10 @@ class FactoryContractTests(unittest.TestCase):
             repo = Path(directory)
             (repo / "factory").mkdir()
             (repo / "workshop-guide/app").mkdir(parents=True)
-            (repo / "factory/factory_contracts.py").write_text('WORKSHOP_VERSION = "workshop-v1.1.1"\n')
-            (repo / "factory/WORKSHOP_OUTLINE.md").write_text("# workshop-v1.1.1\n")
-            (repo / "factory/FACILITATOR.md").write_text("# workshop-v1.1.1\n")
-            (repo / "workshop-guide/app/page.tsx").write_text("workshop-v1.1.1\n")
+            (repo / "factory/factory_contracts.py").write_text('WORKSHOP_VERSION = "workshop-v1.1.2"\n')
+            (repo / "factory/WORKSHOP_OUTLINE.md").write_text("# workshop-v1.1.2\n")
+            (repo / "factory/FACILITATOR.md").write_text("# workshop-v1.1.2\n")
+            (repo / "workshop-guide/app/page.tsx").write_text("workshop-v1.1.2\n")
             subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
             subprocess.run(["git", "add", "."], cwd=repo, check=True)
             subprocess.run(
