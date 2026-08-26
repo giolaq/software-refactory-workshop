@@ -184,6 +184,14 @@ class QaPolicyTests(unittest.TestCase):
             factory.tickets[42] = ticket
 
             def fake_qa_adapter(agent, active_ticket, worktree, prompt, log_name, phase):
+                self.assertIn(
+                    "Previous QA failure",
+                    prompt.read_text(),
+                )
+                self.assertIn(
+                    "nested node --test is suppressed",
+                    prompt.read_text(),
+                )
                 test = worktree / "tests/test_ticket_42_search.py"
                 test.parent.mkdir(parents=True, exist_ok=True)
                 test.write_text(
@@ -193,7 +201,15 @@ class QaPolicyTests(unittest.TestCase):
                 return 0, "acceptance test created"
 
             factory.run_adapter = fake_qa_adapter
-            self.assertEqual(factory.create_qa_tests(ticket, repo, base_sha), "")
+            self.assertEqual(
+                factory.create_qa_tests(
+                    ticket,
+                    repo,
+                    base_sha,
+                    "Protected harness defect: nested node --test is suppressed",
+                ),
+                "",
+            )
             self.assertNotEqual(ticket["qa_commit"], base_sha)
             self.assertEqual(list(ticket["qa_tests"]), ["tests/test_ticket_42_search.py"])
             self.assertEqual(ticket["qa_evidence"]["red"]["result"], "RED PROVED")

@@ -67,6 +67,41 @@ function mode() {
   return $("#connect-mode")?.value || $("#run-mode")?.value || $("#planning-mode")?.value || localStorage.getItem("factory-control-mode") || "rehearsal";
 }
 
+function mergeEligibility(ticket) {
+  const factory = app.snapshot?.factory || {};
+  const evidenceMode = factory.execution_mode
+    || (factory.mode === "mock" ? "rehearsal" : factory.mode === "github" ? "live" : "");
+  const selectedMode = mode();
+  if (evidenceMode === "mixed") {
+    return {
+      allowed: false,
+      title: "Mixed run evidence cannot be merged",
+      summary: "Clear local run state, then reload the intended run before making a shipping decision.",
+    };
+  }
+  if (evidenceMode && evidenceMode !== selectedMode) {
+    const source = evidenceMode === "rehearsal" ? "Rehearsal" : "Live";
+    const target = selectedMode === "live" ? "Live" : "Rehearsal";
+    return {
+      allowed: false,
+      title: `${source} evidence cannot be merged as ${target}`,
+      summary: source === "Rehearsal"
+        ? `Ticket #${ticket.number} was reviewed without a GitHub pull request. Clear local run state, then load and rerun the Live ticket from GitHub.`
+        : `Ticket #${ticket.number} has a GitHub candidate. Return to Live mode to merge its exact approved revision.`,
+      source: evidenceMode,
+    };
+  }
+  const reviewReference = ticket.review_ref || ticket.code_review?.pull_request || "";
+  if (selectedMode === "live" && (!ticket.pr_url || String(reviewReference).startsWith("rehearsal://"))) {
+    return {
+      allowed: false,
+      title: "Live pull request is missing",
+      summary: `Ticket #${ticket.number} only has local review evidence. Clear local run state, load the Live ticket, and rerun it to create a GitHub pull request.`,
+    };
+  }
+  return { allowed: true, title: "", summary: "", source: evidenceMode };
+}
+
 function setMode(value) {
   const next = value === "live" ? "live" : "rehearsal";
   localStorage.setItem("factory-control-mode", next);
@@ -90,6 +125,20 @@ function formatTime(value) {
   if (!value) return "—";
   const date = new Date(value);
   return Number.isNaN(date.valueOf()) ? value : date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+}
+
+function formatDateTime(value) {
+  if (!value) return "unknown time";
+  const date = new Date(value);
+  return Number.isNaN(date.valueOf())
+    ? value
+    : date.toLocaleString([], {
+      year: "numeric",
+      month: "short",
+      day: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
 }
 
 function setSignal(selector, text, tone = "") {
@@ -218,13 +267,13 @@ function renderSnapshot(data) {
   renderPlanning(data.planning || {});
   renderTickets(data.factory || {}, data.planning || {});
   renderSupervisor(data.supervisor || {}, data.factory || {}, data.config || {});
-  renderApplication(data.application || {});
+  renderApplication(data.application || {}, data.operation || {});
   renderMonitor(data.monitor || {}, data.repo || {});
   if (app.selectedTicket) {
     const current = tickets.find((ticket) => Number(ticket.number) === Number(app.selectedTicket.number));
     if (current) {
       app.selectedTicket = current;
-      if (!$("#ticket-drawer").hidden) renderDrawer();
+      if (!$("#ticket-drawer").hidden) renderDrawer({ preservePosition: true });
     }
   }
 }
@@ -572,13 +621,34 @@ function renderSupervisor(supervisor, factory, config) {
   $("#supervisor-history").innerHTML = events.length ? [...events].reverse().map((event) => `<article class="supervisor-event"><time>${formatTime(event.at)}</time><b>${esc(event.id)}</b><span>${esc(event.summary)}</span><small>${event.kind === "merge" ? `${esc(event.action)} Ticket #${event.ticket} · candidate ${esc((event.candidate_head || "").slice(0, 8))}` : `${event.dispatch?.length || 0} dispatched · ${event.block?.length || 0} blocked · ${event.deferred?.length || 0} deferred`}</small></article>`).join("") : '<p class="empty-state">Decisions will appear here after the first ready wave.</p>';
 }
 
-function renderApplication(application) {
+function renderApplication(application, operation = {}) {
   $("#run-app-command").textContent = application.available
     ? application.command
     : "No supported application entry point was detected. Open the project README for its startup command.";
   $("#run-app-links").innerHTML = application.urls?.length
     ? application.urls.map((item) => `<a href="${esc(item.url)}" target="_blank" rel="noreferrer"><b>${esc(item.label)}</b><span>${esc(item.url)}</span></a>`).join("")
     : '<p class="empty-state">No application URLs were detected.</p>';
+  const operationActive = ["running", "stopping"].includes(operation.status);
+  const appRunning = operationActive && operation.action === "start-app";
+  const fallbackPort = application.port
+    && application.preferred_port
+    && application.port !== application.preferred_port;
+  const start = $("#start-app");
+  const stop = $("#stop-app");
+  start.disabled = !application.available || operationActive;
+  stop.hidden = !appRunning;
+  $("#copy-run-command").disabled = !application.available;
+  $("#run-app-status").textContent = !application.available
+    ? "No runnable package script or Python application was detected."
+    : appRunning
+      ? operation.status === "stopping"
+        ? "The application is stopping."
+        : "The application is running. Open it using the browser link."
+      : operationActive
+        ? "Wait for the current Control Center operation to finish."
+        : fallbackPort
+          ? `Port ${application.preferred_port} is already in use. Start the app on available port ${application.port}.`
+          : "Start the server here, or run the exact command in your terminal.";
 }
 
 function renderMonitor(report, repo) {
@@ -654,7 +724,7 @@ async function action(name, extra = {}) {
     }
     renderOperation(operation);
     syncOperationPolling(operation);
-    showView("overview");
+    showView(name === "start-app" ? "evidence" : "overview");
     toast(`${operation.title} started.`);
     return operation;
   } catch (error) {
@@ -667,6 +737,21 @@ function openResetDialog() {
   const dialog = $("#reset-dialog");
   const live = mode() === "live";
   const busy = ["running", "stopping"].includes(app.snapshot?.operation?.status);
+  const recovery = app.snapshot?.recovery || {};
+  const canRecover = recovery.available === true;
+  const recoverButton = $("#recover-latest");
+  recoverButton.disabled = busy || !canRecover;
+  recoverButton.textContent = busy ? "Wait for current operation" : "Recover latest state";
+  $("#recover-latest-option").classList.toggle("unavailable", !canRecover);
+  $("#recover-latest-detail").textContent = recovery.source === "current"
+    ? "The current local Factory state is already the latest recoverable state."
+    : recovery.source === "checkpoint"
+      ? `Local state from ${formatDateTime(recovery.snapshot_at || recovery.created_at)} · ${recovery.ticket_count || 0} tickets${recovery.plan_id ? ` · plan ${recovery.plan_id}` : ""}.`
+    : live && recovery.github_available
+      ? "No local checkpoint is available. Factory can reconstruct the latest published Live plan from GitHub."
+      : live
+        ? "Connect a GitHub repository before recovering a Live run."
+        : "No local checkpoint is available for this Rehearsal run.";
   $("#reset-run").disabled = busy;
   $("#reset-all-confirm").disabled = busy;
   $("#reset-all").disabled = true;
@@ -679,6 +764,16 @@ function openResetDialog() {
       ? "<b>Wait for the current operation.</b> Stop it from the operation console before resetting."
       : "<b>Rehearsal pack.</b> Reset uses the repository's reviewed reset adapter. Uncommitted work is protected and makes a destructive adapter fail safely.";
   dialog.showModal();
+}
+
+async function recoverLatest() {
+  const recovery = app.snapshot?.recovery || {};
+  const source = recovery.source === "checkpoint"
+    ? "the latest local checkpoint"
+    : "the latest durable GitHub state";
+  if (!window.confirm(`Recover ${source}? Current local Factory state will be saved as an undo checkpoint first.`)) return;
+  $("#reset-dialog").close();
+  await action("recover-latest");
 }
 
 async function resetRun() {
@@ -748,7 +843,70 @@ function closeDrawer() {
   document.body.style.overflow = "";
 }
 
-async function renderDrawer() {
+function captureDrawerPosition() {
+  const drawer = $("#ticket-drawer");
+  const content = $("#drawer-content");
+  const active = content.contains(document.activeElement) ? document.activeElement : null;
+  return {
+    drawerTop: drawer.scrollTop,
+    drawerLeft: drawer.scrollLeft,
+    drawerNearBottom: drawer.scrollHeight - drawer.scrollTop - drawer.clientHeight < 40,
+    tabsLeft: $(".drawer-tabs").scrollLeft,
+    pre: $$("pre", content).map((element) => ({
+      top: element.scrollTop,
+      left: element.scrollLeft,
+      nearBottom: element.scrollHeight - element.scrollTop - element.clientHeight < 40,
+    })),
+    fields: $$("input, textarea, select", content).map((element) => ({
+      key: element.id || element.name,
+      value: element.value,
+      checked: element.checked,
+    })).filter((field) => field.key),
+    focus: active ? {
+      key: active.id || active.name,
+      start: typeof active.selectionStart === "number" ? active.selectionStart : null,
+      end: typeof active.selectionEnd === "number" ? active.selectionEnd : null,
+    } : null,
+  };
+}
+
+function restoreDrawerPosition(position) {
+  if (!position) return;
+  const drawer = $("#ticket-drawer");
+  const content = $("#drawer-content");
+  position.fields.forEach((saved) => {
+    const field = $$("input, textarea, select", content).find((element) => (element.id || element.name) === saved.key);
+    if (!field) return;
+    field.value = saved.value;
+    if ("checked" in field) field.checked = saved.checked;
+  });
+  if (position.focus?.key) {
+    const field = $$("input, textarea, select", content).find((element) => (element.id || element.name) === position.focus.key);
+    if (field) {
+      field.focus({ preventScroll: true });
+      if (position.focus.start !== null && typeof field.setSelectionRange === "function") {
+        field.setSelectionRange(position.focus.start, position.focus.end);
+      }
+    }
+  }
+  $$("pre", content).forEach((element, index) => {
+    const saved = position.pre[index];
+    if (!saved) return;
+    element.scrollTop = saved.nearBottom ? element.scrollHeight : saved.top;
+    element.scrollLeft = saved.left;
+  });
+  drawer.scrollTop = position.drawerNearBottom ? drawer.scrollHeight : position.drawerTop;
+  drawer.scrollLeft = position.drawerLeft;
+  $(".drawer-tabs").scrollLeft = position.tabsLeft;
+}
+
+function replaceDrawerContent(content, html, preservePosition) {
+  const position = preservePosition ? captureDrawerPosition() : null;
+  content.innerHTML = html;
+  restoreDrawerPosition(position);
+}
+
+async function renderDrawer({ preservePosition = false } = {}) {
   const ticket = app.selectedTicket;
   if (!ticket) return;
   const requestedTab = app.drawerTab;
@@ -757,36 +915,175 @@ async function renderDrawer() {
   if (app.drawerTab === "summary") {
     const claimOwner = ticket.remote_claim?.owner_run_id || ticket.remote_claim?.run_id;
     const claimBlocked = ticket.status === "Blocked" && claimOwner && ticket.failure?.includes("Remote Ticket claim");
-    const actions = ticket.status === "QA Review" ? `<button class="button button-primary" type="button" data-ticket-action="approve-tests">Approve tests</button>` : claimBlocked ? `<button class="button button-danger" type="button" data-ticket-action="release-claim">Release abandoned claim</button>` : ticket.status === "Blocked" ? `<button class="button button-primary" type="button" data-ticket-action="retry">Retry ticket</button>` : ticket.status === "In Review" && ticket.merge_authority === "human" ? `<button class="button button-primary" type="button" data-ticket-action="merge">Merge exact revision</button>` : "";
+    const budget = ticket.diff_budget || {};
+    const budgetExceeded = ticket.status === "Blocked" && budget.status === "exceeded";
+    const recoveryInfo = ticket.recovery || {};
+    const mergeState = mergeEligibility(ticket);
+    const implementationLines = Number(budget.implementation_lines || 0);
+    const suggestedLimit = Math.ceil(Math.max(implementationLines, implementationLines * 1.15) / 100) * 100;
+    let recovery = "";
+    if (ticket.status === "In Review" && !mergeState.allowed) recovery = `
+      <section class="recovery-panel" aria-labelledby="recovery-title">
+        <p class="recovery-kicker">Run mode mismatch</p>
+        <h3 id="recovery-title">${esc(mergeState.title)}</h3>
+        <p>${esc(mergeState.summary)}</p>
+        <div class="form-actions">
+          ${mergeState.source === "rehearsal" ? '<button class="button" type="button" data-ticket-mode="rehearsal">Finish Rehearsal</button>' : ""}
+          ${mergeState.source === "live" ? '<button class="button" type="button" data-ticket-mode="live">Return to Live</button>' : ""}
+          <button class="button button-primary" type="button" data-open-ticket-reset>Open Reset</button>
+        </div>
+      </section>`;
+    else if (claimBlocked || recoveryInfo.kind === "remote_claim") recovery = `
+      <section class="recovery-panel" aria-labelledby="recovery-title">
+        <p class="recovery-kicker">Remote ownership</p>
+        <h3 id="recovery-title">Resolve the existing claim</h3>
+        <p>${esc(recoveryInfo.summary || "Resume the owning run, or release the claim only after confirming it is abandoned.")}</p>
+        <div class="form-actions">
+          <button class="button button-danger" type="button" data-ticket-action="release-claim">Release abandoned claim</button>
+        </div>
+      </section>`;
+    else if (budgetExceeded || recoveryInfo.kind === "diff_budget") recovery = `
+      <section class="recovery-panel" aria-labelledby="recovery-title">
+        <p class="recovery-kicker">Human decision required</p>
+        <h3 id="recovery-title">Set a bounded ticket exception</h3>
+        <p>The implementation is larger than this ticket's approved limit. Protected QA tests are measured separately.</p>
+        <dl class="budget-meter">
+          <div><dt>Implementation</dt><dd>${esc(implementationLines)} lines</dd></div>
+          <div><dt>Current limit</dt><dd>${esc(budget.effective_limit)} lines</dd></div>
+          <div><dt>Protected QA</dt><dd>${esc(budget.protected_qa_lines || 0)} lines</dd></div>
+        </dl>
+        <div class="recovery-fields">
+          <label>New ticket limit
+            <input id="retry-budget-lines" type="number" min="${esc(implementationLines)}" step="50" value="${esc(suggestedLimit)}">
+          </label>
+          <label>Reason for the exception
+            <textarea id="retry-budget-reason" rows="2" placeholder="Explain why this ticket should remain one unit of work"></textarea>
+          </label>
+        </div>
+        <div class="form-actions">
+          <button class="button button-primary" type="button" data-ticket-action="retry-with-budget">Approve exception and retry</button>
+        </div>
+        <p class="recovery-alternative"><strong>Alternative:</strong> split or replan the ticket when the work has more than one outcome.</p>
+      </section>`;
+    else if (recoveryInfo.kind === "qa_evidence") recovery = `
+      <section class="recovery-panel" aria-labelledby="recovery-title">
+        <p class="recovery-kicker">QA evidence repair</p>
+        <h3 id="recovery-title">${esc(recoveryInfo.title || "Regenerate the protected QA tests")}</h3>
+        <p>${esc(recoveryInfo.summary || "Discard the defective protected tests and regenerate them from the repository base.")}</p>
+        <div class="form-actions">
+          <button class="button button-primary" type="button" data-ticket-action="retry-reset-qa">Regenerate QA tests and retry</button>
+        </div>
+      </section>`;
+    else if (recoveryInfo.kind === "project_configuration") recovery = `
+      <section class="recovery-panel" aria-labelledby="recovery-title">
+        <p class="recovery-kicker">Configuration repair</p>
+        <h3 id="recovery-title">${esc(recoveryInfo.title || "Repair the Project Contract")}</h3>
+        <p>${esc(recoveryInfo.summary || "Update and commit factory.project.toml before retrying.")}</p>
+        <div class="form-actions">
+          ${recoveryInfo.configuration_changed ? `<button class="button button-primary" type="button" data-ticket-action="retry">Reload contract and retry</button>` : `<button class="button" type="button" data-recovery-view="connect">Open Connect</button>`}
+        </div>
+        <p class="recovery-alternative"><strong>Required:</strong> keep the factory running or restart it after the reviewed contract change. The retry reloads the new gates and test roots.</p>
+      </section>`;
+    else if (recoveryInfo.kind === "ticket_specification") recovery = `
+      <section class="recovery-panel" aria-labelledby="recovery-title">
+        <p class="recovery-kicker">Ticket correction</p>
+        <h3 id="recovery-title">${esc(recoveryInfo.title || "Complete the GitHub Ticket")}</h3>
+        <p>${esc(recoveryInfo.summary || "Add the missing specification and acceptance criteria in GitHub.")}</p>
+        ${recoveryInfo.required_paths?.length ? `<p><strong>Add to File ownership:</strong> ${recoveryInfo.required_paths.map((path) => `<code>${esc(path)}</code>`).join(", ")}</p>` : ""}
+        <div class="form-actions">
+          ${ticket.issue_url ? `<a class="button" href="${esc(ticket.issue_url)}" target="_blank" rel="noreferrer">Edit issue</a>` : ""}
+          <button class="button button-primary" type="button" data-ticket-action="retry">Reload issue and retry</button>
+        </div>
+      </section>`;
+    else if (recoveryInfo.kind === "dependency") recovery = `
+      <section class="recovery-panel" aria-labelledby="recovery-title">
+        <p class="recovery-kicker">Plan correction</p>
+        <h3 id="recovery-title">${esc(recoveryInfo.title || "Repair the dependency plan")}</h3>
+        <p>${esc(recoveryInfo.summary || "Correct the dependency graph before resuming.")}</p>
+        <div class="form-actions">${ticket.issue_url ? `<a class="button button-primary" href="${esc(ticket.issue_url)}" target="_blank" rel="noreferrer">Open issue</a>` : ""}</div>
+      </section>`;
+    else if (recoveryInfo.kind === "revision_rebuild") recovery = `
+      <section class="recovery-panel" aria-labelledby="recovery-title">
+        <p class="recovery-kicker">Revision recovery</p>
+        <h3 id="recovery-title">${esc(recoveryInfo.title || "Rebuild the exact revision")}</h3>
+        <p>${esc(recoveryInfo.summary || "The Factory will rebuild this ticket and rerun its evidence.")}</p>
+        <div class="form-actions">
+          ${ticket.pr_url ? `<a class="button" href="${esc(ticket.pr_url)}" target="_blank" rel="noreferrer">Inspect pull request</a>` : ""}
+          <button class="button button-primary" type="button" data-ticket-action="retry">Rebuild and retry</button>
+        </div>
+      </section>`;
+    else if (recoveryInfo.kind === "revision_mismatch") recovery = `
+      <section class="recovery-panel" aria-labelledby="recovery-title">
+        <p class="recovery-kicker">Revision safety</p>
+        <h3 id="recovery-title">${esc(recoveryInfo.title || "Create a replacement Ticket")}</h3>
+        <p>${esc(recoveryInfo.summary || "A different revision was already merged. Preserve it and plan corrective work as a new ticket.")}</p>
+        <div class="form-actions">
+          ${ticket.pr_url ? `<a class="button" href="${esc(ticket.pr_url)}" target="_blank" rel="noreferrer">Inspect merged pull request</a>` : ""}
+          <button class="button button-primary" type="button" data-recovery-view="planning">Open Planning</button>
+        </div>
+      </section>`;
+    else if (ticket.status === "Blocked") recovery = `
+      <section class="recovery-panel" aria-labelledby="recovery-title">
+        <p class="recovery-kicker">Recovery available</p>
+        <h3 id="recovery-title">${esc(recoveryInfo.title || "Retry from the safest checkpoint")}</h3>
+        <p>${esc(recoveryInfo.summary || "The Factory will preserve eligible QA evidence and candidate work, then rerun verification.")}</p>
+        <button class="button button-primary" type="button" data-ticket-action="retry">Retry ticket</button>
+      </section>`;
+    const actions = ticket.status === "QA Review" ? `<button class="button button-primary" type="button" data-ticket-action="approve-tests">Approve tests</button>` : ticket.status === "In Review" && ticket.merge_authority === "human" && mergeState.allowed ? `<button class="button button-primary" type="button" data-ticket-action="merge">Merge exact revision</button>` : "";
     const merge = ticket.status === "In Review" ? `<section class="detail-panel"><h3>Merge authority</h3><p><span class="pill">${esc(ticket.merge_authority || "human")}</span> Approved head <code>${esc(ticket.approved_head || "not recorded")}</code></p><p>${ticket.supervisor_merge_action === "MERGE" && ticket.merge_authority === "human" ? "The Supervisor recommends merge. A person still owns the final decision." : esc(ticket.supervisor_merge_decision || "Inspect the evidence before deciding.")}</p></section>` : "";
     const triage = ticket.triage || {};
     const controls = triage.controls || {};
     const metrics = ticket.metrics || {};
     const timing = `<section class="detail-panel"><h3>Time by owner</h3><div class="detail-grid"><p><b>${esc(metrics.agent_seconds || 0)}s</b><br><small>Useful agent work</small></p><p><b>${esc(metrics.gate_seconds || ticket.verification_duration_seconds || 0)}s</b><br><small>Verification overhead</small></p><p><b>${esc(metrics.human_wait_seconds || 0)}s</b><br><small>Human wait</small></p><p><b>${esc(metrics.retry_count || 0)}</b><br><small>Retries · ${esc(metrics.verifier_rejections || 0)} verifier rejections</small></p></div></section>`;
-    content.innerHTML = `<div class="detail-grid"><section class="detail-panel"><h3>Implementation</h3><p><span class="pill">${esc(ticket.agent)}</span> attempt ${ticket.attempt || 0}</p></section><section class="detail-panel"><h3>Independent QA</h3><p><span class="pill">${esc(ticket.qa_agent || "disabled")}</span> attempt ${ticket.qa_attempt || 0}</p></section></div><section class="detail-panel"><h3>Triage and controls</h3><p><span class="pill">${esc(triage.result || "not run")}</span> ${esc(controls.risk || "unclassified")} risk · ${esc(ticket.verification_level || controls.gate_level || "unselected")} verification</p><p>${esc(controls.reason || triage.reason || "Controls are selected before dispatch and checked again from the actual diff.")}</p></section>${timing}${merge}<section class="detail-panel"><h3>Specification</h3><pre>${esc(section(ticket.body, "Spec"))}</pre></section><section class="detail-panel"><h3>Acceptance criteria</h3><pre>${esc(section(ticket.body, "Acceptance criteria"))}</pre></section>${ticket.failure ? `<section class="detail-panel"><h3>Last failure</h3><pre>${esc(ticket.failure)}</pre></section>` : ""}<div class="form-actions">${actions}${ticket.issue_url ? `<a class="button" href="${esc(ticket.issue_url)}" target="_blank" rel="noreferrer">Open issue</a>` : ""}${ticket.pr_url ? `<a class="button" href="${esc(ticket.pr_url)}" target="_blank" rel="noreferrer">Open pull request</a>` : ""}</div>`;
+    replaceDrawerContent(content, `${recovery}<div class="detail-grid"><section class="detail-panel"><h3>Implementation</h3><p><span class="pill">${esc(ticket.agent)}</span> attempt ${ticket.attempt || 0}</p></section><section class="detail-panel"><h3>Independent QA</h3><p><span class="pill">${esc(ticket.qa_agent || "disabled")}</span> attempt ${ticket.qa_attempt || 0}</p></section></div><section class="detail-panel"><h3>Triage and controls</h3><p><span class="pill">${esc(triage.result || "not run")}</span> ${esc(controls.risk || "unclassified")} risk · ${esc(ticket.verification_level || controls.gate_level || "unselected")} verification</p><p>${esc(controls.reason || triage.reason || "Controls are selected before dispatch and checked again from the actual diff.")}</p></section>${timing}${merge}<section class="detail-panel"><h3>Specification</h3><pre>${esc(section(ticket.body, "Spec"))}</pre></section><section class="detail-panel"><h3>Acceptance criteria</h3><pre>${esc(section(ticket.body, "Acceptance criteria"))}</pre></section>${ticket.failure ? `<section class="detail-panel"><h3>Last failure</h3><pre>${esc(ticket.failure)}</pre></section>` : ""}<div class="form-actions">${actions}${ticket.issue_url ? `<a class="button" href="${esc(ticket.issue_url)}" target="_blank" rel="noreferrer">Open issue</a>` : ""}${ticket.pr_url ? `<a class="button" href="${esc(ticket.pr_url)}" target="_blank" rel="noreferrer">Open pull request</a>` : ""}</div>`, preservePosition);
     $('[data-ticket-action="approve-tests"]', content)?.addEventListener("click", () => action("approve-tests", { issue: ticket.number }));
     $('[data-ticket-action="retry"]', content)?.addEventListener("click", () => action("retry", { issue: ticket.number }));
+    $('[data-ticket-action="retry-reset-qa"]', content)?.addEventListener("click", () => action("retry", { issue: ticket.number, reset_qa: true }));
+    $('[data-open-ticket-reset]', content)?.addEventListener("click", openResetDialog);
+    $('[data-ticket-mode]', content)?.addEventListener("click", (event) => {
+      setMode(event.currentTarget.dataset.ticketMode);
+      renderDrawer();
+    });
+    $('[data-ticket-action="retry-with-budget"]', content)?.addEventListener("click", () => {
+      const budgetLines = Number($("#retry-budget-lines", content)?.value);
+      const reason = $("#retry-budget-reason", content)?.value.trim() || "";
+      if (!Number.isInteger(budgetLines) || budgetLines < implementationLines) {
+        toast(`Set the ticket limit to at least ${implementationLines} lines.`, true);
+        $("#retry-budget-lines", content)?.focus();
+        return;
+      }
+      if (!reason) {
+        toast("Enter a reason for the ticket exception.", true);
+        $("#retry-budget-reason", content)?.focus();
+        return;
+      }
+      action("retry", { issue: ticket.number, budget_lines: budgetLines, reason });
+    });
     $('[data-ticket-action="release-claim"]', content)?.addEventListener("click", () => action("release-claim", { issue: ticket.number, owner_run_id: claimOwner, reason: "Operator confirmed this remote claim was abandoned in the Control Center" }));
     $('[data-ticket-action="merge"]', content)?.addEventListener("click", () => action("merge", { issue: ticket.number }));
+    $$("[data-recovery-view]", content).forEach((button) => button.addEventListener("click", () => {
+      closeDrawer();
+      showView(button.dataset.recoveryView);
+    }));
     return;
   }
   if (app.drawerTab === "supervisor") {
     const receipts = (ticket.receipts || []).filter((path) => path.includes("supervisor"));
-    content.innerHTML = `<section class="detail-panel"><h3>Current instruction</h3><p>${ticket.supervisor_instruction ? esc(ticket.supervisor_instruction) : "No supervisor instruction has been issued for this Ticket."}</p></section><section class="detail-panel"><h3>Dispatch decision</h3><p>${esc(ticket.supervisor_decision || "Not dispatched by a supervisor")}</p></section><section class="detail-panel"><h3>Merge recommendation</h3><p>${ticket.supervisor_merge_action ? `<span class="pill">${esc(ticket.supervisor_merge_action)}</span> ${esc(ticket.supervisor_merge_decision || "")}` : "No merge recommendation has been issued. Code review approval is required first."}</p></section><section class="detail-panel"><h3>Supervisor receipts</h3>${receipts.length ? receipts.map((path) => `<button class="text-button" type="button" data-supervisor-receipt="${esc(path)}">${esc(path.split("/").at(-1))}</button>`).join("<br>") : "No supervisor Handoff Receipt recorded."}</section>`;
+    replaceDrawerContent(content, `<section class="detail-panel"><h3>Current instruction</h3><p>${ticket.supervisor_instruction ? esc(ticket.supervisor_instruction) : "No supervisor instruction has been issued for this Ticket."}</p></section><section class="detail-panel"><h3>Dispatch decision</h3><p>${esc(ticket.supervisor_decision || "Not dispatched by a supervisor")}</p></section><section class="detail-panel"><h3>Merge recommendation</h3><p>${ticket.supervisor_merge_action ? `<span class="pill">${esc(ticket.supervisor_merge_action)}</span> ${esc(ticket.supervisor_merge_decision || "")}` : "No merge recommendation has been issued. Code review approval is required first."}</p></section><section class="detail-panel"><h3>Supervisor receipts</h3>${receipts.length ? receipts.map((path) => `<button class="text-button" type="button" data-supervisor-receipt="${esc(path)}">${esc(path.split("/").at(-1))}</button>`).join("<br>") : "No supervisor Handoff Receipt recorded."}</section>`, preservePosition);
     $$('[data-supervisor-receipt]', content).forEach((button) => button.addEventListener("click", () => openArtifact(button.dataset.supervisorReceipt)));
     return;
   }
   if (app.drawerTab === "review") {
     const review = ticket.code_review;
     if (!review) {
-      content.innerHTML = '<section class="detail-panel"><h3>Code review</h3><p>No Code Review role decision has been recorded for this Ticket.</p></section>';
+      replaceDrawerContent(content, '<section class="detail-panel"><h3>Code review</h3><p>No Code Review role decision has been recorded for this Ticket.</p></section>', preservePosition);
       return;
     }
     const result = review.result || {};
     const findings = result.findings || [];
     const publication = review.publication || {};
     const publicationText = !publication.published ? "Not published" : publication.official ? "Formal GitHub review" : publication.mode === "rehearsal" ? "Rehearsal decision" : "Factory PR comment (not a branch-protection approval)";
-    content.innerHTML = `<section class="detail-panel"><h3>${esc(result.decision || review.status || "Code review")}</h3><p>${esc(result.summary || review.failure || "No summary recorded.")}</p><p><span class="pill">${esc(review.agent || "unknown")}</span> candidate ${esc((review.head || "").slice(0, 8) || "—")}</p><p>${esc(publicationText)}</p></section><section class="detail-panel"><h3>Review comments</h3>${findings.length ? findings.map((finding) => `<div class="gate-result"><strong class="${finding.severity === "blocking" ? "fail" : "pass"}">${esc(finding.severity.toUpperCase())} · ${esc(finding.path)}${finding.line ? `:${finding.line}` : ""}</strong><p>${esc(finding.message)}</p></div>`).join("") : "No comments reported. The candidate is eligible for a revision-bound Supervisor recommendation and human merge decision."}</section>${review.artifact ? `<button class="text-button" type="button" data-review-artifact="${esc(review.artifact)}">Open structured review artifact</button>` : ""}`;
+    replaceDrawerContent(content, `<section class="detail-panel"><h3>${esc(result.decision || review.status || "Code review")}</h3><p>${esc(result.summary || review.failure || "No summary recorded.")}</p><p><span class="pill">${esc(review.agent || "unknown")}</span> candidate ${esc((review.head || "").slice(0, 8) || "—")}</p><p>${esc(publicationText)}</p></section><section class="detail-panel"><h3>Review comments</h3>${findings.length ? findings.map((finding) => `<div class="gate-result"><strong class="${finding.severity === "blocking" ? "fail" : "pass"}">${esc(finding.severity.toUpperCase())} · ${esc(finding.path)}${finding.line ? `:${finding.line}` : ""}</strong><p>${esc(finding.message)}</p></div>`).join("") : "No comments reported. The candidate is eligible for a revision-bound Supervisor recommendation and human merge decision."}</section>${review.artifact ? `<button class="text-button" type="button" data-review-artifact="${esc(review.artifact)}">Open structured review artifact</button>` : ""}`, preservePosition);
     $('[data-review-artifact]', content)?.addEventListener("click", (event) => openArtifact(event.currentTarget.dataset.reviewArtifact));
     return;
   }
@@ -798,15 +1095,17 @@ async function renderDrawer() {
     const causalEvidence = causal.focused_test_command
       ? `<section class="detail-panel"><h3>Causal acceptance evidence</h3><p>Identical focused command</p><pre>${esc(causal.focused_test_command)}</pre>${proof("Before implementation", causal.red, "RED NOT PROVED")}${proof("After implementation", causal.green, "GREEN NOT PROVED")}${causal.negative ? proof("Assured negative proof", causal.negative, "NEGATIVE PROOF NOT RUN") : ""}</section>`
       : `<section class="detail-panel"><h3>Causal acceptance evidence</h3><p>RED NOT PROVED · No focused Acceptance Test command has been accepted.</p></section>`;
-    content.innerHTML = `<section class="detail-panel"><h3>Protected acceptance tests</h3>${tests.length ? tests.map((path) => `<span class="pill">${esc(path)}</span>`).join("") : "No tests recorded."}</section>${causalEvidence}<section class="detail-panel"><h3>Deterministic verification gates</h3><p>Selected level: <span class="pill">${esc(ticket.verification_level || "not selected")}</span> · ${ticket.verification_duration_seconds || 0}s total</p>${gates.length ? gates.map((gate) => { const verdict = gate.classification || (gate.exit_code === 0 ? "PASS" : "FAIL"); return `<div class="gate-result"><strong class="${verdict === "PASS" ? "pass" : "fail"}">${esc(verdict)} · ${esc(gate.name)} · ${esc(gate.level || "full")}</strong><p>${gate.duration_seconds || 0}s</p><pre>${esc(gate.output || "")}</pre></div>`; }).join("") : "No gates have run."}</section>`;
+    replaceDrawerContent(content, `<section class="detail-panel"><h3>Protected acceptance tests</h3>${tests.length ? tests.map((path) => `<span class="pill">${esc(path)}</span>`).join("") : "No tests recorded."}</section>${causalEvidence}<section class="detail-panel"><h3>Deterministic verification gates</h3><p>Selected level: <span class="pill">${esc(ticket.verification_level || "not selected")}</span> · ${ticket.verification_duration_seconds || 0}s total</p>${gates.length ? gates.map((gate) => { const verdict = gate.classification || (gate.exit_code === 0 ? "PASS" : "FAIL"); return `<div class="gate-result"><strong class="${verdict === "PASS" ? "pass" : "fail"}">${esc(verdict)} · ${esc(gate.name)} · ${esc(gate.level || "full")}</strong><p>${gate.duration_seconds || 0}s</p><pre>${esc(gate.output || "")}</pre></div>`; }).join("") : "No gates have run."}</section>`, preservePosition);
     return;
   }
   if (app.drawerTab === "history") {
-    content.innerHTML = `<section class="detail-panel"><h3>State history</h3><div class="history-list">${ticket.history?.length ? ticket.history.map((item) => `<div class="history-item"><time>${formatTime(item.at)}</time><strong>${esc(item.status)}</strong><span>${esc(item.note)}</span></div>`).join("") : "No history recorded."}</div></section><section class="detail-panel"><h3>Handoff receipts</h3>${ticket.receipts?.length ? ticket.receipts.map((path) => `<button class="text-button" type="button" data-receipt="${esc(path)}">${esc(path.split("/").at(-1))}</button>`).join("<br>") : "No receipts recorded."}</section>`;
+    replaceDrawerContent(content, `<section class="detail-panel"><h3>State history</h3><div class="history-list">${ticket.history?.length ? ticket.history.map((item) => `<div class="history-item"><time>${formatTime(item.at)}</time><strong>${esc(item.status)}</strong><span>${esc(item.note)}</span></div>`).join("") : "No history recorded."}</div></section><section class="detail-panel"><h3>Handoff receipts</h3>${ticket.receipts?.length ? ticket.receipts.map((path) => `<button class="text-button" type="button" data-receipt="${esc(path)}">${esc(path.split("/").at(-1))}</button>`).join("<br>") : "No receipts recorded."}</section>`, preservePosition);
     $$('[data-receipt]', content).forEach((button) => button.addEventListener("click", () => openArtifact(button.dataset.receipt)));
     return;
   }
-  content.innerHTML = '<section class="detail-panel"><h3>Loading</h3><pre>Loading artifact…</pre></section>';
+  if (!preservePosition) {
+    replaceDrawerContent(content, '<section class="detail-panel"><h3>Loading</h3><pre>Loading artifact…</pre></section>', false);
+  }
   try {
     let value;
     let title;
@@ -819,9 +1118,9 @@ async function renderDrawer() {
       value = await request(`/api/artifact?path=${encodeURIComponent(path)}`);
       title = `${requestedTab === "prompt" ? "Agent prompt" : "Agent log"} · ${path.split("/").at(-1)}`;
     }
-    if (app.selectedTicket?.number === ticket.number && app.drawerTab === requestedTab) content.innerHTML = `<section class="detail-panel"><h3>${esc(title)}</h3><pre>${esc(value.content)}</pre></section>`;
+    if (app.selectedTicket?.number === ticket.number && app.drawerTab === requestedTab) replaceDrawerContent(content, `<section class="detail-panel"><h3>${esc(title)}</h3><pre>${esc(value.content)}</pre></section>`, preservePosition);
   } catch (error) {
-    if (app.selectedTicket?.number === ticket.number && app.drawerTab === requestedTab) content.innerHTML = `<section class="detail-panel"><h3>Not available</h3><pre>${esc(error.message)}</pre></section>`;
+    if (app.selectedTicket?.number === ticket.number && app.drawerTab === requestedTab) replaceDrawerContent(content, `<section class="detail-panel"><h3>Not available</h3><pre>${esc(error.message)}</pre></section>`, preservePosition);
   }
 }
 
@@ -885,6 +1184,7 @@ function wireEvents() {
   $("#open-reset-overview").addEventListener("click", openResetDialog);
   $("#close-reset").addEventListener("click", () => $("#reset-dialog").close());
   $("#reset-run").addEventListener("click", resetRun);
+  $("#recover-latest").addEventListener("click", recoverLatest);
   $("#reset-all").addEventListener("click", resetAll);
   $("#reset-all-confirm").addEventListener("input", (event) => { $("#reset-all").disabled = event.target.value !== "START OVER"; });
   $("#close-drawer").addEventListener("click", closeDrawer);
@@ -896,6 +1196,26 @@ function wireEvents() {
     if (!command) return toast("No startup command is available.");
     await navigator.clipboard.writeText(command);
     toast("Startup command copied.");
+  });
+  $("#start-app").addEventListener("click", async () => {
+    $("#start-app").disabled = true;
+    const operation = await action("start-app");
+    if (operation) {
+      renderApplication(app.snapshot?.application || {}, operation);
+    } else {
+      $("#start-app").disabled = false;
+    }
+  });
+  $("#stop-app").addEventListener("click", async () => {
+    if (!window.confirm("Stop the running application?")) return;
+    try {
+      const operation = await request("/api/stop", { method: "POST", body: "{}" });
+      renderOperation(operation);
+      renderApplication(app.snapshot?.application || {}, operation);
+      toast("Stopping application.");
+    } catch (error) {
+      toast(error.message, true);
+    }
   });
   document.addEventListener("keydown", (event) => { if (event.key === "Escape") { closeDrawer(); closeSidebar(); } });
   document.addEventListener("visibilitychange", () => { if (!document.hidden) refreshSnapshot(); });

@@ -1,4 +1,5 @@
 import contextlib
+import hashlib
 import io
 import json
 import shutil
@@ -21,12 +22,23 @@ from codex_cli import (
 from orchestrator import (
     Factory,
     approve_qa_tests,
+    create_recovery_checkpoint,
     human_merge_ticket,
+    implementation_attempt_failure,
+    implementation_no_change_failure,
+    latest_recovery_checkpoint,
     publish_evidence_run_summaries,
     publish_repository_setup,
+    recovery_checkpoints,
+    recover_latest_state,
     recover_remote_ticket_state,
+    release_ticket_claim,
+    restore_recovery_checkpoint,
     resolve_codex_cli,
     retry_ticket,
+    ticket_diff_budget,
+    ticket_recovery,
+    ticket_spec_fingerprint,
     worktree_path,
 )
 from factory_charter import FactoryCharter
@@ -53,6 +65,278 @@ def install_approved_charter(repo: Path, merge_authority: str = "human") -> None
 
 
 class RuntimeTests(unittest.TestCase):
+    def test_release_claim_reconciles_an_already_absent_remote_claim(self):
+        with tempfile.TemporaryDirectory() as directory:
+            repo = Path(directory)
+            state = repo / ".factory/state.json"
+            state.parent.mkdir(parents=True)
+            state.write_text(json.dumps({
+                "run_id": "new-run",
+                "tickets": [{
+                    "number": 4,
+                    "status": "Blocked",
+                    "phase": "claim",
+                    "failure": (
+                        "Remote Ticket claim belongs to Factory run old-run."
+                    ),
+                    "remote_claim": {
+                        "ticket": 4,
+                        "run_id": "old-run",
+                        "released": True,
+                    },
+                    "pr_url": "https://github.test/pull/10",
+                    "branch_generation": 0,
+                    "recovery": {"kind": "remote_claim"},
+                    "next_human_action": "release_or_resume_claim",
+                    "history": [],
+                }],
+            }))
+            remote_ticket = {"number": 4, "labels": ["state:blocked"]}
+            backend = mock.Mock()
+            backend.project_number = 15
+            backend.read_claim.return_value = None
+            backend.load.return_value = [remote_ticket]
+
+            with mock.patch(
+                "orchestrator.GitHubBackend",
+                return_value=backend,
+            ):
+                result = release_ticket_claim(
+                    repo,
+                    4,
+                    owner_run_id="old-run",
+                    reason="Operator confirmed the old runner stopped",
+                    assume_yes=True,
+                )
+
+            ticket = json.loads(state.read_text())["tickets"][0]
+            self.assertFalse(result["released"])
+            self.assertTrue(result["reconciled"])
+            self.assertEqual(ticket["status"], "Backlog")
+            self.assertEqual(ticket["phase"], "backlog")
+            self.assertEqual(ticket["remote_claim"], {})
+            self.assertEqual(ticket["failure"], "")
+            self.assertEqual(ticket["recovery"], {})
+            self.assertEqual(ticket["branch_generation"], 1)
+            self.assertEqual(ticket["pr_url"], "")
+            self.assertEqual(
+                ticket["last_released_claim"]["run_id"],
+                "old-run",
+            )
+            self.assertIn(
+                "already absent",
+                ticket["history"][-1]["note"],
+            )
+            backend.release_claim.assert_not_called()
+            backend.set_status.assert_called_once_with(
+                remote_ticket,
+                "Backlog",
+                "Operator released an abandoned Factory claim",
+            )
+
+    def test_checkpoint_restores_exact_runtime_state_and_creates_undo(self):
+        with tempfile.TemporaryDirectory() as directory:
+            repo = Path(directory)
+            git(repo, "init", "-q", "-b", "main")
+            git(repo, "config", "user.name", "Factory Test")
+            git(repo, "config", "user.email", "factory@example.invalid")
+            (repo / "README.md").write_text("tracked source\n")
+            git(repo, "add", "README.md")
+            git(repo, "commit", "-qm", "baseline")
+            runtime = repo / ".factory"
+            plan = runtime / "plans/plan-1"
+            plan.mkdir(parents=True)
+            original_state = {
+                "mode": "github",
+                "run_id": "latest-run",
+                "tickets": [{"number": 5, "status": "In Review"}],
+            }
+            (runtime / "state.json").write_text(json.dumps(original_state))
+            (runtime / "planning-state.json").write_text(json.dumps({
+                "plan_id": "plan-1",
+                "status": "published",
+            }))
+            (plan / "artifact.json").write_text('{"approved": true}\n')
+
+            checkpoint = create_recovery_checkpoint(
+                repo,
+                reason="Before test reset",
+            )
+            (runtime / "state.json").write_text('{"tickets": []}\n')
+            shutil.rmtree(runtime / "plans")
+
+            restored = restore_recovery_checkpoint(
+                repo,
+                checkpoint,
+                assume_yes=True,
+            )
+
+            self.assertEqual(
+                json.loads((runtime / "state.json").read_text()),
+                original_state,
+            )
+            self.assertEqual(
+                (runtime / "plans/plan-1/artifact.json").read_text(),
+                '{"approved": true}\n',
+            )
+            self.assertEqual(
+                latest_recovery_checkpoint(repo)["checkpoint_id"],
+                checkpoint["checkpoint_id"],
+            )
+            undo = [
+                item for item in recovery_checkpoints(repo, include_undo=True)
+                if item.get("kind") == "undo"
+            ]
+            self.assertEqual(len(undo), 1)
+            self.assertEqual(
+                restored["undo_checkpoint_id"],
+                undo[0]["checkpoint_id"],
+            )
+            self.assertEqual((repo / "README.md").read_text(), "tracked source\n")
+
+    def test_checkpoint_rejects_symbolic_links(self):
+        with tempfile.TemporaryDirectory() as directory:
+            repo = Path(directory)
+            runtime = repo / ".factory"
+            runtime.mkdir(parents=True)
+            (runtime / "state.json").write_text(json.dumps({
+                "tickets": [{"number": 1}],
+            }))
+            outside = repo / "outside"
+            outside.mkdir()
+            (runtime / "plans").symlink_to(outside, target_is_directory=True)
+
+            with self.assertRaisesRegex(ValueError, "symbolic links"):
+                create_recovery_checkpoint(repo, reason="Unsafe checkpoint")
+
+    def test_recover_latest_prefers_newer_state_preserved_by_undo_checkpoint(self):
+        with tempfile.TemporaryDirectory() as directory:
+            repo = Path(directory)
+            runtime = repo / ".factory"
+            runtime.mkdir(parents=True)
+            older = {
+                "updated_at": "2026-08-26T10:40:39+00:00",
+                "tickets": [{"number": 4, "status": "Ready"}],
+            }
+            newer = {
+                "updated_at": "2026-08-26T11:11:56+00:00",
+                "tickets": [{"number": 4, "status": "Backlog"}],
+            }
+            (runtime / "state.json").write_text(json.dumps(older))
+            reset = create_recovery_checkpoint(
+                repo,
+                reason="Before ticket execution reset",
+            )
+            (runtime / "state.json").write_text(json.dumps(newer))
+            undo = create_recovery_checkpoint(
+                repo,
+                reason=f"Before restoring checkpoint {reset['checkpoint_id']}",
+                kind="undo",
+            )
+            (runtime / "state.json").write_text(json.dumps(older))
+
+            selected = latest_recovery_checkpoint(repo)
+            result = recover_latest_state(
+                repo,
+                project_number=None,
+                assume_yes=True,
+            )
+
+            self.assertEqual(selected["checkpoint_id"], undo["checkpoint_id"])
+            self.assertEqual(result["checkpoint_id"], undo["checkpoint_id"])
+            self.assertEqual(
+                json.loads((runtime / "state.json").read_text()),
+                newer,
+            )
+
+    def test_recover_reconstructs_latest_live_plan_without_remote_writes(self):
+        with tempfile.TemporaryDirectory() as directory:
+            repo = Path(directory) / "repo"
+            source = Path(__file__).parents[2]
+            shutil.copytree(source / "factory", repo / "factory")
+            install_approved_charter(repo)
+            charter = FactoryCharter.load(repo, require_approved=True)
+            governance = charter.governance("standard")
+            governance_comment = governance_marker(governance)
+            summary = {
+                "schema_version": 1,
+                "run_id": "live-run-1",
+                "ticket": 11,
+                "status": "Backlog",
+                "plan_id": "live-plan-1",
+                "profile": "standard",
+                "governance": {
+                    "charter_sha256": governance["charter_sha256"],
+                    "merge_authority": "human",
+                },
+                "revisions": {},
+                "verdicts": {},
+                "human_decisions": {},
+                "metrics": {},
+            }
+            ticket = {
+                "number": 11,
+                "title": "Recovered vertical slice",
+                "body": (
+                    "## Spec\nRecover this behavior.\n\n"
+                    "## Acceptance criteria\n- [ ] State is visible.\n\n"
+                    "## Agent\nagent: codex\n\n"
+                    "<!-- factory-plan:live-plan-1:TICKET_ONE -->\n"
+                    f"{governance_comment}"
+                ),
+                "labels": ["agent-ready"],
+                "status": "Backlog",
+                "url": "https://github.test/issues/11",
+                "updatedAt": "2026-08-26T09:00:00Z",
+                "pr_url": "",
+                "pull_request": {},
+                "remote_run_summary": summary,
+                "remote_claim": {
+                    "ticket": 11,
+                    "run_id": "live-run-1",
+                    "owner_run_id": "live-run-1",
+                    "claimed_at": "2026-08-26T08:00:00Z",
+                },
+            }
+            backend = SimpleNamespace(
+                project_number=15,
+                owner="attendee",
+                name="workshop",
+                load_recovery_state=mock.Mock(return_value=[ticket]),
+            )
+
+            with mock.patch(
+                "orchestrator.GitHubBackend",
+                return_value=backend,
+            ):
+                result = recover_latest_state(
+                    repo,
+                    project_number=15,
+                    assume_yes=True,
+                )
+
+            state = json.loads((repo / ".factory/state.json").read_text())
+            planning = json.loads(
+                (repo / ".factory/planning-state.json").read_text()
+            )
+            self.assertEqual(result["source"], "github")
+            self.assertEqual(state["run_id"], "live-run-1")
+            self.assertEqual(state["tickets"][0]["number"], 11)
+            self.assertEqual(state["recovery"]["plan_id"], "live-plan-1")
+            self.assertFalse(state["recovery"]["receipts_restored"])
+            self.assertEqual(planning["status"], "published")
+            self.assertEqual(
+                planning["publication"]["issues"],
+                {"TICKET_ONE": 11},
+            )
+            self.assertTrue(
+                all(
+                    stage["status"] in {"unavailable", "skipped"}
+                    for stage in planning["stages"]
+                )
+            )
+            backend.load_recovery_state.assert_called_once_with()
+
     def test_factory_run_is_complete_only_when_every_ticket_is_done(self):
         factory = Factory.__new__(Factory)
         factory.tickets = {
@@ -107,6 +391,7 @@ class RuntimeTests(unittest.TestCase):
             repo = Path(directory) / "repo"
             state = repo / ".factory/state.json"
             state.parent.mkdir(parents=True)
+            install_approved_charter(repo)
             worktree = worktree_path(repo, 1)
             qa_test = worktree / "tests/test_ticket_1_contract.py"
             qa_test.parent.mkdir(parents=True)
@@ -140,6 +425,708 @@ class RuntimeTests(unittest.TestCase):
             self.assertEqual(ticket["base_sha"], "base-sha")
             self.assertIn("legacy test", ticket["retry_context"])
             self.assertIn("existing candidate", ticket["history"][-1]["note"])
+
+    def test_diff_budget_excludes_protected_qa_and_retry_records_bounded_exception(self):
+        with tempfile.TemporaryDirectory() as directory:
+            repo = Path(directory) / "repo"
+            repo.mkdir()
+            git(repo, "init", "-q", "-b", "main")
+            git(repo, "config", "user.name", "Factory Test")
+            git(repo, "config", "user.email", "factory@example.test")
+            project = ProjectContract.detect(repo)
+            project.write()
+            charter_path = FactoryCharter.draft(repo, project).write()
+            charter_path.write_text(
+                charter_path.read_text().replace(
+                    "max_diff_lines = 1200", "max_diff_lines = 3",
+                )
+            )
+            FactoryCharter.load(repo).approve()
+            (repo / "README.md").write_text("# Test\n")
+            git(repo, "add", "-A")
+            git(repo, "commit", "-qm", "base")
+            base = git(repo, "rev-parse", "HEAD")
+
+            worktree = worktree_path(repo, 4)
+            git(repo, "worktree", "add", "-qb", "factory/4-test", str(worktree))
+            qa_path = worktree / "tests/ticket-4.test.js"
+            qa_path.parent.mkdir(parents=True)
+            qa_path.write_text("one\ntwo\nthree\nfour\n")
+            git(worktree, "add", "-A")
+            git(worktree, "commit", "-qm", "qa")
+            qa_commit = git(worktree, "rev-parse", "HEAD")
+            app_path = worktree / "public/app.js"
+            app_path.parent.mkdir()
+            app_path.write_text("1\n2\n3\n4\n5\n6\n")
+            git(worktree, "add", "-A")
+            git(worktree, "commit", "-qm", "implementation")
+
+            ticket = {
+                "number": 4,
+                "status": "Blocked",
+                "phase": "code-review",
+                "failure": "candidate is too large",
+                "attempt": 3,
+                "branch": "factory/4-test",
+                "base_sha": base,
+                "qa_attempt": 1,
+                "qa_commit": qa_commit,
+                "qa_tests": {"tests/ticket-4.test.js": "test-blob"},
+                "qa_approved": False,
+                "history": [],
+            }
+            state = repo / ".factory/state.json"
+            state.parent.mkdir(exist_ok=True)
+            state.write_text(json.dumps({"tickets": [ticket]}))
+
+            budget = ticket_diff_budget(
+                repo, ticket, FactoryCharter.load(repo, require_approved=True),
+            )
+            self.assertEqual(budget["total_lines"], 10)
+            self.assertEqual(budget["protected_qa_lines"], 4)
+            self.assertEqual(budget["implementation_lines"], 6)
+            self.assertEqual(budget["status"], "exceeded")
+
+            with self.assertRaisesRegex(SystemExit, "cannot be retried"):
+                retry_ticket(repo, 4, mock=True)
+
+            retry_ticket(
+                repo, 4, mock=True, budget_lines=10,
+                reason="Greenfield browser workflow remains one approved outcome",
+                assume_yes=True,
+            )
+
+            saved = json.loads(state.read_text())["tickets"][0]
+            self.assertEqual(saved["status"], "Ready")
+            self.assertEqual(saved["budget_override"]["lines"], 10)
+            self.assertEqual(saved["budget_override"]["charter_limit"], 3)
+            self.assertTrue(saved["qa_approved"])
+            event = json.loads((repo / ".factory/retry-events/4.json").read_text())
+            self.assertEqual(event["budget_override"]["reason"], saved["budget_override"]["reason"])
+
+    def test_running_factory_consumes_retry_event(self):
+        with tempfile.TemporaryDirectory() as directory:
+            repo = Path(directory)
+            event_dir = repo / ".factory/retry-events"
+            event_dir.mkdir(parents=True)
+            event = {
+                "schema_version": 1,
+                "event_id": "retry-event-7",
+                "ticket": 7,
+                "created_at": "2026-08-25T12:00:00+00:00",
+                "failure": "required gate failed",
+                "budget_override": None,
+            }
+            marker = event_dir / "7.json"
+            marker.write_text(json.dumps(event))
+            ticket = {
+                "number": 7,
+                "status": "Blocked",
+                "phase": "build",
+                "failure": "required gate failed",
+                "attempt": 3,
+                "history": [],
+            }
+            factory = Factory.__new__(Factory)
+            factory.repo = repo
+            factory.tickets = {7: ticket}
+            factory.backend = None
+            factory._sync_store = mock.Mock()
+
+            factory.apply_retry_events()
+
+            self.assertEqual(ticket["status"], "Ready")
+            self.assertEqual(ticket["last_retry_event"], "retry-event-7")
+            self.assertFalse(marker.exists())
+            factory._sync_store.assert_called_once_with()
+
+    def test_live_retry_refreshes_an_edited_github_ticket_and_clears_stale_evidence(self):
+        with tempfile.TemporaryDirectory() as directory:
+            repo = Path(directory) / "repo"
+            repo.mkdir()
+            install_approved_charter(repo)
+            original = {
+                "number": 7,
+                "title": "Incomplete slice",
+                "body": "Add the workflow.",
+                "labels": ["agent-ready", "state:blocked"],
+                "dependencies": [],
+                "agent": "codex",
+                "default_agent": "codex",
+                "status": "Blocked",
+                "phase": "triage",
+                "failure": "Add a Spec and at least one observable Acceptance criterion.",
+                "triage": {"result": "NEEDS_INFORMATION"},
+                "attempt": 2,
+                "branch": "factory/7-incomplete-slice",
+                "base_sha": "a" * 40,
+                "qa_commit": "b" * 40,
+                "qa_tests": {"tests/test_ticket_7.py": "blob"},
+                "qa_evidence": {"red": {"result": "RED PROVED"}},
+                "gate_results": [{"name": "tests", "classification": "FAIL"}],
+                "changed_files": ["src/old.py"],
+                "current_prompt": ".factory/prompts/7-attempt2.md",
+                "current_log": ".factory/logs/7-attempt2.log",
+                "code_review": {"result": {"decision": "REQUEST_CHANGES"}},
+                "approved_head": "c" * 40,
+                "pr_url": "https://github.test/pull/7",
+                "receipts": [".factory/receipts/old-spec.json"],
+                "budget_override": {
+                    "lines": 1400,
+                    "charter_limit": 1200,
+                    "reason": "The original ticket required one larger workflow",
+                },
+                "history": [],
+            }
+            original["spec_sha256"] = ticket_spec_fingerprint(original)
+            state = repo / ".factory/state.json"
+            state.parent.mkdir()
+            state.write_text(json.dumps({"tickets": [original]}))
+            corrected_body = (
+                "## Spec\nAdd the workflow.\n\n"
+                "## Acceptance criteria\n- The saved workflow is visible.\n"
+            )
+            backend = mock.Mock()
+            backend.load.return_value = [{
+                "number": 7,
+                "title": "Complete slice",
+                "body": corrected_body,
+                "labels": ["agent-ready", "state:blocked"],
+                "url": "https://github.test/issues/7",
+            }]
+
+            with mock.patch("orchestrator.GitHubBackend", return_value=backend):
+                retry_ticket(repo, 7, mock=False, project_number=3)
+
+            saved = json.loads(state.read_text())["tickets"][0]
+            self.assertEqual(saved["status"], "Ready")
+            self.assertEqual(saved["title"], "Complete slice")
+            self.assertEqual(saved["body"], corrected_body)
+            self.assertEqual(saved["attempt"], 0)
+            self.assertEqual(saved["qa_tests"], {})
+            self.assertEqual(saved["qa_evidence"], {})
+            self.assertEqual(saved["base_sha"], "")
+            self.assertEqual(saved["branch"], "")
+            self.assertEqual(saved["gate_results"], [])
+            self.assertEqual(saved["changed_files"], [])
+            self.assertEqual(saved["current_prompt"], "")
+            self.assertEqual(saved["current_log"], "")
+            self.assertIsNone(saved["code_review"])
+            self.assertEqual(saved["approved_head"], "")
+            self.assertEqual(saved["pr_url"], "")
+            self.assertEqual(saved["receipts"], [])
+            self.assertIsNone(saved["budget_override"])
+            event = json.loads((repo / ".factory/retry-events/7.json").read_text())
+            self.assertTrue(event["spec_changed"])
+            self.assertEqual(event["ticket_refresh"]["body"], corrected_body)
+            backend.set_status.assert_called_once()
+
+    def test_restart_detects_an_edited_live_ticket_and_discards_old_spec_evidence(self):
+        with tempfile.TemporaryDirectory() as directory:
+            repo = Path(directory) / "repo"
+            source = Path(__file__).parents[2]
+            shutil.copytree(source / "factory", repo / "factory")
+            install_approved_charter(repo)
+            args = self.factory_args(repo)
+            args.mock = False
+            args.no_qa = False
+            args.profile = "standard"
+            args.agent = args.qa_agent = "claude"
+            bootstrap = Factory(args)
+            plan_id = "live-plan"
+            marker = (
+                f"<!-- factory-plan:{plan_id}:T7 -->\n"
+                f"{governance_marker(bootstrap.governance)}"
+            )
+            old_body = (
+                "## Spec\nCreate the first workflow.\n\n"
+                "## Acceptance criteria\n- The first workflow is visible.\n\n"
+                "agent: claude\n\n"
+                f"{marker}"
+            )
+            old = {
+                "number": 7,
+                "title": "First workflow",
+                "body": old_body,
+                "labels": ["agent-ready"],
+                "dependencies": [],
+                "agent": "claude",
+                "default_agent": "claude",
+                "status": "Blocked",
+                "phase": "code-review",
+                "plan_id": plan_id,
+                "planned": True,
+                "governance": bootstrap.governance,
+                "failure": "Code Review requested changes",
+                "attempt": 3,
+                "branch": "factory/7-first-workflow",
+                "base_sha": "a" * 40,
+                "qa_attempt": 1,
+                "qa_commit": "b" * 40,
+                "qa_tests": {"tests/test_ticket_7.py": "blob"},
+                "qa_evidence": {
+                    "focused_test_command": "python -m pytest -q tests/test_ticket_7.py",
+                    "red": {"result": "RED PROVED"},
+                },
+                "existing_tests": {"tests/test_existing.py": "blob"},
+                "existing_test_changes": ["tests/test_existing.py"],
+                "gate_results": [{"name": "tests", "classification": "PASS"}],
+                "changed_files": ["src/old.py"],
+                "current_prompt": ".factory/prompts/7-attempt3.md",
+                "current_log": ".factory/logs/7-attempt3.log",
+                "code_review": {"result": {"decision": "REQUEST_CHANGES"}},
+                "approved_head": "c" * 40,
+                "pr_url": "https://github.test/pull/7",
+                "receipts": [".factory/receipts/old-spec.json"],
+                "budget_override": {
+                    "lines": 1400,
+                    "charter_limit": 1200,
+                    "reason": "The original ticket required one larger workflow",
+                },
+                "history": [],
+            }
+            old["spec_sha256"] = ticket_spec_fingerprint(old)
+            state = repo / ".factory/state.json"
+            state.parent.mkdir(parents=True, exist_ok=True)
+            state.write_text(json.dumps({
+                "schema_version": 2,
+                "mode": "github",
+                "run_id": "live-restart",
+                "profile": "standard",
+                "governance": bootstrap.governance,
+                "tickets": [old],
+            }))
+            corrected_body = (
+                "## Spec\nCreate the corrected workflow.\n\n"
+                "## Acceptance criteria\n- The corrected workflow is saved and visible.\n\n"
+                "agent: claude\n\n"
+                f"{marker}"
+            )
+            backend = SimpleNamespace(
+                project_number=3,
+                load=mock.Mock(return_value=[{
+                    "number": 7,
+                    "title": "Corrected workflow",
+                    "body": corrected_body,
+                    "labels": ["agent-ready", "state:blocked"],
+                    "status": "Blocked",
+                    "url": "https://github.test/issues/7",
+                    "pr_url": "https://github.test/pull/7",
+                }]),
+                read_claim=mock.Mock(return_value=None),
+                set_status=mock.Mock(),
+            )
+            restarted = Factory(args)
+            restarted.backend = backend
+
+            restarted.load_tickets()
+
+            ticket = restarted.tickets[7]
+            self.assertEqual(ticket["status"], "Backlog")
+            self.assertEqual(ticket["title"], "Corrected workflow")
+            self.assertEqual(ticket["body"], corrected_body)
+            self.assertEqual(ticket["branch_generation"], 1)
+            for key in (
+                "branch", "base_sha", "qa_commit", "approved_head", "pr_url",
+                "current_prompt", "current_log",
+            ):
+                self.assertEqual(ticket[key], "")
+            for key in (
+                "qa_tests", "qa_evidence", "existing_tests", "gate_results",
+                "changed_files", "receipts",
+            ):
+                self.assertEqual(ticket[key], {} if key in {
+                    "qa_tests", "qa_evidence", "existing_tests",
+                } else [])
+            self.assertIsNone(ticket["code_review"])
+            self.assertIsNone(ticket["budget_override"])
+            self.assertIn("specification changed", ticket["history"][-1]["note"])
+            saved = json.loads(state.read_text())["tickets"][0]
+            self.assertEqual(saved["status"], "Backlog")
+            self.assertEqual(saved["spec_sha256"], ticket_spec_fingerprint(ticket))
+            backend.set_status.assert_called_once()
+
+    def test_configuration_blocker_requires_a_real_contract_change_then_reloads_it(self):
+        with tempfile.TemporaryDirectory() as directory:
+            repo = Path(directory) / "repo"
+            repo.mkdir()
+            ProjectContract.detect(repo).write()
+            install_approved_charter(repo)
+            contract = repo / "factory.project.toml"
+            blocked_sha = hashlib.sha256(contract.read_bytes()).hexdigest()
+            ticket = {
+                "number": 5,
+                "title": "Nested acceptance test",
+                "body": "## Spec\nTest it.\n\n## Acceptance criteria\n- It passes.\n",
+                "labels": ["agent-ready"],
+                "dependencies": [],
+                "agent": "mock",
+                "default_agent": "mock",
+                "status": "Blocked",
+                "phase": "qa",
+                "failure": (
+                    "QA changed demo-app/tests/test_ticket_5_acceptance.py, "
+                    "which is outside the configured test roots"
+                ),
+                "blocked_project_contract_sha256": blocked_sha,
+                "history": [],
+            }
+            ticket["spec_sha256"] = ticket_spec_fingerprint(ticket)
+            running_ticket = json.loads(json.dumps(ticket))
+            state = repo / ".factory/state.json"
+            state.parent.mkdir()
+            state.write_text(json.dumps({"tickets": [ticket]}))
+
+            with self.assertRaisesRegex(SystemExit, "cannot be retried unchanged"):
+                retry_ticket(repo, 5, mock=True)
+
+            contract.write_text(contract.read_text().replace(
+                'test_roots = ["tests"]',
+                'test_roots = ["tests", "demo-app/tests"]',
+            ))
+            retry_ticket(repo, 5, mock=True)
+
+            event = json.loads((repo / ".factory/retry-events/5.json").read_text())
+            self.assertTrue(event["reload_project_configuration"])
+            running = Factory.__new__(Factory)
+            running.repo = repo
+            running.tickets = {5: running_ticket}
+            running._sync_store = mock.Mock()
+            running.apply_retry_events()
+            self.assertIn("demo-app/tests", running.cfg["qa"]["test_roots"])
+            self.assertFalse((repo / ".factory/retry-events/5.json").exists())
+
+    def test_recovery_classifier_never_offers_retry_for_claim_or_dependency_blockers(self):
+        claim = ticket_recovery({
+            "failure": "Remote Ticket claim belongs to another run",
+            "remote_claim": {"owner_run_id": "run-123"},
+        })
+        dependency = ticket_recovery({
+            "failure": "Dependency cycle: #1 -> #2 -> #1",
+        })
+        closed_pr = ticket_recovery({
+            "failure": "The remote pull request was closed without merging",
+            "next_human_action": "inspect_closed_pull_request",
+        })
+        stale_merge = ticket_recovery({
+            "failure": "Merged pull request head does not match approved revision",
+            "next_human_action": "inspect_stale_merge",
+        })
+
+        self.assertEqual(claim["action"], "release_or_resume_claim")
+        self.assertFalse(claim["retry_allowed"])
+        self.assertEqual(dependency["action"], "replan_dependencies")
+        self.assertFalse(dependency["retry_allowed"])
+        self.assertEqual(closed_pr["kind"], "revision_rebuild")
+        self.assertTrue(closed_pr["retry_allowed"])
+        self.assertEqual(stale_merge["action"], "create_replacement_ticket")
+        self.assertFalse(stale_merge["retry_allowed"])
+
+    def test_scope_conflict_log_requires_ticket_edit_instead_of_blind_retry(self):
+        with tempfile.TemporaryDirectory() as directory:
+            repo = Path(directory)
+            log = repo / ".factory/logs/5-attempt1.log"
+            log.parent.mkdir(parents=True)
+            log.write_text(
+                "**Handoff Receipt**\n\n"
+                "Blocked by scope inconsistency. public/styles.css does not exist and "
+                "nothing loads it.\n"
+                "Changed paths/commit: none.\n"
+                "Resolution requires permission to update public/index.html.\n"
+            )
+            ticket = {
+                "number": 5,
+                "failure": "Agent produced no changes or commits.",
+                "current_log": ".factory/logs/5-attempt1.log",
+                "triage": {"declared_paths": ["public/styles.css"]},
+            }
+
+            recovery = ticket_recovery(ticket, repo)
+
+            self.assertEqual(recovery["kind"], "ticket_specification")
+            self.assertEqual(recovery["action"], "edit_ticket_and_retry")
+            self.assertEqual(recovery["title"], "Expand the Ticket file ownership")
+            self.assertTrue(recovery["scope_conflict"])
+            self.assertEqual(recovery["required_paths"], ["public/index.html"])
+            self.assertIn("Add public/index.html", recovery["summary"])
+
+            ticket.update(
+                failure=(
+                    "Supervisor blocked dispatch: Three implementation attempts "
+                    "produced no acceptable committed output, exceeding the retry limit."
+                ),
+                current_log="",
+            )
+            supervisor_recovery = ticket_recovery(ticket, repo)
+            self.assertEqual(
+                supervisor_recovery["title"],
+                "Expand the Ticket file ownership",
+            )
+
+    def test_scope_conflict_stops_without_consuming_identical_retries(self):
+        factory = Factory.__new__(Factory)
+        factory.cfg = {"factory": {"max_retries": 2}}
+        factory.transition = mock.Mock()
+        ticket = {"attempt": 1, "metrics": {}}
+
+        retried = factory.block_or_retry(
+            ticket,
+            "TICKET_SCOPE_CONFLICT: public/index.html must be added to File ownership.",
+        )
+
+        self.assertFalse(retried)
+        factory.transition.assert_called_once_with(
+            ticket,
+            "Blocked",
+            "Ticket scope cannot produce a functional change; edit its file ownership",
+        )
+        self.assertNotIn("retry_count", ticket["metrics"])
+
+    def test_qa_harness_defect_is_recovered_from_the_latest_implementation_log(self):
+        with tempfile.TemporaryDirectory() as directory:
+            repo = Path(directory)
+            log = repo / ".factory/logs/6-attempt3.log"
+            log.parent.mkdir(parents=True)
+            handoff = (
+                "**Handoff Receipt**\n\n"
+                "Blocked by immutable QA harness defects in the protected test.\n"
+                "The verification regex always captures an empty string and nested "
+                "node --test is suppressed. The QA harness must be corrected.\n"
+                "No new commit was made because implementation cannot make the "
+                "protected acceptance test pass.\n"
+            )
+            log.write_text(handoff)
+            ticket = {
+                "number": 6,
+                "phase": "verifying",
+                "failure": (
+                    "Supervisor blocked dispatch: Verification failed twice for "
+                    "implementation commit abc123."
+                ),
+                "current_log": "",
+            }
+
+            classified = implementation_no_change_failure(handoff)
+            recovery = ticket_recovery(ticket, repo)
+
+            self.assertTrue(classified.startswith("QA_EVIDENCE_DEFECT:"))
+            self.assertEqual(recovery["kind"], "qa_evidence")
+            self.assertEqual(recovery["action"], "regenerate_qa_tests")
+            self.assertFalse(recovery["retry_allowed"])
+            self.assertTrue(recovery["qa_reset_allowed"])
+
+    def test_unchanged_successful_attempt_surfaces_the_qa_harness_defect(self):
+        handoff = (
+            "**Handoff Receipt**\n"
+            "Blocked by immutable QA harness defects in the protected test. "
+            "The QA harness must be corrected. No new commit was made because "
+            "implementation cannot make the protected test pass."
+        )
+
+        failure = implementation_attempt_failure(
+            handoff,
+            code=0,
+            commits=1,
+            attempt_start_head="a" * 40,
+            candidate_head="a" * 40,
+        )
+
+        self.assertTrue(failure.startswith("QA_EVIDENCE_DEFECT:"))
+
+    def test_qa_harness_defect_stops_without_consuming_identical_retries(self):
+        factory = Factory.__new__(Factory)
+        factory.cfg = {"factory": {"max_retries": 2}}
+        factory.transition = mock.Mock()
+        ticket = {"attempt": 2, "metrics": {}}
+
+        retried = factory.block_or_retry(
+            ticket,
+            "QA_EVIDENCE_DEFECT: protected test harness must be corrected.",
+        )
+
+        self.assertFalse(retried)
+        factory.transition.assert_called_once_with(
+            ticket,
+            "Blocked",
+            "Protected QA is defective; regenerate its tests before retrying",
+        )
+        self.assertNotIn("retry_count", ticket["metrics"])
+
+    def test_reset_qa_retry_discards_defective_evidence_and_preserves_qa_context(self):
+        with tempfile.TemporaryDirectory() as directory:
+            repo = Path(directory) / "repo"
+            state = repo / ".factory/state.json"
+            state.parent.mkdir(parents=True)
+            install_approved_charter(repo)
+            log = repo / ".factory/logs/6-attempt3.log"
+            log.parent.mkdir(parents=True)
+            log.write_text(
+                "**Handoff Receipt**\n\n"
+                "Blocked by immutable QA harness defects in the protected test. "
+                "The QA harness must be corrected. No new commit was made because "
+                "implementation cannot make the protected acceptance test pass.\n"
+            )
+            state.write_text(json.dumps({"tickets": [{
+                "number": 6,
+                "status": "Blocked",
+                "phase": "verifying",
+                "failure": (
+                    "Supervisor blocked dispatch: Verification failed twice for "
+                    "implementation commit abc123."
+                ),
+                "attempt": 3,
+                "branch": "factory/6-document-verification",
+                "branch_generation": 0,
+                "base_sha": "a" * 40,
+                "qa_attempt": 1,
+                "qa_commit": "b" * 40,
+                "qa_tests": {"tests/ticket-6.test.js": "blob"},
+                "qa_evidence": {"red": {"result": "RED PROVED"}},
+                "qa_approved": True,
+                "gate_results": [{"name": "tests", "classification": "FAIL"}],
+                "changed_files": [{"status": "M", "path": "README.md"}],
+                "code_review": {"result": {"decision": "REQUEST_CHANGES"}},
+                "approved_head": "c" * 40,
+                "pr_url": "https://github.test/pull/6",
+                "receipts": [".factory/receipts/old-qa.json"],
+                "history": [],
+            }]}))
+
+            with self.assertRaisesRegex(
+                SystemExit, "cannot be retried unchanged",
+            ):
+                retry_ticket(repo, 6, mock=True)
+
+            retry_ticket(repo, 6, mock=True, reset_qa=True, assume_yes=True)
+
+            saved = json.loads(state.read_text())["tickets"][0]
+            self.assertEqual(saved["status"], "Ready")
+            self.assertEqual(saved["branch"], "")
+            self.assertEqual(saved["qa_commit"], "")
+            self.assertEqual(saved["qa_tests"], {})
+            self.assertEqual(saved["qa_evidence"], {})
+            self.assertFalse(saved["qa_approved"])
+            self.assertEqual(saved["receipts"], [])
+            self.assertIn("QA_EVIDENCE_DEFECT:", saved["qa_retry_context"])
+            event = json.loads(
+                (repo / ".factory/retry-events/6.json").read_text()
+            )
+            self.assertTrue(event["reset_qa"])
+            self.assertTrue(event["force_repository_base"])
+            self.assertIn(
+                "protected QA tests", event["qa_retry_context"],
+            )
+
+            saved.update(
+                status="In Progress",
+                phase="qa",
+                branch="factory/6-document-verification-r1",
+                qa_retry_context="",
+            )
+            state.write_text(json.dumps({"tickets": [saved]}))
+            (repo / ".factory/retry-events/6.json").unlink()
+
+            retry_ticket(repo, 6, mock=True, reset_qa=True, assume_yes=True)
+
+            interrupted = json.loads(state.read_text())["tickets"][0]
+            self.assertEqual(interrupted["status"], "Ready")
+            self.assertIn("QA_EVIDENCE_DEFECT:", interrupted["qa_retry_context"])
+            self.assertIn(
+                "interrupted QA regeneration",
+                interrupted["history"][-2]["note"],
+            )
+
+    def test_ticket_reload_preserves_qa_recovery_context_after_interruption(self):
+        with tempfile.TemporaryDirectory() as directory:
+            repo = Path(directory) / "repo"
+            repo.mkdir()
+            install_approved_charter(repo)
+            args = self.factory_args(repo)
+            bootstrap = Factory(args)
+            state = repo / ".factory/state.json"
+            state.parent.mkdir(exist_ok=True)
+            state.write_text(json.dumps({
+                "mode": "mock",
+                "run_id": "qa-recovery-run",
+                "profile": "lean",
+                "governance": bootstrap.governance,
+                "tickets": [{
+                    "number": 6,
+                    "title": "Document verification",
+                    "body": (
+                        "## Spec\nDocument it.\n\n"
+                        "## Acceptance criteria\n- Verification is reproducible.\n"
+                    ),
+                    "labels": ["agent-ready"],
+                    "status": "In Progress",
+                    "phase": "qa",
+                    "agent": "mock",
+                    "default_agent": "mock",
+                    "dependencies": [],
+                    "branch": "factory/6-document-verification-r1",
+                    "branch_generation": 1,
+                    "qa_retry_context": (
+                        "QA_EVIDENCE_DEFECT: nested node --test is suppressed"
+                    ),
+                    "history": [],
+                }],
+            }))
+
+            restarted = Factory(args)
+            restarted.load_tickets(source=[{
+                "number": 6,
+                "title": "Document verification",
+                "body": (
+                    "## Spec\nDocument it.\n\n"
+                    "## Acceptance criteria\n- Verification is reproducible.\n"
+                ),
+                "labels": ["agent-ready"],
+                "status": "In Progress",
+            }])
+
+            ticket = restarted.tickets[6]
+            self.assertEqual(ticket["status"], "Backlog")
+            self.assertEqual(
+                ticket["qa_retry_context"],
+                "QA_EVIDENCE_DEFECT: nested node --test is suppressed",
+            )
+
+    def test_existing_run_cannot_switch_between_rehearsal_and_live(self):
+        with tempfile.TemporaryDirectory() as directory:
+            repo = Path(directory) / "repo"
+            source = Path(__file__).parents[2]
+            shutil.copytree(source / "factory", repo / "factory")
+            install_approved_charter(repo)
+            args = self.factory_args(repo)
+            factory = Factory(args)
+            factory.load_tickets()
+            args.mock = False
+
+            with self.assertRaisesRegex(ValueError, "Live and Rehearsal runs cannot share"):
+                Factory(args)
+
+    def test_live_human_merge_rejects_rehearsal_evidence_before_the_gate(self):
+        with tempfile.TemporaryDirectory() as directory:
+            repo = Path(directory)
+            state_path = repo / ".factory/state.json"
+            state_path.parent.mkdir(parents=True)
+            state_path.write_text(json.dumps({
+                "mode": "mock",
+                "tickets": [{
+                    "number": 5,
+                    "status": "In Review",
+                    "review_ref": "rehearsal://ticket/5/attempt/1",
+                    "pr_url": "",
+                }],
+            }))
+
+            with self.assertRaisesRegex(
+                ValueError,
+                "contains Rehearsal evidence and cannot be merged as Live",
+            ):
+                human_merge_ticket(
+                    repo, 5, mock=False, project_number=15, assume_yes=True,
+                )
 
     def test_live_evidence_export_republishes_actual_packet_record(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -464,8 +1451,25 @@ class RuntimeTests(unittest.TestCase):
             "revisions": {"base": "a" * 40, "qa": "b" * 40, "approved_head": approved},
             "verdicts": {"red": "RED PROVED", "green": "GREEN PROVED", "code_review": "APPROVE"},
             "gates": [{"name": "tests", "required": True, "classification": "PASS", "exit_code": 0}],
-            "metrics": {"attempts": 2, "qa_attempts": 1, "retry_count": 1},
-            "human_decisions": {"qa_approved": True, "merge_executed_by": ""},
+            "human_decisions": {
+                "qa_approved": True,
+                "merge_executed_by": "",
+                "diff_budget_override": {
+                    "lines": 1200,
+                    "charter_limit": 800,
+                    "reason": "The approved UI workflow remains one outcome",
+                    "approved_at": "2026-08-25T21:00:00+00:00",
+                    "approved_by": "human",
+                },
+            },
+            "metrics": {
+                "attempts": 2,
+                "qa_attempts": 1,
+                "retry_count": 1,
+                "implementation_lines": 990,
+                "protected_qa_lines": 799,
+                "effective_diff_limit": 1200,
+            },
         }
         raw = {
             "status": "In Review",
@@ -483,6 +1487,8 @@ class RuntimeTests(unittest.TestCase):
         self.assertEqual(recovered["branch"], "factory/7-slice")
         self.assertEqual(recovered["code_review"]["result"]["decision"], "APPROVE")
         self.assertTrue(recovered["qa_approved"])
+        self.assertEqual(recovered["budget_override"]["lines"], 1200)
+        self.assertEqual(recovered["diff_budget"]["implementation_lines"], 990)
         self.assertEqual(recovered["next_human_action"], "merge_exact_revision")
 
     def test_fresh_checkout_preserves_path_required_human_merge(self):
@@ -924,7 +1930,7 @@ class RuntimeTests(unittest.TestCase):
             charter_path = repo / "factory.charter.toml"
             charter_path.write_text(
                 charter_path.read_text().replace(
-                    "max_diff_lines = 800", "max_diff_lines = 801",
+                    "max_diff_lines = 1200", "max_diff_lines = 1201",
                 )
             )
             FactoryCharter.load(repo).approve()
@@ -952,6 +1958,88 @@ class RuntimeTests(unittest.TestCase):
 
             with self.assertRaisesRegex(ValueError, "predates causal Acceptance Test evidence"):
                 Factory(args)
+
+    def test_recovered_exact_merged_completion_does_not_block_new_tickets(self):
+        with tempfile.TemporaryDirectory() as directory:
+            repo = Path(directory) / "repo"
+            source = Path(__file__).parents[2]
+            shutil.copytree(source / "factory", repo / "factory")
+            install_approved_charter(repo)
+            args = self.factory_args(repo)
+            args.profile = "standard"
+            args.no_qa = False
+            governance = Factory(args).governance
+            state_path = repo / ".factory/state.json"
+            state_path.parent.mkdir(parents=True)
+            state_path.write_text(json.dumps({
+                "profile": "standard",
+                "governance": governance,
+                "tickets": [{
+                    "number": 1,
+                    "status": "Done",
+                    "qa_commit": "qa123",
+                    "qa_evidence": {
+                        "red": {
+                            "result": "RED PROVED",
+                            "recovered": True,
+                        },
+                        "green": {
+                            "result": "GREEN PROVED",
+                            "recovered": True,
+                        },
+                    },
+                    "pr_url": "https://github.test/pull/1",
+                    "pr_state": "MERGED",
+                    "pr_merged_at": "2026-08-25T17:34:27Z",
+                    "pr_head": "candidate123",
+                    "approved_head": "candidate123",
+                    "remote_run_summary": {
+                        "recovered": True,
+                        "run_id": "recovered-run",
+                    },
+                }],
+            }))
+
+            restarted = Factory(args)
+
+            self.assertEqual(restarted.store.data["tickets"][0]["status"], "Done")
+
+    def test_current_failed_red_evidence_remains_a_recoverable_ticket_blocker(self):
+        with tempfile.TemporaryDirectory() as directory:
+            repo = Path(directory) / "repo"
+            source = Path(__file__).parents[2]
+            shutil.copytree(source / "factory", repo / "factory")
+            install_approved_charter(repo)
+            args = self.factory_args(repo)
+            args.profile = "standard"
+            args.no_qa = False
+            governance = Factory(args).governance
+            state_path = repo / ".factory/state.json"
+            state_path.parent.mkdir(parents=True)
+            state_path.write_text(json.dumps({
+                "mode": "mock",
+                "profile": "standard",
+                "governance": governance,
+                "tickets": [{
+                    "number": 12,
+                    "status": "Blocked",
+                    "qa_commit": "abc123",
+                    "qa_tests": {"tests/test_x.py": "blob"},
+                    "qa_evidence": {
+                        "focused_test_command": "python -m pytest -q tests/test_x.py",
+                        "red": {
+                            "result": "RED NOT PROVED",
+                            "classification": "unrelated_failure",
+                        },
+                    },
+                }],
+            }))
+
+            restarted = Factory(args)
+
+            self.assertEqual(
+                restarted.store.data["tickets"][0]["status"], "Blocked",
+            )
 
     def test_qa_approval_writes_resume_marker_after_hash_validation(self):
         with tempfile.TemporaryDirectory() as directory:

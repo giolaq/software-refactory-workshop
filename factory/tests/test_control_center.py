@@ -46,6 +46,97 @@ class ControlCenterTests(unittest.TestCase):
         self.assertEqual(args.port, 5050)
         self.assertTrue(args.no_open)
 
+    def test_parser_exposes_recover_command(self):
+        args = parser().parse_args([
+            "recover", "--repo", "/tmp/workshop",
+            "--project-number", "15", "--yes",
+        ])
+
+        self.assertEqual(args.command, "recover")
+        self.assertEqual(args.project_number, 15)
+        self.assertTrue(args.yes)
+
+    def test_parser_exposes_protected_qa_recovery(self):
+        args = parser().parse_args([
+            "retry", "6", "--repo", "/tmp/workshop", "--reset-qa", "--yes",
+        ])
+
+        self.assertEqual(args.command, "retry")
+        self.assertEqual(args.issue, 6)
+        self.assertTrue(args.reset_qa)
+        self.assertTrue(args.yes)
+
+    def test_completed_node_application_is_detected_and_can_be_started(self):
+        with tempfile.TemporaryDirectory() as directory:
+            center = ControlCenter(self.make_repo(directory))
+            ProjectContract.detect(center.repo).write()
+            (center.repo / "package.json").write_text(json.dumps({
+                "name": "attendee-app",
+                "scripts": {
+                    "start": "node src/server.mjs",
+                    "test": "node --test",
+                },
+            }))
+            (center.repo / "README.md").write_text(
+                "# Attendee app\n\n"
+                "Run `npm start`, then open http://127.0.0.1:3000.\n"
+            )
+
+            with patch.object(center, "_port_available", return_value=True):
+                application = center.application_instructions()
+                title, commands = center.build_commands("start-app", {})
+
+            self.assertTrue(application["available"])
+            self.assertEqual(application["kind"], "node")
+            self.assertIn("npm start", application["command"])
+            self.assertEqual(application["urls"], [{
+                "label": "Application",
+                "url": "http://127.0.0.1:3000",
+            }])
+            self.assertEqual(title, "Run the completed application")
+            self.assertEqual(commands, [["npm", "start"]])
+
+    def test_completed_application_uses_an_available_port_when_documented_port_is_busy(self):
+        with tempfile.TemporaryDirectory() as directory:
+            center = ControlCenter(self.make_repo(directory))
+            ProjectContract.detect(center.repo).write()
+            (center.repo / "package.json").write_text(json.dumps({
+                "scripts": {"start": "node src/server.mjs"},
+            }))
+            (center.repo / "README.md").write_text(
+                "Open http://127.0.0.1:3000 after `npm start`.\n"
+            )
+
+            with patch.object(
+                center, "_port_available",
+                side_effect=lambda port: port == 3001,
+            ):
+                application = center.application_instructions()
+                _, commands = center.build_commands("start-app", {})
+
+            self.assertEqual(application["preferred_port"], 3000)
+            self.assertEqual(application["port"], 3001)
+            self.assertIn("PORT=3001 npm start", application["command"])
+            self.assertEqual(
+                application["urls"][0]["url"],
+                "http://127.0.0.1:3001",
+            )
+            self.assertEqual(
+                commands,
+                [["env", "PORT=3001", "npm", "start"]],
+            )
+
+    def test_start_app_refuses_a_repository_without_a_supported_entrypoint(self):
+        with tempfile.TemporaryDirectory() as directory:
+            center = ControlCenter(self.make_repo(directory))
+            ProjectContract.detect(center.repo).write()
+
+            self.assertFalse(center.application_instructions()["available"])
+            with self.assertRaisesRegex(
+                InputError, "No supported application entry point",
+            ):
+                center.build_commands("start-app", {})
+
     def test_external_repository_uses_the_bundled_control_plane_and_can_be_initialized(self):
         with tempfile.TemporaryDirectory() as directory:
             repo = Path(directory)
@@ -280,6 +371,12 @@ class ControlCenterTests(unittest.TestCase):
             _, product = center.build_commands("approve-product", {"plan_id": plan})
             _, tests = center.build_commands("approve-tests", {"issue": 7})
             _, merge = center.build_commands("merge", {"issue": 7, "mode": "rehearsal"})
+            _, retry = center.build_commands("retry", {
+                "issue": 7,
+                "mode": "rehearsal",
+                "budget_lines": 1400,
+                "reason": "The approved browser workflow remains one outcome",
+            })
             _, publish = center.build_commands("publish-plan", {
                 "plan_id": plan, "mode": "rehearsal", "scenario": "recipe-rebrand",
             })
@@ -288,8 +385,130 @@ class ControlCenterTests(unittest.TestCase):
             self.assertIn("--yes", tests[0])
             self.assertIn("--yes", merge[0])
             self.assertIn("--mock", merge[0])
+            self.assertIn("--budget-lines", retry[0])
+            self.assertIn("--reason", retry[0])
+            self.assertIn("--yes", retry[0])
             self.assertIn("--yes", publish[0])
             self.assertIn("approve-rehearsal", publish[0])
+
+    def test_control_center_builds_only_the_dedicated_qa_recovery_command(self):
+        with tempfile.TemporaryDirectory() as directory:
+            center = ControlCenter(self.make_repo(directory))
+            state = center.repo / ".factory/state.json"
+            state.parent.mkdir(parents=True, exist_ok=True)
+            state.write_text(json.dumps({
+                "mode": "mock",
+                "tickets": [{
+                    "number": 6,
+                    "status": "Blocked",
+                    "failure": (
+                        "QA_EVIDENCE_DEFECT: the protected test harness is defective."
+                    ),
+                }],
+            }))
+
+            _, commands = center.build_commands("retry", {
+                "issue": 6,
+                "mode": "rehearsal",
+                "reset_qa": True,
+            })
+
+            self.assertIn("--reset-qa", commands[0])
+            self.assertIn("--yes", commands[0])
+
+            state.write_text(json.dumps({
+                "mode": "mock",
+                "tickets": [{
+                    "number": 7,
+                    "status": "Blocked",
+                    "failure": "A required gate failed.",
+                }],
+            }))
+            with self.assertRaisesRegex(
+                InputError, "available only.*QA evidence defect",
+            ):
+                center.build_commands("retry", {
+                    "issue": 7,
+                    "mode": "rehearsal",
+                    "reset_qa": True,
+                })
+
+    def test_live_merge_rejects_persisted_rehearsal_evidence(self):
+        with tempfile.TemporaryDirectory() as directory:
+            center = ControlCenter(self.make_repo(directory))
+            state_path = center.repo / ".factory/state.json"
+            state_path.parent.mkdir(parents=True, exist_ok=True)
+            state_path.write_text(json.dumps({
+                "mode": "mock",
+                "tickets": [{
+                    "number": 5,
+                    "status": "In Review",
+                    "review_ref": "rehearsal://ticket/5/attempt/1",
+                    "pr_url": "",
+                }],
+            }))
+
+            self.assertEqual(center.snapshot()["factory"]["execution_mode"], "rehearsal")
+            with self.assertRaisesRegex(
+                InputError,
+                "belongs to a Rehearsal run.*Control Center is set to Live",
+            ):
+                center.build_commands("merge", {"issue": 5, "mode": "live"})
+
+            _, rehearsal = center.build_commands(
+                "merge", {"issue": 5, "mode": "rehearsal"},
+            )
+            self.assertIn("--mock", rehearsal[0])
+
+    def test_blocked_ticket_ui_never_offers_an_impossible_blind_retry(self):
+        javascript = (Path(__file__).parents[1] / "control_center/app.js").read_text()
+        styles = (Path(__file__).parents[1] / "control_center/styles.css").read_text()
+
+        self.assertIn('budget.status === "exceeded"', javascript)
+        self.assertIn("Approve exception and retry", javascript)
+        self.assertIn("Protected QA", javascript)
+        self.assertIn("retry-with-budget", javascript)
+        self.assertIn("Regenerate QA tests and retry", javascript)
+        self.assertIn("retry-reset-qa", javascript)
+        self.assertIn("Reload issue and retry", javascript)
+        self.assertIn("Reload contract and retry", javascript)
+        self.assertIn("Release abandoned claim", javascript)
+        self.assertIn('recoveryInfo.kind === "dependency"', javascript)
+        self.assertIn('recoveryInfo.kind === "revision_rebuild"', javascript)
+        self.assertIn("Rebuild and retry", javascript)
+        self.assertIn("Create a replacement Ticket", javascript)
+        self.assertIn(".recovery-panel", styles)
+
+    def test_completed_application_ui_has_start_stop_and_copy_controls(self):
+        html = (Path(__file__).parents[1] / "control_center/index.html").read_text()
+        javascript = (Path(__file__).parents[1] / "control_center/app.js").read_text()
+        styles = (Path(__file__).parents[1] / "control_center/styles.css").read_text()
+
+        self.assertIn('id="start-app"', html)
+        self.assertIn('id="stop-app"', html)
+        self.assertIn('id="copy-run-command"', html)
+        self.assertIn('action("start-app")', javascript)
+        self.assertIn('operation.action === "start-app"', javascript)
+        self.assertIn("The application is running. Open it", javascript)
+        self.assertIn(".run-app-grid > .surface { min-width: 0;", styles)
+        self.assertIn(
+            ".run-app-grid { grid-template-columns: minmax(0,1fr); }",
+            styles,
+        )
+
+    def test_periodic_snapshot_refresh_preserves_open_ticket_reader_position(self):
+        javascript = (Path(__file__).parents[1] / "control_center/app.js").read_text()
+        styles = (Path(__file__).parents[1] / "control_center/styles.css").read_text()
+
+        self.assertIn("renderDrawer({ preservePosition: true })", javascript)
+        self.assertIn("function captureDrawerPosition()", javascript)
+        self.assertIn("function restoreDrawerPosition(position)", javascript)
+        self.assertIn("drawerNearBottom", javascript)
+        self.assertIn('$$("pre", content)', javascript)
+        self.assertIn('$$("input, textarea, select", content)', javascript)
+        self.assertIn("if (!preservePosition)", javascript)
+        self.assertIn(".drawer > header { position: static;", styles)
+        self.assertIn(".drawer-tabs { top: 0;", styles)
 
     def test_charter_selected_expert_gate_has_a_validated_control_center_action(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -465,6 +684,74 @@ class ControlCenterTests(unittest.TestCase):
             })
             self.assertIn("--start-over", live_local_start_over[0])
 
+            title, recover = center.build_commands("recover-latest", {})
+            self.assertEqual(title, "Recover latest Factory state")
+            self.assertIn("recover", recover[0])
+            self.assertIn("--yes", recover[0])
+
+    def test_snapshot_exposes_latest_recovery_checkpoint(self):
+        with tempfile.TemporaryDirectory() as directory:
+            center = ControlCenter(self.make_repo(directory))
+            checkpoint = (
+                center.repo
+                / ".factory/recovery/checkpoints/20260826T100000Z-a1b2c3"
+            )
+            checkpoint.mkdir(parents=True)
+            (checkpoint / "manifest.json").write_text(json.dumps({
+                "schema_version": 1,
+                "checkpoint_id": checkpoint.name,
+                "kind": "reset",
+                "created_at": "2026-08-26T10:00:00+00:00",
+                "entries": ["state.json"],
+                "mode": "live",
+                "run_id": "run-1",
+                "ticket_count": 6,
+                "plan_id": "plan-1",
+            }))
+
+            recovery = center.snapshot()["recovery"]
+
+            self.assertTrue(recovery["available"])
+            self.assertEqual(recovery["source"], "checkpoint")
+            self.assertEqual(recovery["checkpoint_id"], checkpoint.name)
+            self.assertEqual(recovery["ticket_count"], 6)
+
+    def test_snapshot_does_not_offer_an_older_checkpoint_over_current_state(self):
+        with tempfile.TemporaryDirectory() as directory:
+            center = ControlCenter(self.make_repo(directory))
+            runtime = center.repo / ".factory"
+            runtime.mkdir(parents=True, exist_ok=True)
+            (runtime / "state.json").write_text(json.dumps({
+                "updated_at": "2026-08-26T11:00:00+00:00",
+                "tickets": [{"number": 4, "status": "Backlog"}],
+            }))
+            checkpoint = (
+                runtime
+                / "recovery/checkpoints/20260826T100000Z-a1b2c3"
+            )
+            payload = checkpoint / "runtime"
+            payload.mkdir(parents=True)
+            (payload / "state.json").write_text(json.dumps({
+                "updated_at": "2026-08-26T10:00:00+00:00",
+                "tickets": [{"number": 4, "status": "Ready"}],
+            }))
+            (checkpoint / "manifest.json").write_text(json.dumps({
+                "schema_version": 1,
+                "checkpoint_id": checkpoint.name,
+                "kind": "reset",
+                "created_at": "2026-08-26T10:05:00+00:00",
+                "entries": ["state.json"],
+                "mode": "live",
+                "run_id": "run-1",
+                "ticket_count": 1,
+                "plan_id": "plan-1",
+            }))
+
+            recovery = center.snapshot()["recovery"]
+
+            self.assertFalse(recovery["available"])
+            self.assertEqual(recovery["source"], "current")
+
     def test_live_publication_reuses_the_saved_github_project(self):
         with tempfile.TemporaryDirectory() as directory:
             center = ControlCenter(self.make_repo(directory))
@@ -534,6 +821,10 @@ class ControlCenterTests(unittest.TestCase):
                 "  printf 'approved ticket %s\\n' \"$2\"\n"
                 "  exit 0\n"
                 "fi\n"
+                "if [ \"$1\" = retry ]; then\n"
+                "  printf 'retry queued for ticket %s\\n' \"$2\"\n"
+                "  exit 0\n"
+                "fi\n"
                 "if [ \"$1\" = merge ]; then\n"
                 "  mkdir -p .factory/merged\n"
                 "  : > .factory/merged/\"$2\"\n"
@@ -555,6 +846,9 @@ class ControlCenterTests(unittest.TestCase):
 
             self.assertEqual(approval["companion"]["action"], "approve-tests")
             self.assertEqual(approval["companion"]["status"], "succeeded")
+            retry = center.start("retry", {"issue": 4, "mode": "rehearsal"})
+            self.assertEqual(retry["companion"]["action"], "retry")
+            self.assertEqual(retry["companion"]["status"], "succeeded")
             merge = center.start("merge", {"issue": 1, "mode": "rehearsal"})
 
             self.assertEqual(merge["companion"]["action"], "merge")
@@ -650,6 +944,68 @@ class ControlCenterTests(unittest.TestCase):
             self.assertIn("operation", snapshot)
             self.assertEqual(snapshot["supervisor"]["latest"]["id"], "supervisor-1")
             self.assertEqual(snapshot["journey"]["phase_label"], "Plan")
+
+    def test_snapshot_classifies_each_blocked_ticket_for_the_recovery_ui(self):
+        with tempfile.TemporaryDirectory() as directory:
+            center = ControlCenter(self.make_repo(directory))
+            project = ProjectContract.detect(center.repo)
+            project.write()
+            charter = FactoryCharter.draft(center.repo, project)
+            charter.write()
+            charter.approve()
+            (center.repo / ".factory/planning-state.json").write_text(json.dumps({
+                "plan_id": "abc12345",
+                "status": "published",
+                "mode": "live",
+            }))
+            state = center.repo / ".factory/state.json"
+            state.write_text(json.dumps({"tickets": [
+                {
+                    "number": 5,
+                    "title": "Complete the workflow",
+                    "status": "Blocked",
+                    "phase": "triage",
+                    "failure": "Add a Spec and an observable Acceptance criterion.",
+                    "history": [],
+                },
+                {
+                    "number": 6,
+                    "title": "Bound the implementation",
+                    "status": "Blocked",
+                    "phase": "verifying",
+                    "failure": "DIFF_BUDGET_EXCEEDED: implementation is too large.",
+                    "history": [],
+                },
+            ]}))
+
+            snapshot = center.snapshot()
+
+            tickets = {
+                ticket["number"]: ticket
+                for ticket in snapshot["factory"]["tickets"]
+            }
+            self.assertEqual(
+                tickets[5]["recovery"]["action"], "edit_ticket_and_retry",
+            )
+            self.assertEqual(
+                tickets[5]["next_human_action"], "edit_ticket_and_retry",
+            )
+            self.assertEqual(
+                tickets[6]["recovery"]["action"], "approve_budget_or_split",
+            )
+            self.assertFalse(tickets[6]["recovery"]["retry_allowed"])
+            decision = next(
+                item for item in snapshot["decisions"]
+                if item.get("ticket", {}).get("number") == 5
+            )
+            self.assertEqual(
+                decision["ticket"]["recovery"]["kind"],
+                "ticket_specification",
+            )
+            self.assertEqual(
+                snapshot["journey"]["next"]["detail"],
+                tickets[5]["recovery"]["summary"],
+            )
 
     def test_snapshot_uses_the_plan_manifest_as_the_authoritative_mode(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -1310,6 +1666,13 @@ class ControlCenterTests(unittest.TestCase):
         self.assertIn("NEEDS YOU · Dispatch paused", backend)
         self.assertIn("Release abandoned claim", javascript)
         self.assertIn("Merge exact revision", javascript)
+        self.assertIn("mergeState.allowed", javascript)
+        self.assertIn("Live pull request is missing", javascript)
+        self.assertIn("data-open-ticket-reset", javascript)
+        self.assertIn('id="recover-latest"', source)
+        self.assertIn('action("recover-latest")', javascript)
+        self.assertIn("Current local Factory state will be saved as an undo checkpoint", javascript)
+        self.assertIn("No local checkpoint is available", javascript)
         self.assertIn('action("merge", { issue: ticket.number })', javascript)
         self.assertIn("renderMonitor", javascript)
         self.assertIn("finding.summary || finding.title || finding.id", javascript)

@@ -99,7 +99,7 @@ class PlanningPipelineTests(unittest.TestCase):
         run = self.start()
         charter = self.repo / "factory.charter.toml"
         charter.write_text(charter.read_text().replace(
-            "max_diff_lines = 800", "max_diff_lines = 801",
+            "max_diff_lines = 1200", "max_diff_lines = 1201",
         ))
         FactoryCharter.load(self.repo).approve()
 
@@ -407,6 +407,16 @@ class PlanningPipelineTests(unittest.TestCase):
             prompt,
         )
         self.assertIn("Never put function IDs, type IDs, constants, or prose in modules[].components", prompt)
+
+    def test_vertical_slice_prompt_uses_the_charter_implementation_budget(self):
+        prompt = stage_prompt(
+            "vertical_slices", "# PRD", {}, "codex", 3, 12, "standard",
+            max_diff_lines=950,
+        )
+
+        self.assertIn("950 implementation-owned changed lines", prompt)
+        self.assertIn("protected QA acceptance tests are measured separately", prompt)
+        self.assertIn("Split a ticket", prompt)
 
     def test_claude_planner_streams_progress_before_the_agent_exits(self):
         product = json.loads((FIXTURES / "01-product-review.json").read_text())

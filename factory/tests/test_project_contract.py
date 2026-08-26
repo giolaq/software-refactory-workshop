@@ -180,6 +180,115 @@ start_over_flag = "--start-over"
             self.assertEqual((repo / "README.md").read_text(), "# Keep me\n")
             self.assertEqual(json.loads((repo / ".factory/state.json").read_text())["tickets"], [])
 
+    def test_local_state_reset_returns_clean_checkout_to_remote_default_branch(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            repo = root / "repo"
+            remote = root / "remote.git"
+            repo.mkdir()
+            git(repo, "init", "-q", "-b", "main")
+            git(repo, "config", "user.name", "Factory Test")
+            git(repo, "config", "user.email", "factory@example.invalid")
+            (repo / ".gitignore").write_text(".factory/\n")
+            (repo / "README.md").write_text("# Managed repository\n")
+            ProjectContract.detect(repo).write()
+            git(repo, "add", ".")
+            git(repo, "commit", "-qm", "baseline")
+            git(root, "init", "-q", "--bare", str(remote))
+            git(repo, "remote", "add", "origin", str(remote))
+            git(repo, "push", "-qu", "origin", "main")
+            git(repo, "remote", "set-head", "origin", "main")
+            (repo / "README.md").write_text("# Rehearsal source\n")
+            git(repo, "add", "README.md")
+            git(repo, "commit", "-qm", "local rehearsal commit")
+            rehearsal_revision = git(repo, "rev-parse", "HEAD")
+            git(
+                repo, "switch", "-qc", "recovery/attendee-state",
+                "origin/main",
+            )
+            runtime = repo / ".factory"
+            runtime.mkdir()
+            (runtime / "state.json").write_text(json.dumps({
+                "mode": "github",
+                "run_id": "run-before-reset",
+                "tickets": [{"number": 1, "status": "Blocked"}],
+            }))
+
+            reset_project(
+                repo,
+                scenario="recipe-rebrand",
+                start_over=False,
+                local_state_only=True,
+            )
+
+            self.assertEqual(git(repo, "branch", "--show-current"), "main")
+            self.assertEqual(
+                git(repo, "rev-parse", "main"),
+                git(repo, "rev-parse", "origin/main"),
+            )
+            self.assertIn(
+                "recovery/attendee-state",
+                git(repo, "branch", "--list", "recovery/attendee-state"),
+            )
+            preserved = git(
+                repo, "branch", "--list", "recovery/pre-reset-main-*",
+            ).strip()
+            self.assertTrue(preserved)
+            self.assertEqual(
+                git(repo, "rev-parse", preserved.removeprefix("* ").strip()),
+                rehearsal_revision,
+            )
+            self.assertEqual(
+                json.loads((runtime / "state.json").read_text())["tickets"],
+                [],
+            )
+
+    def test_local_state_reset_preserves_state_when_branch_switch_is_dirty(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            repo = root / "repo"
+            remote = root / "remote.git"
+            repo.mkdir()
+            git(repo, "init", "-q", "-b", "main")
+            git(repo, "config", "user.name", "Factory Test")
+            git(repo, "config", "user.email", "factory@example.invalid")
+            (repo / ".gitignore").write_text(".factory/\n")
+            (repo / "README.md").write_text("# Baseline\n")
+            ProjectContract.detect(repo).write()
+            git(repo, "add", ".")
+            git(repo, "commit", "-qm", "baseline")
+            git(root, "init", "-q", "--bare", str(remote))
+            git(repo, "remote", "add", "origin", str(remote))
+            git(repo, "push", "-qu", "origin", "main")
+            git(repo, "remote", "set-head", "origin", "main")
+            git(repo, "switch", "-qc", "recovery/dirty-state")
+            runtime = repo / ".factory"
+            runtime.mkdir()
+            state = {
+                "mode": "github",
+                "run_id": "run-before-reset",
+                "tickets": [{"number": 1, "status": "Blocked"}],
+            }
+            (runtime / "state.json").write_text(json.dumps(state))
+            (repo / "README.md").write_text("# Attendee work\n")
+
+            with self.assertRaisesRegex(RuntimeError, "uncommitted changes"):
+                reset_project(
+                    repo,
+                    scenario="recipe-rebrand",
+                    start_over=False,
+                    local_state_only=True,
+                )
+
+            self.assertEqual(
+                git(repo, "branch", "--show-current"),
+                "recovery/dirty-state",
+            )
+            self.assertEqual(
+                json.loads((runtime / "state.json").read_text()),
+                state,
+            )
+
     def test_contract_rejects_unknown_command_placeholders(self):
         with tempfile.TemporaryDirectory() as directory:
             repo = self.make_repo(directory)

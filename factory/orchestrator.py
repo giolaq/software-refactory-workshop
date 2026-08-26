@@ -29,6 +29,7 @@ import time
 import tomllib
 import tempfile
 import uuid
+from collections import Counter
 from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
 
@@ -96,6 +97,29 @@ from code_review import (
 STATES = ["Backlog", "Ready", "In Progress", "QA Review", "Verifying", "In Review", "Done", "Blocked"]
 ACTIVE = {"In Progress", "Verifying"}
 TERMINAL = {"Done", "Blocked"}
+RECOVERY_RUNTIME_PATHS = (
+    "state.json",
+    "ids.json",
+    "planning-state.json",
+    "plans",
+    "rehearsal",
+    "receipts",
+    "supervisor",
+    "reviews",
+    "prompts",
+    "qa-approvals",
+    "merge-events",
+    "control-center/workshop-prd.md",
+    "control-center/factory-canvas.md",
+    "control-center/product-feedback.md",
+    "control-center/vertical-slices-feedback.md",
+)
+RECOVERY_PLANNING_STAGES = (
+    ("product_review", "01-product-review", "Product Review"),
+    ("system_architecture", "02-system-architecture", "System Architecture"),
+    ("program_design", "03-program-design", "Program Design"),
+    ("vertical_slices", "04-vertical-slices", "Vertical Slices"),
+)
 DEFAULT_AGENTS = {
     "claude": 'claude -p "$(cat {prompt})" --permission-mode acceptEdits',
     "codex": '{codex} exec --sandbox workspace-write --ephemeral "$(cat {prompt})"',
@@ -139,6 +163,256 @@ def run(cmd, cwd: Path, *, timeout=None, check=True, shell=False):
         rendered = cmd if isinstance(cmd, str) else shlex.join(cmd)
         raise RuntimeError(f"{rendered}\n{result.stdout}{result.stderr}".strip())
     return result
+
+
+def _git_numstat(worktree: Path, start: str, end: str, paths=()) -> dict:
+    command = ["git", "diff", "--numstat", "--no-renames", f"{start}..{end}"]
+    if paths:
+        command.extend(["--", *sorted(paths)])
+    result = run(command, worktree, check=False)
+    if result.returncode:
+        raise RuntimeError((result.stdout + result.stderr).strip())
+    lines = 0
+    binary_files = []
+    for row in result.stdout.splitlines():
+        fields = row.split("\t")
+        if len(fields) < 3:
+            continue
+        added, deleted, path = fields[0], fields[1], fields[-1]
+        if added == "-" or deleted == "-":
+            binary_files.append(path)
+            continue
+        lines += int(added) + int(deleted)
+    return {"lines": lines, "binary_files": sorted(binary_files)}
+
+
+def effective_diff_limit(ticket: dict, charter: FactoryCharter) -> int:
+    override = ticket.get("budget_override")
+    if isinstance(override, dict):
+        lines = override.get("lines")
+        if isinstance(lines, int) and not isinstance(lines, bool):
+            return max(charter.max_diff_lines, lines)
+    return charter.max_diff_lines
+
+
+def ticket_diff_budget(repo: Path, ticket: dict, charter: FactoryCharter) -> dict:
+    """Measure candidate churn while keeping independent QA outside implementation budget."""
+    baseline = charter.max_diff_lines
+    effective = effective_diff_limit(ticket, charter)
+    worktree = worktree_path(repo, int(ticket.get("number", 0)))
+    base = str(ticket.get("base_sha") or "")
+    if not worktree.is_dir() or not base:
+        return {
+            "status": "unavailable",
+            "reason": "No preserved candidate is available to measure.",
+            "charter_limit": baseline,
+            "effective_limit": effective,
+            "implementation_lines": None,
+            "protected_qa_lines": None,
+            "total_lines": None,
+            "budget_override": ticket.get("budget_override"),
+        }
+    try:
+        head = run(["git", "rev-parse", "HEAD"], worktree).stdout.strip()
+        total = _git_numstat(worktree, base, head)
+        qa_commit = str(ticket.get("qa_commit") or "")
+        qa_paths = tuple((ticket.get("qa_tests") or {}).keys())
+        if qa_commit and qa_paths:
+            protected = _git_numstat(worktree, base, qa_commit, qa_paths)
+            implementation_base = qa_commit
+        else:
+            protected = {"lines": 0, "binary_files": []}
+            implementation_base = base
+        implementation = _git_numstat(worktree, implementation_base, head)
+    except (OSError, RuntimeError, ValueError) as exc:
+        return {
+            "status": "unavailable",
+            "reason": f"Candidate diff could not be measured: {exc}",
+            "charter_limit": baseline,
+            "effective_limit": effective,
+            "implementation_lines": None,
+            "protected_qa_lines": None,
+            "total_lines": None,
+            "budget_override": ticket.get("budget_override"),
+        }
+    implementation_lines = implementation["lines"]
+    return {
+        "status": "within" if implementation_lines <= effective else "exceeded",
+        "charter_limit": baseline,
+        "effective_limit": effective,
+        "implementation_lines": implementation_lines,
+        "protected_qa_lines": protected["lines"],
+        "total_lines": total["lines"],
+        "binary_files": sorted(set(
+            total["binary_files"]
+            + protected["binary_files"]
+            + implementation["binary_files"]
+        )),
+        "candidate_head": head,
+        "implementation_base": implementation_base,
+        "measured_at": now(),
+        "budget_override": ticket.get("budget_override"),
+    }
+
+
+def diff_budget_failure(budget: dict) -> str:
+    return (
+        "DIFF_BUDGET_EXCEEDED: Implementation-owned changes contain "
+        f"{budget['implementation_lines']} changed lines; the effective ticket limit is "
+        f"{budget['effective_limit']}. Protected independent QA contributes "
+        f"{budget['protected_qa_lines']} additional changed lines and is not charged to "
+        "the implementation budget. Reduce or split the implementation, or ask a person "
+        "to approve a bounded ticket-only exception before retrying."
+    )
+
+
+def _preserve_retry_candidate(repo: Path, ticket: dict) -> bool:
+    return bool(
+        ticket.get("phase") in {
+            "verifying", "code-review", "cleanup", "architecture_conformance",
+            "hardening", "final_verifier",
+        }
+        and ticket.get("branch")
+        and ticket.get("base_sha")
+        and ticket.get("qa_commit")
+        and ticket.get("qa_tests")
+        and worktree_path(repo, ticket["number"]).is_dir()
+    )
+
+
+def restart_ticket_from_repository_base(
+    ticket: dict,
+    *,
+    status: str,
+    specification_changed: bool = False,
+) -> None:
+    """Discard execution artifacts that cannot prove a fresh candidate."""
+    had_candidate_branch = bool(
+        ticket.get("branch")
+        or ticket.get("pr_url")
+        or ticket.get("pr_head")
+        or ticket.get("review_ref")
+    )
+    branch_generation = int(ticket.get("branch_generation") or 0)
+    ticket.update(
+        status=status,
+        phase=status.lower().replace(" ", "-"),
+        attempt=0,
+        branch="",
+        branch_generation=branch_generation + (1 if had_candidate_branch else 0),
+        base_sha="",
+        qa_attempt=0,
+        qa_commit="",
+        qa_tests={},
+        qa_evidence={},
+        qa_failure="",
+        qa_approved=False,
+        existing_tests={},
+        existing_test_changes=[],
+        gate_results=[],
+        changed_files=[],
+        warnings=[],
+        current_prompt="",
+        current_log="",
+        triage={},
+        blocking_questions=[],
+        code_review=None,
+        approved_head="",
+        pr_url="",
+        pr_state="",
+        pr_head="",
+        pr_merged_at="",
+        pr_merge_commit="",
+        review_ref="",
+        supervisor_instruction="",
+        supervisor_decision="",
+        supervisor_merge_decision="",
+        supervisor_merge_action="",
+        merge_executed_by="",
+        remote_run_summary={},
+        recovered_run_id="",
+        verification_level="",
+        verification_duration_seconds=0,
+        diff_budget=None,
+        retry_context="",
+        qa_retry_context="",
+        failure="",
+        recovery={},
+        next_human_action="",
+        finished_at="",
+    )
+    if specification_changed:
+        ticket.update(budget_override=None, receipts=[])
+
+
+def apply_retry_event_to_ticket(repo: Path, ticket: dict, event: dict) -> str:
+    refresh = event.get("ticket_refresh")
+    spec_changed = bool(event.get("spec_changed"))
+    if isinstance(refresh, dict):
+        for key in (
+            "title", "body", "labels", "dependencies", "agent", "default_agent",
+            "issue_url", "spec_sha256",
+        ):
+            if key in refresh:
+                ticket[key] = refresh[key]
+    override = event.get("budget_override")
+    if isinstance(override, dict):
+        ticket["budget_override"] = override
+    if isinstance(event.get("diff_budget"), dict):
+        ticket["diff_budget"] = event["diff_budget"]
+    preserve_candidate = (
+        not spec_changed
+        and not event.get("force_repository_base")
+        and _preserve_retry_candidate(repo, ticket)
+    )
+    previous_failure = event.get("failure") or ticket.get("failure", "")
+    reset_qa = event.get("reset_qa") is True
+    if preserve_candidate:
+        ticket.update(
+            status="Ready",
+            attempt=0,
+            retry_context=previous_failure,
+            failure="",
+            qa_approved=True,
+        )
+        note = "Operator retry from existing candidate and protected QA tests"
+    else:
+        restart_ticket_from_repository_base(
+            ticket,
+            status="Ready",
+            specification_changed=spec_changed,
+        )
+        if reset_qa:
+            ticket["receipts"] = []
+            ticket["qa_retry_context"] = str(
+                event.get("qa_retry_context") or previous_failure
+            )[-3000:]
+        (repo / ".factory/qa-approvals" / str(ticket["number"])).unlink(missing_ok=True)
+        note = (
+            "Operator discarded defective QA evidence and restarted from repository base"
+            if reset_qa else
+            "Operator retry from repository base"
+        )
+    if spec_changed:
+        note += "; refreshed the edited GitHub Ticket specification"
+    if event.get("reload_project_configuration"):
+        note += "; reloaded the repaired Project Contract"
+    if isinstance(override, dict):
+        note += (
+            f"; human approved a ticket-only {override['lines']}-line budget "
+            f"exception: {override['reason']}"
+        )
+    ticket.update(
+        last_retry_event=event["event_id"],
+        next_human_action="",
+        recovery={},
+        blocking_questions=[],
+        finished_at="",
+    )
+    ticket.setdefault("history", []).append({
+        "at": event.get("created_at") or now(), "status": "Ready", "note": note,
+    })
+    return note
 
 
 def load_config(repo: Path) -> dict:
@@ -255,6 +529,368 @@ def parse_dependencies(body: str) -> list[int]:
 def parse_agent(body: str, default: str) -> str:
     match = re.search(r"(?im)^\s*agent:\s*([a-z][a-z0-9_-]{0,31})\s*$", body or "")
     return match.group(1).lower() if match else default
+
+
+def project_contract_sha256(repo: Path) -> str:
+    path = repo / "factory.project.toml"
+    if not path.is_file():
+        return ""
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def ticket_spec_fingerprint(ticket: dict) -> str:
+    labels = sorted(
+        str(label) for label in ticket.get("labels", [])
+        if not str(label).startswith("state:")
+    )
+    value = {
+        "title": str(ticket.get("title") or ""),
+        "body": str(ticket.get("body") or ""),
+        "labels": labels,
+        "dependencies": sorted(int(item) for item in ticket.get("dependencies", [])),
+        "agent": str(ticket.get("agent") or ""),
+    }
+    return hashlib.sha256(
+        json.dumps(value, sort_keys=True, separators=(",", ":")).encode()
+    ).hexdigest()
+
+
+def ticket_refresh_payload(raw: dict, default_agent: str) -> dict:
+    body = str(raw.get("body") or "")
+    payload = {
+        "title": str(raw.get("title") or ""),
+        "body": body,
+        "labels": [
+            str(label) for label in raw.get("labels", [])
+            if not str(label).startswith("state:")
+        ],
+        "dependencies": parse_dependencies(body),
+        "agent": parse_agent(body, default_agent),
+        "default_agent": default_agent,
+        "issue_url": str(raw.get("url") or raw.get("issue_url") or ""),
+    }
+    payload["spec_sha256"] = ticket_spec_fingerprint(payload)
+    return payload
+
+
+def implementation_no_change_failure(output: str) -> str:
+    """Preserve deterministic agent blockers instead of reducing them to no output."""
+    fallback = "Agent produced no changes or commits."
+    lowered = output.lower()
+    handoff_index = lowered.rfind("**handoff receipt**")
+    handoff = output[handoff_index:] if handoff_index >= 0 else output[-4000:]
+    lowered_handoff = handoff.lower()
+    protected_qa = any(marker in lowered_handoff for marker in (
+        "protected test",
+        "protected acceptance test",
+        "immutable qa",
+        "immutable test",
+        "qa harness",
+    ))
+    qa_defect = any(marker in lowered_handoff for marker in (
+        "harness defect",
+        "harness must be corrected",
+        "test defect",
+        "tests are defective",
+        "defects in the protected",
+        "defects in protected",
+        "blocked by immutable",
+    ))
+    cannot_implement = any(marker in lowered_handoff for marker in (
+        "no new commit",
+        "no further edit or commit",
+        "cannot make",
+        "cannot be accepted",
+        "cannot truthfully",
+        "blocked by",
+    ))
+    if protected_qa and qa_defect and cannot_implement:
+        excerpt = handoff[-2200:].strip()
+        return (
+            "QA_EVIDENCE_DEFECT: The Implementation adapter found a defect in the "
+            "protected QA tests that implementation is not allowed to change. "
+            "Regenerate the protected QA tests before retrying.\n\n"
+            + excerpt
+        )
+    scope_conflict = any(marker in lowered_handoff for marker in (
+        "blocked by scope conflict",
+        "blocked by scope inconsistency",
+        "scope conflict",
+        "scope inconsistency",
+        "scope must permit",
+        "requires permission",
+        "path constraint",
+    ))
+    explicitly_blocked = any(marker in lowered_handoff for marker in (
+        "status: blocked",
+        "blocked by",
+        "resolution requires",
+        "changed paths/commit: none",
+        "no changes or commit",
+    ))
+    if not (scope_conflict and explicitly_blocked):
+        return fallback
+    excerpt = handoff[-2200:].strip()
+    return (
+        "TICKET_SCOPE_CONFLICT: The Implementation adapter found that no functional "
+        "change is possible within the Ticket-owned paths. Update the Ticket scope "
+        "before retrying.\n\n"
+        + excerpt
+    )
+
+
+def implementation_attempt_failure(
+    output: str,
+    code: int,
+    commits: int,
+    attempt_start_head: str,
+    candidate_head: str,
+    previously_reviewed_head: str = "",
+) -> str:
+    """Classify an adapter failure or a successful attempt that made no new change."""
+    unchanged_review_retry = bool(
+        previously_reviewed_head and candidate_head == previously_reviewed_head
+    )
+    unchanged_attempt = bool(
+        attempt_start_head and candidate_head == attempt_start_head
+    )
+    if not (code or not commits or unchanged_review_retry or unchanged_attempt):
+        return ""
+    if unchanged_review_retry:
+        return (
+            "Implementation did not change the candidate after Code Review "
+            "requested changes."
+        )
+    classified_no_change = implementation_no_change_failure(output)
+    if classified_no_change != "Agent produced no changes or commits.":
+        return classified_no_change
+    if code:
+        return output[-3000:]
+    return classified_no_change
+
+
+def _logged_implementation_blocker(ticket: dict, repo: Path | None) -> str:
+    """Recover a deterministic implementation blocker from the newest saved log."""
+    if repo is None:
+        return ""
+    log_root = (repo / ".factory" / "logs").resolve()
+    log_reference = str(ticket.get("current_log") or "")
+    candidates = []
+    if log_reference:
+        candidates.append((repo / log_reference).resolve())
+    number = ticket.get("number")
+    if isinstance(number, int):
+        candidates.extend(sorted(
+            log_root.glob(f"{number}-attempt*.log"),
+            key=lambda path: path.stat().st_mtime,
+            reverse=True,
+        ))
+    for log_path in candidates:
+        try:
+            log_path.relative_to(log_root)
+            with log_path.open("rb") as stream:
+                stream.seek(0, os.SEEK_END)
+                size = stream.tell()
+                stream.seek(max(0, size - 8000))
+                tail = stream.read().decode(errors="replace")
+        except (OSError, ValueError):
+            continue
+        classified = implementation_no_change_failure(tail)
+        if classified.startswith((
+            "TICKET_SCOPE_CONFLICT:",
+            "QA_EVIDENCE_DEFECT:",
+        )):
+            return classified
+    return ""
+
+
+def _saved_implementation_failure(ticket: dict, repo: Path | None) -> str:
+    failure = str(ticket.get("failure") or "")
+    generic_no_output = failure == "Agent produced no changes or commits."
+    supervisor_blocker = failure.startswith("Supervisor blocked dispatch:")
+    if not (generic_no_output or supervisor_blocker):
+        return failure
+    return _logged_implementation_blocker(ticket, repo) or failure
+
+
+def ticket_recovery(ticket: dict, repo: Path | None = None) -> dict:
+    """Return the one operator action that can make a blocked Ticket progress."""
+    failure = _saved_implementation_failure(ticket, repo)
+    lowered = failure.lower()
+    phase = str(ticket.get("phase") or "")
+    claim = ticket.get("remote_claim") or {}
+    if claim.get("released"):
+        claim = {}
+    claim_owner = claim.get("owner_run_id") or claim.get("run_id")
+    budget = ticket.get("diff_budget") or {}
+
+    def recovery(
+        kind: str,
+        action: str,
+        title: str,
+        summary: str,
+        *,
+        retry_allowed: bool,
+        requires_restart: bool = False,
+        **extra,
+    ) -> dict:
+        return {
+            "kind": kind,
+            "action": action,
+            "title": title,
+            "summary": summary,
+            "retry_allowed": retry_allowed,
+            "requires_restart": requires_restart,
+            **extra,
+        }
+
+    if claim_owner and "remote ticket claim" in lowered:
+        return recovery(
+            "remote_claim", "release_or_resume_claim", "Resolve the remote claim",
+            f"Resume Factory run {claim_owner}, or release that confirmed abandoned claim.",
+            retry_allowed=False, claim_owner=str(claim_owner),
+        )
+    if budget.get("status") == "exceeded" or "diff_budget_exceeded" in lowered:
+        return recovery(
+            "diff_budget", "approve_budget_or_split", "Review the ticket size",
+            "Approve a bounded ticket-only exception, or split and replan the work.",
+            retry_allowed=False,
+        )
+    if "qa_evidence_defect:" in lowered:
+        return recovery(
+            "qa_evidence", "regenerate_qa_tests",
+            "Regenerate the protected QA tests",
+            "The protected QA harness is defective and implementation cannot change it. "
+            "Discard that QA evidence, regenerate independent tests from the repository "
+            "base, and rerun the ticket with the recorded defect as QA context.",
+            retry_allowed=False,
+            qa_reset_allowed=True,
+        )
+    if "ticket_scope_conflict:" in lowered:
+        reported_paths = sorted({
+            normalized
+            for raw in re.findall(
+                r"(?<![\w./-])((?:[A-Za-z0-9_.-]+/)+[A-Za-z0-9_.-]+)(?![\w/-])",
+                failure,
+            )
+            if (normalized := raw.rstrip(".,:;"))
+            and PurePosixPath(normalized).suffix
+        })
+        declared_paths = set(
+            (ticket.get("triage") or {}).get("declared_paths") or []
+        )
+        required_paths = [
+            path for path in reported_paths
+            if path not in declared_paths
+            and not path.startswith((".factory/", "tests/"))
+        ]
+        path_instruction = (
+            "Add "
+            + ", ".join(required_paths)
+            + " to File ownership. "
+            if required_paths else ""
+        )
+        return recovery(
+            "ticket_specification", "edit_ticket_and_retry",
+            "Expand the Ticket file ownership",
+            "The implementation cannot make a functional change within the owned files. "
+            + path_instruction
+            + "Edit the GitHub issue's Spec and File ownership, preserve the hidden "
+            "Factory comments, then reload the issue and retry.",
+            retry_allowed=True,
+            scope_conflict=True,
+            required_paths=required_paths,
+        )
+    configuration_failure = any(marker in lowered for marker in (
+        "outside the configured test roots",
+        "verification level",
+        "has no required gate",
+        "deep verification was selected",
+        "factory.project.toml",
+    ))
+    if configuration_failure:
+        blocked_sha = str(ticket.get("blocked_project_contract_sha256") or "")
+        current_sha = project_contract_sha256(repo) if repo is not None else ""
+        changed = bool(blocked_sha and current_sha and blocked_sha != current_sha)
+        return recovery(
+            "project_configuration",
+            "retry_after_configuration_change" if changed else "repair_project_configuration",
+            "Repair the Project Contract",
+            (
+                "The Project Contract changed after this blocker. Retry will reload it and "
+                "restart the ticket from the repository base."
+                if changed else
+                "Update, review, and commit factory.project.toml before retrying this ticket."
+            ),
+            retry_allowed=changed,
+            configuration_changed=changed,
+        )
+    triage = ticket.get("triage") or {}
+    if (
+        triage.get("result") == "NEEDS_INFORMATION"
+        or phase == "triage"
+        or "triage needs human information" in lowered
+    ):
+        return recovery(
+            "ticket_specification", "edit_ticket_and_retry",
+            "Complete the GitHub Ticket",
+            "Edit the issue with a Spec and observable Acceptance criteria, then reload and retry it.",
+            retry_allowed=True,
+        )
+    if "dependency cycle" in lowered or "merged dependency is missing" in lowered:
+        return recovery(
+            "dependency", "replan_dependencies", "Repair the dependency plan",
+            "Correct the Ticket dependencies or restore the missing merged prerequisite before resuming.",
+            retry_allowed=False,
+        )
+    next_action = str(ticket.get("next_human_action") or "")
+    if next_action in {"inspect_closed_pull_request", "rerun_code_review"}:
+        return recovery(
+            "revision_rebuild", "rebuild_ticket", "Rebuild the exact revision",
+            "The remote candidate is no longer valid. Retry will rebuild from the "
+            "default branch, rerun QA and verification, and supersede any stale open PR.",
+            retry_allowed=True,
+        )
+    if next_action == "inspect_stale_merge":
+        return recovery(
+            "revision_mismatch", "create_replacement_ticket",
+            "Create a replacement Ticket",
+            "A different revision was already merged. Preserve that history and create "
+            "a new governed Ticket for any corrective work.",
+            retry_allowed=False,
+        )
+    return recovery(
+        "retry", "retry_ticket", "Retry from the safest checkpoint",
+        "The Factory will preserve eligible QA evidence and candidate work, then rerun verification.",
+        retry_allowed=True,
+    )
+
+
+def factory_execution_mode(state: dict) -> str:
+    """Normalize persisted execution evidence to live, rehearsal, mixed, or empty."""
+    recorded = str(state.get("mode") or "").lower()
+    if recorded in {"mock", "rehearsal"}:
+        return "rehearsal"
+    if recorded in {"github", "live"}:
+        return "live"
+
+    modes = set()
+    for ticket in state.get("tickets", []):
+        if not isinstance(ticket, dict):
+            continue
+        review = ticket.get("code_review") or {}
+        references = [
+            ticket.get("review_ref"),
+            ticket.get("pr_url"),
+            review.get("pull_request") if isinstance(review, dict) else "",
+        ]
+        if any(str(reference or "").startswith("rehearsal://") for reference in references):
+            modes.add("rehearsal")
+        if any(str(reference or "").startswith(("https://", "http://")) for reference in references):
+            modes.add("live")
+    if len(modes) > 1:
+        return "mixed"
+    return next(iter(modes), "")
 
 
 def parse_plan_id(body: str) -> str:
@@ -398,7 +1034,7 @@ def apply_session_defaults(args, repo: Path) -> dict:
     elif args.command == "approve":
         if args.project_number is None and not args.new_project_title:
             args.project_number = session.get("project_number")
-    elif args.command in {"retry", "merge"}:
+    elif args.command in {"retry", "merge", "recover"}:
         args.project_number = args.project_number or session.get("project_number")
     elif args.command == "seed":
         args.agent = args.agent or session.get("agent", "codex")
@@ -531,6 +1167,30 @@ def recover_remote_ticket_state(raw: dict, summary: dict | None) -> dict:
         "human" if policy_required_human_merge
         else str(decisions.get("effective_merge_authority") or governance.get("merge_authority") or "")
     )
+    budget_override = decisions.get("diff_budget_override")
+    if not (
+        isinstance(budget_override, dict)
+        and isinstance(budget_override.get("lines"), int)
+        and isinstance(budget_override.get("charter_limit"), int)
+        and isinstance(budget_override.get("reason"), str)
+    ):
+        budget_override = None
+    diff_budget = {
+        "status": (
+            "within"
+            if isinstance(metrics.get("implementation_lines"), int)
+            and isinstance(metrics.get("effective_diff_limit"), int)
+            and metrics["implementation_lines"] <= metrics["effective_diff_limit"]
+            else "unavailable"
+        ),
+        "implementation_lines": metrics.get("implementation_lines"),
+        "protected_qa_lines": metrics.get("protected_qa_lines"),
+        "effective_limit": metrics.get("effective_diff_limit"),
+        "charter_limit": (
+            budget_override.get("charter_limit") if budget_override else None
+        ),
+        "budget_override": budget_override,
+    }
     return {
         "status": status,
         "failure": failure,
@@ -558,6 +1218,8 @@ def recover_remote_ticket_state(raw: dict, summary: dict | None) -> dict:
             )
             if key in metrics
         },
+        "diff_budget": diff_budget,
+        "budget_override": budget_override,
         "merge_executed_by": decisions.get("merge_executed_by", ""),
         "merge_authority": merge_authority,
         "policy_required_human_merge": policy_required_human_merge,
@@ -568,6 +1230,29 @@ def recover_remote_ticket_state(raw: dict, summary: dict | None) -> dict:
             "schema_version": summary.get("schema_version"),
         },
     }
+
+
+def recovered_merged_completion_has_durable_qa_evidence(ticket: dict) -> bool:
+    """Accept remote reconstruction only for an already merged exact revision."""
+    evidence = ticket.get("qa_evidence")
+    summary = ticket.get("remote_run_summary")
+    approved_head = str(ticket.get("approved_head") or "")
+    pr_head = str(ticket.get("pr_head") or "")
+    return bool(
+        ticket.get("status") == "Done"
+        and str(ticket.get("pr_state") or "").upper() == "MERGED"
+        and ticket.get("pr_merged_at")
+        and ticket.get("pr_url")
+        and approved_head
+        and pr_head == approved_head
+        and ticket.get("qa_commit")
+        and isinstance(evidence, dict)
+        and evidence.get("red", {}).get("result") == "RED PROVED"
+        and evidence.get("red", {}).get("recovered") is True
+        and isinstance(summary, dict)
+        and summary.get("recovered") is True
+        and summary.get("run_id")
+    )
 
 
 class StateStore:
@@ -591,7 +1276,7 @@ class StateStore:
 
 
 class Factory:
-    def __init__(self, args):
+    def __init__(self, args, *, recovering: bool = False):
         self.args = args
         self.repo = Path(args.repo).resolve()
         self.cfg = load_config(self.repo)
@@ -661,9 +1346,30 @@ class Factory:
         self.review_qa_tests = bool(args.review_qa_tests or self.cfg["qa"].get("require_human_approval", False))
         self.python = sys.executable
         self.store = StateStore(self.repo)
+        if recovering:
+            self.store.data = {"updated_at": now(), "tickets": []}
         self.run_id = self.store.data.get("run_id") or uuid.uuid4().hex[:12]
         existing_tickets = self.store.data.get("tickets", [])
         if existing_tickets:
+            requested_mode = "mock" if args.mock else "github"
+            recorded_mode = self.store.data.get("mode")
+            if recorded_mode in {"mock", "github"} and recorded_mode != requested_mode:
+                raise ValueError(
+                    "Existing Factory Run mode does not match this command. Live and "
+                    "Rehearsal runs cannot share Ticket state or tracked source. Use the "
+                    "original mode, or start from a fresh managed repository."
+                )
+            recorded_scenario = self.store.data.get("scenario")
+            if (
+                requested_mode == "mock"
+                and recorded_mode == "mock"
+                and recorded_scenario
+                and recorded_scenario != args.scenario
+            ):
+                raise ValueError(
+                    "Existing Rehearsal Run uses a different scenario. Start the new "
+                    "scenario in a fresh managed repository."
+                )
             recorded_governance = self.store.data.get("governance")
             if not isinstance(recorded_governance, dict):
                 raise ValueError(
@@ -688,14 +1394,23 @@ class Factory:
                     ticket.get("number", "?")
                     for ticket in existing_tickets
                     if ticket.get("qa_commit")
-                    and ticket.get("qa_evidence", {}).get("red", {}).get("result") != "RED PROVED"
+                    and (
+                        not isinstance(ticket.get("qa_evidence"), dict)
+                        or not ticket.get("qa_evidence", {}).get("focused_test_command")
+                        or not isinstance(
+                            ticket.get("qa_evidence", {}).get("red"), dict,
+                        )
+                        or not ticket.get("qa_evidence", {}).get("red", {}).get("result")
+                    )
+                    and not recovered_merged_completion_has_durable_qa_evidence(ticket)
                 ]
                 if legacy_qa:
                     rendered = ", ".join(f"#{number}" for number in legacy_qa)
                     raise ValueError(
                         "Existing Factory Run predates causal Acceptance Test evidence for "
-                        f"{rendered}. Reset the local run and execute these Tickets again so "
-                        "QA can prove RED before implementation."
+                        f"{rendered}. Recover the latest Live state first. If no durable "
+                        "remote evidence exists, reset the local run and execute these "
+                        "Tickets again so QA can prove RED before implementation."
                     )
         self.tickets: dict[int, dict] = {}
         self.transition_lock = threading.RLock()
@@ -706,9 +1421,11 @@ class Factory:
         self.supervisor = None
         self.backend = None if args.mock else GitHubBackend(self.repo, args.project_number)
 
-    def load_tickets(self):
+    def load_tickets(self, source: list[dict] | None = None):
         rehearsal_plan_id = ""
-        if self.args.mock:
+        if source is not None:
+            source = list(source)
+        elif self.args.mock:
             scenario_path = self.repo / "factory/scenarios" / self.args.scenario / "tickets.json"
             if not scenario_path.is_file():
                 scenario_path = Path(__file__).with_name("scenarios") / self.args.scenario / "tickets.json"
@@ -734,8 +1451,17 @@ class Factory:
         for raw in source:
             number = int(raw["number"])
             old = previous.get(number, {})
-            remote_claim = old.get("remote_claim", {})
-            if self.backend:
+            default_agent = "mock" if self.args.mock else self.args.agent
+            refreshed = ticket_refresh_payload(raw, default_agent)
+            old_spec_sha = (
+                old.get("spec_sha256")
+                or (ticket_spec_fingerprint(old) if old else "")
+            )
+            spec_changed = bool(
+                old and old_spec_sha and old_spec_sha != refreshed["spec_sha256"]
+            )
+            remote_claim = raw.get("remote_claim") or old.get("remote_claim", {})
+            if self.backend and not remote_claim:
                 remote_claim = self.backend.read_claim(number) or remote_claim
             remote_state = recover_remote_ticket_state(
                 raw,
@@ -765,11 +1491,17 @@ class Factory:
                         + ", ".join(drift)
                     )
             ticket = {
-                "number": number, "title": raw["title"], "body": raw.get("body", ""),
-                "labels": raw.get("labels", []), "status": raw.get("status", old.get("status", "Backlog")),
-                "agent": parse_agent(raw.get("body", ""), "mock" if self.args.mock else self.args.agent),
-                "dependencies": parse_dependencies(raw.get("body", "")),
+                "number": number,
+                "title": refreshed["title"],
+                "body": refreshed["body"],
+                "labels": refreshed["labels"],
+                "status": raw.get("status", old.get("status", "Backlog")),
+                "agent": refreshed["agent"],
+                "default_agent": default_agent,
+                "dependencies": refreshed["dependencies"],
+                "spec_sha256": refreshed["spec_sha256"],
                 "attempt": old.get("attempt", 0), "branch": old.get("branch", ""),
+                "branch_generation": old.get("branch_generation", 0),
                 "base_sha": old.get("base_sha", ""),
                 "qa_agent": self.qa_agent or "", "qa_attempt": old.get("qa_attempt", 0),
                 "qa_commit": old.get("qa_commit", ""), "qa_tests": old.get("qa_tests", {}),
@@ -786,6 +1518,7 @@ class Factory:
                 "issue_url": raw.get("url", old.get("issue_url", "")),
                 "failure": old.get("failure", ""), "warnings": old.get("warnings", []),
                 "retry_context": old.get("retry_context", ""),
+                "qa_retry_context": old.get("qa_retry_context", ""),
                 "gate_results": old.get("gate_results", []),
                 "changed_files": old.get("changed_files", []),
                 "current_prompt": old.get("current_prompt", ""),
@@ -809,9 +1542,16 @@ class Factory:
                 "merge_executed_by": old.get("merge_executed_by", ""),
                 "remote_claim": remote_claim,
                 "metrics": old.get("metrics", {}),
+                "diff_budget": old.get("diff_budget"),
+                "budget_override": old.get("budget_override"),
+                "last_retry_event": old.get("last_retry_event", ""),
                 "remote_run_summary": old.get("remote_run_summary", {}),
                 "recovered_run_id": old.get("recovered_run_id", ""),
                 "next_human_action": old.get("next_human_action", ""),
+                "recovery": old.get("recovery", {}),
+                "blocked_project_contract_sha256": old.get(
+                    "blocked_project_contract_sha256", "",
+                ),
                 "supervisor_merge_decision": old.get("supervisor_merge_decision", ""),
                 "supervisor_merge_action": old.get("supervisor_merge_action", ""),
                 "history": old.get("history", []), "mock_action": raw.get("mock_action", ""),
@@ -834,7 +1574,8 @@ class Factory:
                     f"Remote Ticket claim belongs to Factory run {owner}. "
                     "Resume that run or explicitly release the confirmed abandoned claim."
                 )
-                ticket["next_human_action"] = "release_or_resume_claim"
+                ticket["recovery"] = ticket_recovery(ticket, self.repo)
+                ticket["next_human_action"] = ticket["recovery"]["action"]
             if ticket["agent"] not in self.cfg["agents"]:
                 raise ValueError(
                     f"Ticket #{number} requests unregistered agent {ticket['agent']!r}; "
@@ -842,20 +1583,34 @@ class Factory:
                 )
             recovered = ticket["status"] in ACTIVE and not foreign_claim and bool(old)
             if recovered:
-                ticket["status"] = "Backlog"  # safely replay interrupted work
-                ticket.update(
-                    qa_approved=False,
-                    qa_commit="",
-                    qa_tests={},
-                    qa_evidence={},
-                    existing_tests={},
-                    existing_test_changes=[],
-                    base_sha="",
+                qa_retry_context = ticket.get("qa_retry_context", "")
+                restart_ticket_from_repository_base(
+                    ticket,
+                    status="Backlog",
+                    specification_changed=spec_changed,
                 )
+                ticket["qa_retry_context"] = qa_retry_context
                 ticket["history"].append({"at": now(), "status": "Backlog", "note": "Recovered after restart"})
+            elif spec_changed and ticket["status"] not in {"Done", "In Review"}:
+                restart_ticket_from_repository_base(
+                    ticket,
+                    status="Backlog",
+                    specification_changed=True,
+                )
+                ticket["history"].append({
+                    "at": now(),
+                    "status": "Backlog",
+                    "note": "GitHub Ticket specification changed; stale candidate evidence was cleared",
+                })
             self.tickets[number] = ticket
-            if recovered and self.backend and not self.args.dry_run:
-                self.backend.set_status(ticket, "Backlog", "Recovered after restart")
+            if self.backend and not self.args.dry_run:
+                if recovered:
+                    self.backend.set_status(ticket, "Backlog", "Recovered after restart")
+                elif spec_changed and ticket["status"] == "Backlog":
+                    self.backend.set_status(
+                        ticket, "Backlog",
+                        "GitHub Ticket specification changed; stale candidate evidence was cleared",
+                    )
         self._sync_store(save=not self.args.dry_run)
 
     def _sync_store(self, save=True):
@@ -969,6 +1724,18 @@ class Factory:
                 ticket["phase"] = status.lower().replace(" ", "-")
             elif status == "Blocked" and not ticket.get("phase"):
                 ticket["phase"] = "build"
+            if status == "Blocked":
+                recovery = ticket_recovery(ticket, self.repo)
+                if recovery["kind"] == "project_configuration":
+                    ticket["blocked_project_contract_sha256"] = project_contract_sha256(
+                        self.repo,
+                    )
+                    recovery = ticket_recovery(ticket, self.repo)
+                ticket["recovery"] = recovery
+                ticket["next_human_action"] = recovery["action"]
+            elif previous_status == "Blocked":
+                ticket["recovery"] = {}
+                ticket["next_human_action"] = ""
             if status == "In Progress" and not ticket.get("started_at"):
                 ticket["started_at"] = now()
             if status in TERMINAL | {"In Review"}:
@@ -1103,6 +1870,48 @@ class Factory:
         if changed:
             self._sync_store()
 
+    def apply_retry_events(self):
+        """Reconcile CLI and Control Center retry decisions into this live run."""
+        event_dir = self.repo / ".factory/retry-events"
+        changed = False
+        for marker in sorted(event_dir.glob("*.json")):
+            try:
+                event = json.loads(marker.read_text())
+                number = int(event["ticket"])
+                event_id = str(event["event_id"])
+            except (OSError, ValueError, KeyError, json.JSONDecodeError) as exc:
+                raise ValueError(f"Invalid ticket retry event {marker.name}") from exc
+            ticket = self.tickets.get(number)
+            if not ticket:
+                marker.unlink(missing_ok=True)
+                continue
+            if ticket.get("last_retry_event") == event_id:
+                marker.unlink(missing_ok=True)
+                continue
+            if ticket.get("status") not in {"Blocked", "Ready"}:
+                ticket["failure"] = (
+                    "A stale retry decision did not match the ticket's current state. "
+                    "Inspect the ticket before retrying again."
+                )
+                marker.unlink(missing_ok=True)
+                self._sync_store()
+                continue
+            if event.get("reload_project_configuration"):
+                refreshed_config = load_config(self.repo)
+                validate_qa_config(
+                    refreshed_config["qa"], refreshed_config["agents"],
+                )
+                self.cfg = refreshed_config
+                self.project = refreshed_config["project"]
+                self.capabilities = refreshed_config["agent_capabilities"]
+                self.project_context = self.project.context()
+            note = apply_retry_event_to_ticket(self.repo, ticket, event)
+            marker.unlink(missing_ok=True)
+            changed = True
+            print(f"#{number:<3} Ready        {note}", flush=True)
+        if changed:
+            self._sync_store()
+
     def dry_plan(self):
         remaining = set(self.tickets)
         done, wave = set(), 1
@@ -1142,6 +1951,9 @@ class Factory:
 
     def create_worktree(self, ticket: dict):
         branch = f"factory/{ticket['number']}-{slugify(ticket['title'])}"
+        generation = int(ticket.get("branch_generation") or 0)
+        if generation:
+            branch += f"-r{generation}"
         worktree = worktree_path(self.repo, ticket["number"])
         with self.merge_lock:
             self.git("worktree", "remove", "--force", str(worktree), check=False)
@@ -1175,6 +1987,48 @@ class Factory:
                 self.repo, require_approved=True,
             ).context()
         return f"## Approved Factory Charter\n```json\n{context}\n```\n"
+
+    def diff_budget_prompt_context(self, ticket: dict, role: str) -> str:
+        charter = getattr(self, "charter", None)
+        if charter is None:
+            charter = FactoryCharter.load(self.repo, require_approved=True)
+        effective = effective_diff_limit(ticket, charter)
+        override = ticket.get("budget_override")
+        exception = (
+            f" A person approved this ticket-only exception: {override['reason']}"
+            if isinstance(override, dict) else ""
+        )
+        measured = ticket.get("diff_budget") or {}
+        measurement = ""
+        if measured.get("implementation_lines") is not None:
+            measurement = (
+                f" The current candidate contains {measured['implementation_lines']} "
+                f"implementation-owned changed lines and {measured['protected_qa_lines']} "
+                "protected QA changed lines."
+            )
+        if role == "qa":
+            instruction = (
+                "Protected acceptance tests are measured separately and do not consume the "
+                "implementation budget. Keep the test file focused on this ticket so it remains "
+                "easy for a person to review."
+            )
+        elif role == "code_review":
+            instruction = (
+                "The orchestrator owns this accounting and excludes independently authored "
+                "protected QA tests. Do not recalculate the budget from the full pull-request "
+                "diff or report the protected QA lines as a budget violation."
+            )
+        else:
+            instruction = (
+                "Keep implementation-owned changes within this limit. If the ticket cannot fit, "
+                "stop and report that it must be split instead of expanding scope."
+            )
+        return (
+            "\n## Ticket diff budget\n"
+            f"Charter limit: {charter.max_diff_lines} implementation-owned changed lines.\n"
+            f"Effective limit for this ticket: {effective} lines.{exception}{measurement}\n"
+            f"{instruction}\n"
+        )
 
     def make_prompt(self, ticket: dict, failure: str) -> Path:
         path = self.repo / ".factory/prompts" / f"{ticket['number']}-attempt{ticket['attempt']}.md"
@@ -1219,6 +2073,7 @@ class Factory:
             f"# Ticket #{ticket['number']}: {ticket['title']}\n\n{ticket['body']}\n\n"
             f"## Repository Project Contract and inventory\n```json\n{self.project_context}\n```\n\n"
             f"{self.charter_prompt_context()}\n"
+            f"{self.diff_budget_prompt_context(ticket, 'implementation')}\n"
             f"## Verification gates\n{gates}\n{existing_tests}{protected}\n"
             f"Commit as `factory(#{ticket['number']}): <summary>`.\n"
             "Work only in the current worktree. Do not change ticket scope.\n" + supervisor + "\n" + contract + retry
@@ -1242,6 +2097,7 @@ class Factory:
             f"# QA assignment for ticket #{ticket['number']}: {ticket['title']}\n\n{ticket['body']}\n\n"
             f"## Repository Project Contract and inventory\n```json\n{self.project_context}\n```\n\n"
             f"{self.charter_prompt_context()}\n"
+            f"{self.diff_budget_prompt_context(ticket, 'qa')}\n"
             "## Role\n"
             "Act as the independent QA engineer before implementation begins. Translate the ticket's "
             "acceptance criteria into deterministic executable acceptance tests. Inspect production code "
@@ -1302,6 +2158,7 @@ class Factory:
             "## Repository Project Contract and inventory\n\n```json\n"
             f"{getattr(self, 'project_context', ProjectContract.load(self.repo).context())}\n```\n\n"
             f"{self.charter_prompt_context()}\n"
+            f"{self.diff_budget_prompt_context(ticket, 'code_review')}\n"
             f"{role_input(self.repo, 'code_review')['text']}\n"
             "Review for correctness, regressions, security, maintainability, and test quality. "
             "Report only actionable comments in changed paths. If there is any comment, return "
@@ -1986,9 +2843,15 @@ class Factory:
         )
         return failure
 
-    def create_qa_tests(self, ticket: dict, worktree: Path, base_sha: str) -> str:
+    def create_qa_tests(
+        self,
+        ticket: dict,
+        worktree: Path,
+        base_sha: str,
+        initial_failure: str = "",
+    ) -> str:
         ticket.update(qa_attempt=0, qa_commit="", qa_tests={}, qa_failure="")
-        failure = ""
+        failure = initial_failure
         max_attempts = int(self.cfg["qa"]["max_retries"]) + 1
         for attempt in range(1, max_attempts + 1):
             ticket["qa_attempt"] = attempt
@@ -2156,6 +3019,20 @@ class Factory:
 
     def block_or_retry(self, ticket: dict, failure: str):
         ticket["failure"] = failure[-3000:]
+        if failure.startswith("TICKET_SCOPE_CONFLICT:"):
+            self.transition(
+                ticket,
+                "Blocked",
+                "Ticket scope cannot produce a functional change; edit its file ownership",
+            )
+            return False
+        if failure.startswith("QA_EVIDENCE_DEFECT:"):
+            self.transition(
+                ticket,
+                "Blocked",
+                "Protected QA is defective; regenerate its tests before retrying",
+            )
+            return False
         if ticket["attempt"] <= self.cfg["factory"]["max_retries"]:
             ticket.setdefault("metrics", {}).setdefault("retry_count", 0)
             ticket["metrics"]["retry_count"] += 1
@@ -2394,13 +3271,19 @@ class Factory:
             implementation_base_sha = base_sha
             if self.qa_agent:
                 try:
-                    qa_failure = self.create_qa_tests(ticket, worktree, base_sha)
+                    qa_failure = self.create_qa_tests(
+                        ticket,
+                        worktree,
+                        base_sha,
+                        ticket.get("qa_retry_context", ""),
+                    )
                 except Exception as exc:
                     qa_failure = f"QA acceptance-test phase failed:\n{exc}"
                 if qa_failure:
                     ticket["failure"] = qa_failure[-3000:]
                     self.transition(ticket, "Blocked", "Independent QA could not produce valid acceptance tests")
                     return
+                ticket["qa_retry_context"] = ""
                 implementation_base_sha = ticket["qa_commit"]
                 if self.review_qa_tests:
                     ticket["phase"] = "qa-review"
@@ -2423,6 +3306,12 @@ class Factory:
                 if previous_failure.startswith("Code Review requested changes:") else ""
             )
             prompt = self.make_prompt(ticket, previous_failure)
+            try:
+                attempt_start_head = self.git(
+                    "rev-parse", "HEAD", cwd=worktree,
+                ).stdout.strip()
+            except Exception:
+                attempt_start_head = ""
             code, output = self.run_agent(ticket, worktree, prompt)
             candidate_head = ""
             try:
@@ -2452,16 +3341,19 @@ class Factory:
                 candidate_head = self.git("rev-parse", "HEAD", cwd=worktree).stdout.strip()
             except Exception as exc:
                 commits, output, code = 0, f"{output}\n{exc}", 1
-            unchanged_review_retry = bool(
-                previously_reviewed_head and candidate_head == previously_reviewed_head
+            unchanged_attempt = bool(
+                attempt_start_head and candidate_head == attempt_start_head
             )
-            if code or not commits or unchanged_review_retry:
-                failure = (
-                    output[-3000:] if code
-                    else "Implementation did not change the candidate after Code Review requested changes."
-                    if unchanged_review_retry
-                    else "Agent produced no changes or commits."
-                )
+            attempt_failure = implementation_attempt_failure(
+                output,
+                code,
+                commits,
+                attempt_start_head,
+                candidate_head,
+                previously_reviewed_head,
+            )
+            if attempt_failure:
+                failure = attempt_failure
                 self.record_receipt(
                     ticket,
                     "implementation",
@@ -2470,7 +3362,14 @@ class Factory:
                     input_revisions={"implementation_base": implementation_base_sha},
                     output_revisions={},
                     claimed_result="Implementation attempt failed",
-                    verification=[f"Agent adapter exit code: {code}"],
+                    verification=[
+                        f"Agent adapter exit code: {code}",
+                        (
+                            "Candidate revision did not change during this attempt."
+                            if unchanged_attempt else
+                            "Candidate revision changed during this attempt."
+                        ),
+                    ],
                     unresolved_risks=[
                         "Implementation did not produce acceptable committed output; inspect the referenced log."
                     ],
@@ -2498,6 +3397,15 @@ class Factory:
                         continue
                     return
                 implementation_head = self.git("rev-parse", "HEAD", cwd=worktree).stdout.strip()
+            ticket["diff_budget"] = ticket_diff_budget(
+                self.repo, ticket, self.charter,
+            )
+            self._sync_store()
+            if ticket["diff_budget"]["status"] == "exceeded":
+                failure = diff_budget_failure(ticket["diff_budget"])
+                if self.block_or_retry(ticket, failure):
+                    continue
+                return
             failure = self.verify_project_protected_paths(worktree, implementation_base_sha)
             if failure:
                 if self.block_or_retry(ticket, failure):
@@ -2704,6 +3612,7 @@ class Factory:
                 self.tickets[n]["failure"] = note
                 self.transition(self.tickets[n], "Blocked", note)
         while True:
+            self.apply_retry_events()
             self.apply_human_merge_events()
             self.sync_merged()
             self.apply_qa_approvals()
@@ -2753,49 +3662,228 @@ def show_status(repo: Path):
         )
 
 
-def retry_ticket(repo: Path, number: int, mock=False, project_number=None):
+def retry_ticket(
+    repo: Path,
+    number: int,
+    mock=False,
+    project_number=None,
+    *,
+    reset_qa: bool = False,
+    budget_lines: int | None = None,
+    reason: str = "",
+    assume_yes: bool = False,
+):
     store = StateStore(repo)
     for ticket in store.data.get("tickets", []):
         if ticket["number"] == number:
             if ticket["status"] != "Blocked":
-                raise SystemExit(f"#{number} is {ticket['status']}, not Blocked")
-            worktree = worktree_path(repo, number)
-            preserve_candidate = bool(
-                ticket.get("phase") == "verifying"
-                and ticket.get("branch")
-                and ticket.get("base_sha")
-                and ticket.get("qa_commit")
-                and ticket.get("qa_tests")
-                and worktree.is_dir()
+                interrupted_qa_defect = (
+                    _logged_implementation_blocker(ticket, repo)
+                    if reset_qa and ticket["status"] in ACTIVE else ""
+                )
+                if not interrupted_qa_defect.startswith("QA_EVIDENCE_DEFECT:"):
+                    raise SystemExit(f"#{number} is {ticket['status']}, not Blocked")
+                ticket.update(
+                    status="Blocked",
+                    failure=interrupted_qa_defect,
+                    finished_at=now(),
+                )
+                ticket.setdefault("history", []).append({
+                    "at": now(),
+                    "status": "Blocked",
+                    "note": (
+                        "Operator stopped an interrupted QA regeneration after the saved "
+                        "implementation logs reconfirmed the protected QA defect"
+                    ),
+                })
+            charter = FactoryCharter.load(repo, require_approved=True)
+            budget = ticket_diff_budget(repo, ticket, charter)
+            ticket["diff_budget"] = budget
+            current_lines = budget.get("implementation_lines")
+            current_limit = budget.get("effective_limit", charter.max_diff_lines)
+            if reset_qa and (budget_lines is not None or reason.strip()):
+                raise SystemExit(
+                    "--reset-qa cannot be combined with a diff-budget exception"
+                )
+            if (budget_lines is None and reason.strip()) or (
+                budget_lines is not None and not reason.strip()
+            ):
+                raise SystemExit("--budget-lines and --reason must be provided together")
+            if budget_lines is not None:
+                if budget_lines <= charter.max_diff_lines:
+                    raise SystemExit(
+                        f"A ticket exception must be greater than the Charter limit "
+                        f"of {charter.max_diff_lines} lines."
+                    )
+                if budget["status"] == "unavailable":
+                    raise SystemExit(
+                        "The preserved candidate could not be measured. Retry from the repository "
+                        "base or restore the candidate before approving a budget exception."
+                    )
+                if current_lines is not None and budget_lines < current_lines:
+                    raise SystemExit(
+                        f"--budget-lines {budget_lines} is below the current "
+                        f"{current_lines}-line implementation. Choose a limit at or above "
+                        "the measured candidate."
+                    )
+                if len(reason.strip()) < 12:
+                    raise SystemExit("--reason must explain the ticket-specific exception")
+                if not assume_yes:
+                    answer = input(
+                        f"Approve a {budget_lines}-line exception for Ticket #{number}? "
+                        "Type APPROVE BUDGET: "
+                    )
+                    if answer.strip() != "APPROVE BUDGET":
+                        raise SystemExit("Budget exception cancelled")
+            elif budget["status"] == "exceeded":
+                suggested = ((int(current_lines * 1.15) + 99) // 100) * 100
+                raise SystemExit(
+                    f"Ticket #{number} cannot be retried within its current diff budget.\n"
+                    f"Implementation-owned lines: {current_lines}\n"
+                    f"Effective limit: {current_limit}\n"
+                    f"Protected QA lines (not charged): {budget.get('protected_qa_lines', 0)}\n\n"
+                    "Reduce or split the implementation, or approve a bounded ticket-only "
+                    "exception:\n"
+                    f"factory retry {number} --repo {shlex.quote(str(repo))} "
+                    f"--budget-lines {suggested} "
+                    '--reason "Explain why this ticket needs the larger bound" --yes'
+                )
+
+            recovery = ticket_recovery(ticket, repo)
+            budget_approved = (
+                recovery["kind"] == "diff_budget" and budget_lines is not None
             )
-            if preserve_candidate:
-                ticket.update(
-                    status="Ready",
-                    attempt=0,
-                    retry_context=ticket.get("failure", ""),
-                    failure="",
-                    qa_approved=True,
+            qa_reset_approved = (
+                recovery["kind"] == "qa_evidence" and reset_qa
+            )
+            if reset_qa and not qa_reset_approved:
+                raise SystemExit(
+                    f"Ticket #{number} is not blocked by defective protected QA evidence; "
+                    "--reset-qa is not applicable."
                 )
-                note = "Operator retry from existing candidate and protected QA tests"
-            else:
-                ticket.update(
-                    status="Ready", attempt=0, failure="", retry_context="",
-                    qa_attempt=0, qa_commit="", qa_tests={}, qa_failure="",
-                    qa_approved=False, base_sha="",
+            if (
+                not recovery["retry_allowed"]
+                and not budget_approved
+                and not qa_reset_approved
+            ):
+                raise SystemExit(
+                    f"Ticket #{number} cannot be retried unchanged.\n"
+                    f"{recovery['summary']}"
                 )
-                (repo / ".factory/qa-approvals" / str(number)).unlink(missing_ok=True)
-                note = "Operator retry from repository base"
-            ticket.setdefault("history", []).append({
-                "at": now(), "status": "Ready", "note": note,
-            })
+
+            created_at = now()
+            override = None
+            if budget_lines is not None:
+                override = {
+                    "schema_version": 1,
+                    "lines": budget_lines,
+                    "charter_limit": charter.max_diff_lines,
+                    "reason": reason.strip(),
+                    "approved_at": created_at,
+                    "approved_by": "human",
+                }
+            backend = None
+            refresh = None
+            spec_changed = False
             if not mock:
                 backend = GitHubBackend(repo, project_number)
                 remote = {item["number"]: item for item in backend.load()}
                 if number not in remote:
                     raise SystemExit(f"Ticket #{number} was not found on GitHub")
-                remote[number].update(ticket)
+                default_agent = str(
+                    ticket.get("default_agent")
+                    or load_session_config(repo).get("agent")
+                    or ticket.get("agent")
+                    or "codex"
+                )
+                refresh = ticket_refresh_payload(remote[number], default_agent)
+                expected_plan = str(ticket.get("plan_id") or "")
+                refreshed_plan = parse_plan_id(refresh["body"])
+                if expected_plan and refreshed_plan != expected_plan:
+                    raise SystemExit(
+                        f"Edited Ticket #{number} no longer contains its Factory Plan "
+                        "identity marker. Restore the marker before retrying."
+                    )
+                expected_governance = ticket.get("governance")
+                refreshed_governance = parse_ticket_governance(refresh["body"])
+                if (
+                    isinstance(expected_governance, dict)
+                    and expected_governance.get("charter_sha256")
+                    and refreshed_governance != expected_governance
+                ):
+                    raise SystemExit(
+                        f"Edited Ticket #{number} no longer matches its approved governance "
+                        "marker. Restore the marker or replan the Ticket."
+                    )
+                if refresh["agent"] not in load_config(repo)["agents"]:
+                    raise SystemExit(
+                        f"Edited Ticket #{number} requests unregistered agent "
+                        f"{refresh['agent']!r}."
+                    )
+                previous_spec = (
+                    ticket.get("spec_sha256")
+                    or ticket_spec_fingerprint(ticket)
+                )
+                spec_changed = refresh["spec_sha256"] != previous_spec
+                if (
+                    recovery["kind"] == "ticket_specification"
+                    and not spec_changed
+                ):
+                    raise SystemExit(
+                        f"Ticket #{number} still needs information. Edit its GitHub issue "
+                        "before retrying."
+                    )
                 backend.set_status(remote[number], "Ready", "Operator retry")
-            store.save(); print(f"#{number} reset to Ready"); return
+            elif recovery["kind"] == "ticket_specification":
+                raise SystemExit(
+                    "This rehearsal Ticket source still needs information. Correct the "
+                    "approved rehearsal plan before retrying."
+                )
+            saved_failure = _saved_implementation_failure(ticket, repo)
+            event = {
+                "schema_version": 1,
+                "event_id": uuid.uuid4().hex,
+                "ticket": number,
+                "created_at": created_at,
+                "failure": saved_failure,
+                "diff_budget": budget,
+                "budget_override": override,
+                "recovery_kind": recovery["kind"],
+                "ticket_refresh": refresh,
+                "spec_changed": spec_changed,
+                "reset_qa": qa_reset_approved,
+                "qa_retry_context": (
+                    saved_failure[-3000:] if qa_reset_approved else ""
+                ),
+                "force_repository_base": bool(
+                    spec_changed
+                    or qa_reset_approved
+                    or recovery["kind"] in {
+                        "project_configuration", "revision_rebuild",
+                    }
+                ),
+                "reload_project_configuration": (
+                    recovery["kind"] == "project_configuration"
+                ),
+            }
+            event_dir = repo / ".factory/retry-events"
+            event_dir.mkdir(parents=True, exist_ok=True)
+            marker = event_dir / f"{number}.json"
+            temp = marker.with_suffix(".tmp")
+            temp.write_text(json.dumps(event, indent=2) + "\n")
+            os.replace(temp, marker)
+            apply_retry_event_to_ticket(repo, ticket, event)
+            store.save()
+            if override:
+                print(
+                    f"Approved Ticket #{number} diff-budget exception: "
+                    f"{override['lines']} lines (Charter remains {override['charter_limit']})."
+                )
+            print(
+                f"#{number} reset to Ready. A running Factory will consume retry event "
+                f"{event['event_id'][:12]}."
+            )
+            return
     raise SystemExit(f"Ticket #{number} not found")
 
 
@@ -2808,14 +3896,29 @@ def release_ticket_claim(
     assume_yes: bool,
 ) -> dict:
     """Perform an explicit, audited release of one abandoned remote claim."""
-    backend = GitHubBackend(repo)
+    store = StateStore(repo)
+    ticket = next(
+        (item for item in store.data.get("tickets", []) if item.get("number") == number),
+        None,
+    )
+    recorded_claim = (ticket or {}).get("remote_claim") or {}
+    session = load_session_config(repo)
+    backend = GitHubBackend(repo, session.get("project_number"))
     backend.preflight()
     claim = backend.read_claim(number)
-    if not claim:
-        raise ValueError(f"Ticket #{number} has no remote Factory claim")
-    if claim.get("run_id") != owner_run_id:
+    recorded_owner = str(
+        recorded_claim.get("owner_run_id")
+        or recorded_claim.get("run_id")
+        or ""
+    )
+    actual_owner = str((claim or {}).get("run_id") or "")
+    if actual_owner and actual_owner != owner_run_id:
         raise ValueError(
-            f"Ticket #{number} is owned by {claim.get('run_id')}, not {owner_run_id}"
+            f"Ticket #{number} is owned by {actual_owner}, not {owner_run_id}"
+        )
+    if not actual_owner and recorded_owner and recorded_owner != owner_run_id:
+        raise ValueError(
+            f"Ticket #{number} was recorded for {recorded_owner}, not {owner_run_id}"
         )
     if not assume_yes:
         try:
@@ -2827,21 +3930,81 @@ def release_ticket_claim(
             raise ValueError("interactive claim release required; rerun with --yes") from exc
         if answer != "RELEASE CLAIM":
             raise ValueError("remote claim release cancelled")
-    result = backend.release_claim(number, owner_run_id, reason=reason)
-    store = StateStore(repo)
-    ticket = next(
-        (item for item in store.data.get("tickets", []) if item.get("number") == number),
-        None,
+    result = (
+        backend.release_claim(number, owner_run_id, reason=reason)
+        if claim
+        else {
+            "released": False,
+            "ticket": number,
+            "run_id": owner_run_id,
+            "reason": "remote claim already absent",
+            "reconciled": True,
+        }
     )
+    claim_blocker = bool(
+        ticket
+        and ticket.get("status") == "Blocked"
+        and (
+            ticket.get("phase") == "claim"
+            or ticket_recovery(ticket, repo).get("kind") == "remote_claim"
+        )
+    )
+    if claim_blocker:
+        remote = next(
+            (
+                item for item in backend.load()
+                if int(item.get("number") or 0) == number
+            ),
+            None,
+        )
+        if remote is None:
+            raise ValueError(
+                f"Ticket #{number} is not present in GitHub Project "
+                f"#{backend.project_number}"
+            )
+        backend.set_status(
+            remote,
+            "Backlog",
+            "Operator released an abandoned Factory claim",
+        )
     if ticket:
-        ticket["remote_claim"] = {**claim, **result}
+        released_at = now()
+        ticket["last_released_claim"] = {
+            **recorded_claim,
+            **(claim or {}),
+            **result,
+            "released_at": released_at,
+            "operator_reason": reason,
+        }
+        if claim_blocker:
+            restart_ticket_from_repository_base(ticket, status="Backlog")
+        ticket.update(
+            remote_claim={},
+            recovery={},
+            next_human_action="",
+            blocking_questions=[],
+            failure="",
+            finished_at="",
+        )
         ticket.setdefault("history", []).append({
-            "at": now(),
-            "status": ticket.get("status", "Blocked"),
-            "note": f"Operator released remote claim: {reason}",
+            "at": released_at,
+            "status": ticket.get("status", "Backlog"),
+            "note": (
+                "Operator reconciled an already absent remote claim: "
+                if not result.get("released") else
+                "Operator released remote claim: "
+            ) + reason,
         })
         store.save()
-    print(f"Released remote claim for Ticket #{number} owned by {owner_run_id}.")
+    if result.get("released"):
+        print(f"Released remote claim for Ticket #{number} owned by {owner_run_id}.")
+    elif claim_blocker:
+        print(
+            f"Remote claim for Ticket #{number} was already absent; "
+            "reconciled the stale local blocker."
+        )
+    else:
+        print(f"Ticket #{number} has no remote Factory claim; no action was needed.")
     return result
 
 
@@ -2907,6 +4070,24 @@ def human_merge_ticket(
         raise ValueError(f"Ticket #{number} not found in factory state")
     if ticket.get("status") != "In Review":
         raise ValueError(f"Ticket #{number} is {ticket.get('status')}, not In Review")
+    evidence_mode = factory_execution_mode(store.data)
+    requested_mode = "rehearsal" if mock else "live"
+    if evidence_mode == "mixed":
+        raise ValueError(
+            "Factory state contains mixed Live and Rehearsal evidence. Clear local run state "
+            "and reload the intended run before merging."
+        )
+    if evidence_mode and evidence_mode != requested_mode:
+        if evidence_mode == "rehearsal":
+            raise ValueError(
+                f"Ticket #{number} contains Rehearsal evidence and cannot be merged as Live. "
+                "Finish it in Rehearsal with --mock, or clear local run state and start a "
+                "Live run to create a GitHub pull request."
+            )
+        raise ValueError(
+            f"Ticket #{number} contains Live evidence and cannot be merged as Rehearsal. "
+            "Return the Control Center to Live mode and merge its GitHub pull request."
+        )
     charter = FactoryCharter.load(repo, require_approved=True)
     governance = store.data.get("governance")
     if not isinstance(governance, dict):
@@ -2943,6 +4124,19 @@ def human_merge_ticket(
         or review.get("head") != approved_head
     ):
         raise ValueError("Code Review role approval does not match the exact candidate revision.")
+    pr_url = str(ticket.get("pr_url") or "")
+    review_references = (
+        str(ticket.get("review_ref") or ""),
+        str(review.get("pull_request") or ""),
+    )
+    if not mock and (
+        not pr_url
+        or any(reference.startswith("rehearsal://") for reference in review_references)
+    ):
+        raise ValueError(
+            f"Ticket #{number} has no Live GitHub pull request. Clear the local Rehearsal "
+            "run state, load the Live ticket, and rerun it before merging."
+        )
     branch = ticket.get("branch", "")
     if not branch:
         raise ValueError("Ticket branch is missing; the candidate cannot be merged safely.")
@@ -2954,7 +4148,7 @@ def human_merge_ticket(
     print(f"Human merge gate for Ticket #{number}: {ticket.get('title', '')}")
     print(f"  Candidate: {approved_head}")
     print(f"  Charter: {charter.policy_sha256()}")
-    print(f"  Pull request: {ticket.get('pr_url') or ticket.get('review_ref', 'rehearsal')}")
+    print(f"  Pull request: {pr_url or ticket.get('review_ref', 'rehearsal')}")
     if not assume_yes:
         try:
             answer = input("Merge this exact revision? Type MERGE EXACT REVISION: ")
@@ -2977,9 +4171,6 @@ def human_merge_ticket(
     else:
         backend = GitHubBackend(repo, project_number)
         backend.preflight()
-        pr_url = ticket.get("pr_url", "")
-        if not pr_url:
-            raise ValueError("Ticket pull request is missing.")
         backend.assert_pr_head(pr_url, approved_head)
         backend.merge_pr(pr_url)
         merged_pr = backend.merged_pr(ticket)
@@ -3273,9 +4464,789 @@ def prepare_project(repo: Path, *, assume_yes: bool) -> None:
     print("\nProject setup completed.")
 
 
+def _read_runtime_json(path: Path) -> dict:
+    try:
+        value = json.loads(path.read_text())
+    except (OSError, json.JSONDecodeError):
+        return {}
+    return value if isinstance(value, dict) else {}
+
+
+def _copy_recovery_entry(source: Path, destination: Path) -> None:
+    paths = [source, *source.rglob("*")] if source.is_dir() else [source]
+    if any(path.is_symlink() for path in paths):
+        raise ValueError(f"Recovery checkpoint refuses symbolic links under {source}")
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    if source.is_dir():
+        shutil.copytree(source, destination)
+    else:
+        shutil.copy2(source, destination)
+
+
+def _recovery_checkpoint_summary(repo: Path) -> dict:
+    runtime = repo / ".factory"
+    state = _read_runtime_json(runtime / "state.json")
+    planning = _read_runtime_json(runtime / "planning-state.json")
+    entries = [
+        relative for relative in RECOVERY_RUNTIME_PATHS
+        if (runtime / relative).exists()
+    ]
+    meaningful = bool(
+        state.get("tickets")
+        or planning.get("plan_id")
+        or any(
+            (runtime / relative).exists()
+            for relative in RECOVERY_RUNTIME_PATHS
+            if relative not in {"state.json", "ids.json", "planning-state.json"}
+        )
+    )
+    return {
+        "meaningful": meaningful,
+        "entries": entries,
+        "snapshot_at": max(
+            (
+                str(value)
+                for value in (
+                    state.get("updated_at"),
+                    planning.get("updated_at"),
+                )
+                if value
+            ),
+            default="",
+        ),
+        "mode": factory_execution_mode(state),
+        "run_id": str(state.get("run_id") or ""),
+        "ticket_count": len(state.get("tickets") or []),
+        "plan_id": str(planning.get("plan_id") or ""),
+        "project": str(planning.get("project") or state.get("project") or repo.name),
+    }
+
+
+def create_recovery_checkpoint(
+    repo: Path,
+    *,
+    reason: str,
+    kind: str = "reset",
+    include_empty: bool = False,
+) -> dict | None:
+    """Copy recoverable local runtime state before a destructive local action."""
+    repo = repo.resolve()
+    summary = _recovery_checkpoint_summary(repo)
+    if not summary["meaningful"] and not include_empty:
+        return None
+    runtime = repo / ".factory"
+    root = runtime / "recovery" / "checkpoints"
+    root.mkdir(parents=True, exist_ok=True)
+    created = datetime.now(timezone.utc)
+    checkpoint_id = (
+        created.strftime("%Y%m%dT%H%M%S%fZ")
+        + f"-{uuid.uuid4().hex[:6]}"
+    )
+    staging = root / f".{checkpoint_id}.tmp"
+    destination = root / checkpoint_id
+    payload = staging / "runtime"
+    payload.mkdir(parents=True)
+    try:
+        for relative in summary["entries"]:
+            _copy_recovery_entry(runtime / relative, payload / relative)
+        head = run(["git", "rev-parse", "HEAD"], repo, check=False).stdout.strip()
+        branch = run(
+            ["git", "branch", "--show-current"], repo, check=False,
+        ).stdout.strip()
+        manifest = {
+            "schema_version": 1,
+            "checkpoint_id": checkpoint_id,
+            "kind": kind,
+            "reason": reason,
+            "created_at": created.isoformat(timespec="microseconds"),
+            "repository": str(repo),
+            "git_head": head,
+            "git_branch": branch,
+            **{key: value for key, value in summary.items() if key != "meaningful"},
+        }
+        (staging / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
+        os.replace(staging, destination)
+    except Exception:
+        shutil.rmtree(staging, ignore_errors=True)
+        raise
+    return {**manifest, "path": str(destination)}
+
+
+def _recovery_time(value: object) -> float:
+    try:
+        return datetime.fromisoformat(
+            str(value).replace("Z", "+00:00")
+        ).timestamp()
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _recovery_checkpoint_rank(item: dict) -> tuple:
+    entries = set(item.get("entries") or [])
+    completeness = (
+        2 if item.get("ticket_count")
+        else 1 if (
+            item.get("plan_id")
+            or entries - {"state.json", "ids.json", "planning-state.json"}
+        )
+        else 0
+    )
+    return (
+        completeness,
+        _recovery_time(item.get("snapshot_at") or item.get("created_at")),
+        _recovery_time(item.get("created_at")),
+        str(item.get("checkpoint_id") or ""),
+    )
+
+
+def recovery_checkpoints(repo: Path, *, include_undo: bool = False) -> list[dict]:
+    root = repo.resolve() / ".factory" / "recovery" / "checkpoints"
+    checkpoints = []
+    if not root.is_dir():
+        return checkpoints
+    for path in root.iterdir():
+        if not path.is_dir() or path.name.startswith("."):
+            continue
+        manifest = _read_runtime_json(path / "manifest.json")
+        if (
+            manifest.get("schema_version") != 1
+            or manifest.get("checkpoint_id") != path.name
+            or (
+                not include_undo
+                and manifest.get("kind") == "undo"
+            )
+        ):
+            continue
+        if not manifest.get("snapshot_at"):
+            payload = path / "runtime"
+            state = _read_runtime_json(payload / "state.json")
+            planning = _read_runtime_json(payload / "planning-state.json")
+            manifest["snapshot_at"] = max(
+                (
+                    str(value)
+                    for value in (
+                        state.get("updated_at"),
+                        planning.get("updated_at"),
+                    )
+                    if value
+                ),
+                default="",
+            )
+        manifest["path"] = str(path)
+        checkpoints.append(manifest)
+    return sorted(checkpoints, key=_recovery_checkpoint_rank, reverse=True)
+
+
+def latest_recovery_checkpoint(repo: Path) -> dict | None:
+    checkpoints = recovery_checkpoints(repo, include_undo=True)
+    return checkpoints[0] if checkpoints else None
+
+
+def current_runtime_is_latest(
+    repo: Path,
+    checkpoint: dict | None = None,
+) -> bool:
+    checkpoint = checkpoint or latest_recovery_checkpoint(repo)
+    if not checkpoint:
+        return False
+    current = _recovery_checkpoint_summary(repo)
+    current_time = _recovery_time(current.get("snapshot_at"))
+    checkpoint_time = _recovery_time(
+        checkpoint.get("snapshot_at") or checkpoint.get("created_at")
+    )
+    return bool(
+        current.get("meaningful")
+        and current_time
+        and checkpoint_time
+        and current_time >= checkpoint_time
+    )
+
+
+def restore_recovery_checkpoint(
+    repo: Path,
+    checkpoint: dict,
+    *,
+    assume_yes: bool,
+) -> dict:
+    """Restore Factory-owned runtime files from one validated local checkpoint."""
+    repo = repo.resolve()
+    checkpoint_path = Path(str(checkpoint.get("path") or "")).resolve()
+    expected_root = (repo / ".factory" / "recovery" / "checkpoints").resolve()
+    try:
+        checkpoint_path.relative_to(expected_root)
+    except ValueError as exc:
+        raise ValueError("Recovery checkpoint is outside this repository.") from exc
+    manifest = _read_runtime_json(checkpoint_path / "manifest.json")
+    if (
+        manifest.get("schema_version") != 1
+        or manifest.get("checkpoint_id") != checkpoint_path.name
+    ):
+        raise ValueError("Recovery checkpoint manifest is missing or invalid.")
+    entries = manifest.get("entries")
+    if (
+        not isinstance(entries, list)
+        or any(entry not in RECOVERY_RUNTIME_PATHS for entry in entries)
+    ):
+        raise ValueError("Recovery checkpoint contains unsupported runtime paths.")
+    payload = checkpoint_path / "runtime"
+    for relative in entries:
+        if not (payload / relative).exists():
+            raise ValueError(f"Recovery checkpoint is incomplete: {relative} is missing.")
+    print(
+        f"Latest local checkpoint: {manifest.get('created_at', 'unknown time')} "
+        f"({manifest.get('ticket_count', 0)} tickets, "
+        f"plan {manifest.get('plan_id') or 'none'})."
+    )
+    if not assume_yes:
+        try:
+            answer = input("Restore this local Factory state? Type RECOVER LATEST: ")
+        except EOFError as exc:
+            raise ValueError(
+                "recovery approval required; rerun in a terminal or pass --yes"
+            ) from exc
+        if answer != "RECOVER LATEST":
+            raise ValueError("Factory state recovery cancelled")
+    undo = create_recovery_checkpoint(
+        repo,
+        reason=f"Before restoring checkpoint {manifest['checkpoint_id']}",
+        kind="undo",
+        include_empty=True,
+    )
+    runtime = repo / ".factory"
+    for relative in RECOVERY_RUNTIME_PATHS:
+        destination = runtime / relative
+        if destination.is_dir() and not destination.is_symlink():
+            shutil.rmtree(destination)
+        else:
+            destination.unlink(missing_ok=True)
+    for relative in entries:
+        _copy_recovery_entry(payload / relative, runtime / relative)
+    restored_at = now()
+    manifest["last_restored_at"] = restored_at
+    manifest["undo_checkpoint_id"] = (undo or {}).get("checkpoint_id", "")
+    (checkpoint_path / "manifest.json").write_text(
+        json.dumps(manifest, indent=2) + "\n"
+    )
+    print(
+        f"Recovered local Factory state from checkpoint {manifest['checkpoint_id']}."
+    )
+    print("Tracked source files and remote GitHub artifacts were not changed.")
+    return manifest
+
+
+def _latest_planning_log_value(
+    repo: Path,
+    plan_id: str,
+    stage: str,
+) -> tuple[dict | None, Path | None]:
+    logs = repo / ".factory" / "logs"
+    if not logs.is_dir():
+        return None, None
+    pattern = re.compile(
+        rf"planner-{re.escape(plan_id)}-{re.escape(stage)}"
+        r"(?:-revision-(\d+))?\.log"
+    )
+    candidates = []
+    for path in logs.glob(f"planner-{plan_id}-{stage}*.log"):
+        match = pattern.fullmatch(path.name)
+        if not match or path.is_symlink():
+            continue
+        revision = int(match.group(1) or 0)
+        candidates.append((revision, path.stat().st_mtime_ns, path))
+    schema_path = repo / "factory" / "planning_schemas" / f"{stage}.json"
+    if not schema_path.is_file():
+        schema_path = Path(__file__).with_name("planning_schemas") / f"{stage}.json"
+    required = set(_read_runtime_json(schema_path).get("required") or [])
+    for _, _, path in sorted(candidates, reverse=True):
+        try:
+            with path.open() as stream:
+                first_line = stream.readline(2_000_001)
+            if len(first_line) > 2_000_000:
+                continue
+            value = json.loads(first_line)
+        except (OSError, UnicodeError, json.JSONDecodeError):
+            continue
+        if isinstance(value, dict) and required <= set(value):
+            return value, path
+    return None, None
+
+
+def _recovered_run_id(tickets: list[dict]) -> str:
+    candidates = []
+    for ticket in tickets:
+        summary = ticket.get("remote_run_summary") or {}
+        summary_run = str(summary.get("run_id") or "")
+        if summary_run:
+            candidates.append((
+                summary_run,
+                str(
+                    summary.get("_remote_updated_at")
+                    or ticket.get("updatedAt")
+                    or ""
+                ),
+            ))
+        claim = ticket.get("remote_claim") or {}
+        claim_run = str(claim.get("owner_run_id") or claim.get("run_id") or "")
+        if claim_run:
+            candidates.append((
+                claim_run,
+                str(claim.get("claimed_at") or ticket.get("updatedAt") or ""),
+            ))
+    if not candidates:
+        return uuid.uuid4().hex[:12]
+    counts = Counter(run_id for run_id, _ in candidates)
+    newest = {}
+    for run_id, timestamp in candidates:
+        newest[run_id] = max(newest.get(run_id, ""), timestamp)
+    return max(counts, key=lambda run_id: (counts[run_id], newest[run_id], run_id))
+
+
+def _latest_remote_plan(tickets: list[dict]) -> tuple[str, list[dict]]:
+    planned = []
+    for ticket in tickets:
+        plan_id = parse_plan_id(str(ticket.get("body") or ""))
+        if plan_id:
+            planned.append((
+                plan_id,
+                str(ticket.get("updatedAt") or ""),
+                int(ticket.get("number") or 0),
+                ticket,
+            ))
+    if not planned:
+        raise ValueError(
+            "No governed Factory Tickets were found in the configured GitHub Project."
+        )
+    newest_by_plan = {}
+    for plan_id, updated_at, number, _ in planned:
+        newest_by_plan[plan_id] = max(
+            newest_by_plan.get(plan_id, ("", 0)),
+            (updated_at, number),
+        )
+    selected = max(
+        newest_by_plan,
+        key=lambda plan_id: (*newest_by_plan[plan_id], plan_id),
+    )
+    return selected, [
+        ticket for plan_id, _, _, ticket in planned if plan_id == selected
+    ]
+
+
+def _recover_planning_dashboard(
+    repo: Path,
+    *,
+    plan_id: str,
+    tickets: list[dict],
+    project_number: int,
+    repository: str,
+    profile_name: str,
+    governance: dict,
+) -> dict:
+    recovered_at = now()
+    run_dir = repo / ".factory" / "plans" / plan_id
+    run_dir.mkdir(parents=True, exist_ok=True)
+    publication_issues = {}
+    for ticket in tickets:
+        marker = re.search(
+            rf"<!--\s*factory-plan:{re.escape(plan_id)}:([^ >]+)\s*-->",
+            str(ticket.get("body") or ""),
+        )
+        if marker:
+            publication_issues[marker.group(1)] = int(ticket["number"])
+    publication = {
+        "repository": repository,
+        "project_number": project_number,
+        "issues": publication_issues,
+        "ticket_count": len(publication_issues),
+        "tickets": [
+            {
+                "number": int(ticket["number"]),
+                "title": str(ticket.get("title") or ""),
+                "status": str(ticket.get("status") or "Backlog"),
+                "url": str(ticket.get("url") or ""),
+            }
+            for ticket in sorted(tickets, key=lambda item: int(item["number"]))
+        ],
+    }
+    stage_states = []
+    manifest_stages = {}
+    project_name = repo.name
+    planning_agent = (
+        load_session_config(repo).get("planning_agent") or "codex"
+    )
+    for stage, filename, title in RECOVERY_PLANNING_STAGES:
+        value, log_path = _latest_planning_log_value(repo, plan_id, stage)
+        json_path = run_dir / f"{filename}.json"
+        markdown_path = run_dir / f"{filename}.md"
+        if value is not None:
+            if stage == "vertical_slices":
+                value.update({
+                    "plan_version": 2,
+                    "plan_id": plan_id,
+                    "planning_agent": planning_agent,
+                    "publication": publication,
+                })
+            if stage == "product_review":
+                project_name = str(
+                    (value.get("project") or {}).get("name") or project_name
+                )
+            json_path.write_text(json.dumps(value, indent=2) + "\n")
+            markdown_path.write_text(
+                f"# {title}\n\n"
+                f"Recovered from `{log_path.relative_to(repo)}`.\n\n"
+                "```json\n"
+                + json.dumps(value, indent=2)
+                + "\n```\n"
+            )
+            digest = hashlib.sha256(json_path.read_bytes()).hexdigest()
+            status = "complete"
+            questions = value.get(
+                "blocking_questions", value.get("open_questions", []),
+            )
+            json_reference = str(json_path.relative_to(repo))
+            markdown_reference = str(markdown_path.relative_to(repo))
+            log_reference = str(log_path.relative_to(repo))
+        else:
+            digest = ""
+            status = (
+                "skipped"
+                if stage not in factory_profile(profile_name)["planning_roles"]
+                else "unavailable"
+            )
+            questions = []
+            json_reference = ""
+            markdown_reference = ""
+            log_reference = ""
+        stage_states.append({
+            "id": stage,
+            "title": title,
+            "status": status,
+            "json": json_reference,
+            "markdown": markdown_reference,
+            "sha256": digest,
+            "questions": questions,
+            "receipt": "",
+            "failure_kind": "",
+            "error": "",
+            "validation_error": "",
+            "rejected_artifact": "",
+            "failure_count": 0,
+            "same_failure_count": 0,
+        })
+        manifest_stages[stage] = {
+            "status": status,
+            "sha256": digest,
+            "log": log_reference,
+            "receipt": "",
+            "recovered": bool(value),
+        }
+    recovered_approval = {
+        "recovered": True,
+        "source": "published governed GitHub Tickets",
+        "recovered_at": recovered_at,
+        "original_receipt_available": False,
+    }
+    required_approvals = set(governance.get("planning_approvals") or [])
+    approvals = {
+        "product": (
+            recovered_approval if "product_review" in required_approvals else None
+        ),
+        "system_architecture": (
+            recovered_approval
+            if "system_architecture" in required_approvals else None
+        ),
+        "program_design": (
+            recovered_approval if "program_design" in required_approvals else None
+        ),
+        "alignment": (
+            recovered_approval if "alignment" in required_approvals else None
+        ),
+    }
+    recovery = {
+        "source": (
+            "GitHub Project, issues, pull requests, run summaries, claims, "
+            "and surviving planner logs"
+        ),
+        "recovered_at": recovered_at,
+        "receipts_restored": False,
+        "review_history_restored": False,
+    }
+    manifest = {
+        "schema_version": 2,
+        "plan_id": plan_id,
+        "project": project_name,
+        "status": "published",
+        "planning_agent": planning_agent,
+        "updated_at": recovered_at,
+        "profile": profile_name,
+        "governance": governance,
+        "planning_controls": {
+            "planning_approvals": list(required_approvals),
+        },
+        "approvals": approvals,
+        "stages": manifest_stages,
+        "receipts": [],
+        "publication": publication,
+        "recovery": recovery,
+    }
+    (run_dir / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
+    (repo / ".factory" / "plans" / "latest.json").write_text(
+        json.dumps({"plan_id": plan_id, "path": str(run_dir)}, indent=2) + "\n"
+    )
+    planning_state = {
+        "plan_id": plan_id,
+        "project": project_name,
+        "status": "published",
+        "planning_agent": planning_agent,
+        "mode": "live",
+        "updated_at": recovered_at,
+        "run_directory": str(run_dir.relative_to(repo)),
+        "approvals": approvals,
+        "profile": profile_name,
+        "governance": governance,
+        "planning_controls": {
+            "planning_approvals": list(required_approvals),
+        },
+        "policy": {},
+        "stages": stage_states,
+        "alignment_review": "",
+        "traceability": "",
+        "receipts": [],
+        "publication": publication,
+        "recovery": recovery,
+    }
+    (repo / ".factory" / "planning-state.json").write_text(
+        json.dumps(planning_state, indent=2) + "\n"
+    )
+    return planning_state
+
+
+def recover_live_state(
+    repo: Path,
+    *,
+    project_number: int | None,
+    assume_yes: bool,
+) -> dict:
+    """Reconstruct the latest published Live run from durable remote evidence."""
+    backend = GitHubBackend(repo, project_number)
+    remote = backend.load_recovery_state()
+    plan_id, tickets = _latest_remote_plan(remote)
+    run_id = _recovered_run_id(tickets)
+    first_governance = parse_ticket_governance(str(tickets[0].get("body") or ""))
+    if not first_governance:
+        raise ValueError("The latest GitHub Tickets do not contain Factory governance.")
+    for ticket in tickets[1:]:
+        if parse_ticket_governance(str(ticket.get("body") or "")) != first_governance:
+            raise ValueError(
+                f"GitHub Ticket #{ticket['number']} has inconsistent Factory governance."
+            )
+    status_counts = Counter(str(ticket.get("status") or "Backlog") for ticket in tickets)
+    rendered_counts = ", ".join(
+        f"{status} {count}" for status, count in sorted(status_counts.items())
+    )
+    print(
+        f"Latest GitHub state: plan {plan_id}, run {run_id}, "
+        f"{len(tickets)} tickets ({rendered_counts})."
+    )
+    if not assume_yes:
+        try:
+            answer = input("Rebuild local state from GitHub? Type RECOVER LATEST: ")
+        except EOFError as exc:
+            raise ValueError(
+                "recovery approval required; rerun in a terminal or pass --yes"
+            ) from exc
+        if answer != "RECOVER LATEST":
+            raise ValueError("Factory state recovery cancelled")
+    undo = create_recovery_checkpoint(
+        repo,
+        reason=f"Before reconstructing Live plan {plan_id} from GitHub",
+        kind="undo",
+        include_empty=True,
+    )
+    profile_name = str(first_governance.get("profile") or "standard")
+    run_args = parser().parse_args([
+        "run", "--repo", str(repo), "--dry-run",
+        "--profile", profile_name,
+        *(
+            ["--project-number", str(backend.project_number)]
+            if backend.project_number else []
+        ),
+    ])
+    apply_session_defaults(run_args, repo)
+    if profile_name == "autonomous-demo":
+        run_args.allow_autonomous_merge = True
+    factory = Factory(run_args, recovering=True)
+    factory.backend = backend
+    factory.run_id = run_id
+    factory.load_tickets(source=tickets)
+    factory.store.data["recovery"] = {
+        "source": "github",
+        "recovered_at": now(),
+        "plan_id": plan_id,
+        "run_id": run_id,
+        "undo_checkpoint_id": (undo or {}).get("checkpoint_id", ""),
+        "receipts_restored": False,
+        "review_history_restored": False,
+    }
+    factory.store.save()
+    governance = factory.governance
+    planning = _recover_planning_dashboard(
+        repo,
+        plan_id=plan_id,
+        tickets=tickets,
+        project_number=int(backend.project_number),
+        repository=f"{backend.owner}/{backend.name}",
+        profile_name=profile_name,
+        governance=governance,
+    )
+    print(f"Recovered local Factory state for Live plan {plan_id} from GitHub.")
+    print(
+        "Tracked source and GitHub were not changed. Deleted local receipts and "
+        "review history were not recreated."
+    )
+    return {
+        "source": "github",
+        "plan_id": plan_id,
+        "run_id": run_id,
+        "ticket_count": len(tickets),
+        "project_number": backend.project_number,
+        "planning": planning,
+    }
+
+
+def recover_latest_state(
+    repo: Path,
+    *,
+    project_number: int | None,
+    assume_yes: bool,
+) -> dict:
+    checkpoint = latest_recovery_checkpoint(repo)
+    if checkpoint:
+        if current_runtime_is_latest(repo, checkpoint):
+            print(
+                "Current local Factory state is already the latest recoverable state; "
+                "no files were changed."
+            )
+            return {
+                "source": "current",
+                "checkpoint_id": checkpoint["checkpoint_id"],
+                "created_at": checkpoint.get("created_at", ""),
+                "ticket_count": checkpoint.get("ticket_count", 0),
+                "plan_id": checkpoint.get("plan_id", ""),
+            }
+        restored = restore_recovery_checkpoint(
+            repo, checkpoint, assume_yes=assume_yes,
+        )
+        return {
+            "source": "checkpoint",
+            "checkpoint_id": restored["checkpoint_id"],
+            "created_at": restored.get("created_at", ""),
+            "ticket_count": restored.get("ticket_count", 0),
+            "plan_id": restored.get("plan_id", ""),
+        }
+    return recover_live_state(
+        repo,
+        project_number=project_number,
+        assume_yes=assume_yes,
+    )
+
+
+def return_to_default_branch_after_local_reset(repo: Path) -> str:
+    """Return a clean managed checkout to the exact remote default revision."""
+    inside = run(
+        ["git", "rev-parse", "--is-inside-work-tree"],
+        repo,
+        check=False,
+    )
+    if inside.returncode or inside.stdout.strip() != "true":
+        return ""
+    symbolic = run(
+        [
+            "git", "symbolic-ref", "--quiet", "--short",
+            "refs/remotes/origin/HEAD",
+        ],
+        repo,
+        check=False,
+    )
+    remote_head = symbolic.stdout.strip()
+    if symbolic.returncode or not remote_head.startswith("origin/"):
+        return ""
+    default_branch = remote_head.removeprefix("origin/")
+    current = run(
+        ["git", "branch", "--show-current"], repo, check=False,
+    ).stdout.strip()
+    dirty = run(
+        ["git", "status", "--porcelain"], repo, check=False,
+    ).stdout.strip()
+    if dirty:
+        raise RuntimeError(
+            f"Cannot return to GitHub default branch `{default_branch}` because "
+            "the current checkout has uncommitted changes. Commit or stash them, "
+            "then reset local state again."
+        )
+    local_default = run(
+        ["git", "show-ref", "--verify", "--quiet", f"refs/heads/{default_branch}"],
+        repo,
+        check=False,
+    )
+    preserved_branch = ""
+    if local_default.returncode == 0:
+        local_revision = run(
+            ["git", "rev-parse", default_branch], repo,
+        ).stdout.strip()
+        remote_revision = run(
+            ["git", "rev-parse", remote_head], repo,
+        ).stdout.strip()
+        if local_revision != remote_revision:
+            preserved_branch = (
+                f"recovery/pre-reset-{default_branch}-"
+                + datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+                + f"-{uuid.uuid4().hex[:6]}"
+            )
+            run(
+                ["git", "branch", preserved_branch, default_branch],
+                repo,
+            )
+            if current == default_branch:
+                run(["git", "switch", "--detach", remote_head], repo)
+                current = ""
+            run(
+                ["git", "branch", "-f", default_branch, remote_head],
+                repo,
+            )
+        command = ["git", "switch", default_branch]
+    else:
+        command = ["git", "switch", "--track", remote_head]
+    switched = run(command, repo, check=False)
+    if switched.returncode:
+        raise RuntimeError(
+            switched.stderr.strip()
+            or switched.stdout.strip()
+            or f"Could not switch to GitHub default branch `{default_branch}`."
+        )
+    print(
+        f"Returned managed checkout from `{current or 'detached HEAD'}` "
+        f"to GitHub default branch `{default_branch}`."
+    )
+    if preserved_branch:
+        print(
+            f"Preserved the previous local `{default_branch}` at "
+            f"`{preserved_branch}` before aligning it with `{remote_head}`."
+        )
+    return default_branch
+
+
 def reset_project(
     repo: Path, *, scenario: str, start_over: bool, local_state_only: bool = False,
 ) -> None:
+    checkpoint = create_recovery_checkpoint(
+        repo,
+        reason="Before start-over reset" if start_over else "Before ticket execution reset",
+    )
+    if checkpoint:
+        print(
+            f"Recovery checkpoint created: {checkpoint['checkpoint_id']} "
+            f"({checkpoint['ticket_count']} tickets)."
+        )
     project = ProjectContract.load(repo)
     command = None if local_state_only else project.reset_argv(scenario, start_over=start_over)
     if command:
@@ -3293,6 +5264,8 @@ def reset_project(
         if path.startswith(allowed_prefix) or path == supervisor_path:
             run(["git", "worktree", "remove", "--force", path], repo, check=False)
     run(["git", "worktree", "prune"], repo, check=False)
+    if local_state_only:
+        return_to_default_branch_after_local_reset(repo)
     runtime = repo / ".factory"
     for relative in ("state.json", "state.tmp", "ids.json"):
         (runtime / relative).unlink(missing_ok=True)
@@ -3469,6 +5442,19 @@ def parser():
     monitor_p.add_argument("--json", action="store_true", dest="as_json")
     retry = sub.add_parser("retry"); retry.add_argument("issue", type=int); retry.add_argument("--repo", default=".")
     retry.add_argument("--mock", action="store_true"); retry.add_argument("--project-number", type=positive_int)
+    retry.add_argument(
+        "--budget-lines", type=positive_int,
+        help="approve a human-audited ticket-only implementation line limit",
+    )
+    retry.add_argument(
+        "--reason",
+        help="required explanation for a ticket-only diff-budget exception",
+    )
+    retry.add_argument(
+        "--reset-qa", action="store_true",
+        help="discard defective protected QA evidence and regenerate it from the repository base",
+    )
+    retry.add_argument("--yes", action="store_true")
     release_claim = sub.add_parser(
         "release-claim", help="explicitly release one abandoned remote Ticket claim",
     )
@@ -3488,6 +5474,13 @@ def parser():
         "--local-state-only", action="store_true",
         help="clear local factory artifacts without invoking the repository reset adapter",
     )
+    recover = sub.add_parser(
+        "recover",
+        help="restore the latest pre-reset checkpoint or reconstruct the latest Live run",
+    )
+    recover.add_argument("--repo", default=".")
+    recover.add_argument("--project-number", type=positive_int)
+    recover.add_argument("--yes", action="store_true")
     plan = sub.add_parser("plan", help="run the Product Review expert on a PRD")
     plan.add_argument("prd"); plan.add_argument("--repo", default="."); plan.add_argument("--output")
     plan.add_argument("--profile", choices=sorted(FACTORY_PROFILES))
@@ -3682,7 +5675,16 @@ def main():
                     print(f"- {finding['severity'].upper()} {finding['summary']}: {finding['detail']}")
                 print(f"Report: {output}")
         elif args.command == "retry":
-            retry_ticket(repo, args.issue, args.mock, args.project_number)
+            retry_ticket(
+                repo,
+                args.issue,
+                args.mock,
+                args.project_number,
+                reset_qa=args.reset_qa,
+                budget_lines=args.budget_lines,
+                reason=args.reason or "",
+                assume_yes=args.yes,
+            )
         elif args.command == "release-claim":
             release_ticket_claim(
                 repo,
@@ -3703,6 +5705,12 @@ def main():
             reset_project(
                 repo, scenario=args.scenario, start_over=args.start_over,
                 local_state_only=args.local_state_only,
+            )
+        elif args.command == "recover":
+            recover_latest_state(
+                repo,
+                project_number=args.project_number,
+                assume_yes=args.yes,
             )
         elif args.command == "plan":
             planner_label = "deterministic fixtures" if args.mock else args.planning_agent.title()
