@@ -666,7 +666,7 @@ export PLAN_ID=<plan-id-from-output>
 
       <footer>
         <span className="footer-brand"><span className="brand-mark" aria-hidden="true"><i /><i /><i /><i /></span>Software (re)-Factory</span>
-        <span>Connect. Plan. Build. Verify. · workshop-v1.1.1</span>
+        <span>Connect. Plan. Build. Verify. · workshop-v1.1.2</span>
       </footer>
     </>
   );

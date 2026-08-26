@@ -1,6 +1,6 @@
 # Software (re)-Factory Workshop
 
-Release: `workshop-v1.1.1`
+Release: `workshop-v1.1.2`
 
 This repository contains the reference factory orchestrator and the Pocket
 Cinema refactoring workpiece. A four-expert planning pipeline turns each PRD
@@ -11,16 +11,17 @@ Pocket Cinema is the deterministic workshop pack. In Live mode, the same
 factory can target a separate existing Git repository and any PRD after
 `factory init --repo /path/to/project` creates its reviewable Project Contract.
 
-## v1.1.1 highlights
+## v1.1.2 highlights
 
-- A clearer Control Center puts the current operation, required human
-  decisions, ticket state, and live output first.
-- The Control Center and workshop guide share a responsive visual system based
-  on the Amazon Developer documentation style.
-- The Live greenfield path supports an empty GitHub repository without copying
-  the factory or workshop source into the product repository.
-- The new rehearsal guide records the complete path from repository connection
-  through planning, ticket delivery, review, and merge.
+- `factory recover` restores the latest pre-reset checkpoint or reconstructs
+  the latest Live run, including returning the checkout to its default branch.
+- Protected Acceptance Tests can be revised from written human feedback before
+  approval while preserving revision history and causal RED evidence.
+- Every retry requires a recorded reason that is shown in Ticket details and
+  passed to the Supervisor and replacement agents.
+- Blocked Tickets explain why they stopped, propose a recovery, and can offer
+  an editable GitHub Ticket correction that is validated and saved before
+  retry. Periodic refresh preserves log and editor scroll positions.
 
 - Start the self-guided experience with the [workshop website](workshop-guide/README.md).
 - Use the [factory quickstart](factory/README.md) for the operator reference.

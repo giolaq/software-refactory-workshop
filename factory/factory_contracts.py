@@ -9,7 +9,7 @@ from pathlib import Path
 from uuid import uuid4
 
 
-WORKSHOP_VERSION = "workshop-v1.1.1"
+WORKSHOP_VERSION = "workshop-v1.1.2"
 PROFILES = {
     "lean": {
         "name": "Lean",

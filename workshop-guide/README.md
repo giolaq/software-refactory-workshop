@@ -1,6 +1,6 @@
 # Software (re)-Factory workshop guide
 
-Release: `workshop-v1.1.1`
+Release: `workshop-v1.1.2`
 
 The attendee-facing, self-guided website for the Software (re)-Factory
 workshop. It follows one PRD from intent to verified delivery using a repeated
