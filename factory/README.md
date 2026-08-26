@@ -537,7 +537,7 @@ state would fail again.
 | Another Factory Run owns the remote claim | Resume the named run, or explicitly release only a confirmed abandoned claim. |
 | PR was closed or its head changed after review | Choose **Rebuild and retry**. The Factory starts from the default branch on a versioned replacement branch, reruns QA and all gates, and closes a stale open PR as superseded. |
 | A different revision was already merged | Preserve the merge history and create a new governed Ticket for corrective work. The original Ticket cannot be retried. |
-| Retryable adapter or gate failure | Choose **Retry ticket**. Eligible protected QA and candidate work are preserved; otherwise the Factory restarts from the repository base. |
+| Retryable adapter or gate failure | Enter what was repaired or why another attempt can succeed, then choose **Retry ticket**. The reason is recorded and sent to the Supervisor and next agent. Eligible protected QA and candidate work are preserved; otherwise the Factory restarts from the repository base. |
 
 For a corrected GitHub Ticket:
 
@@ -558,14 +558,22 @@ restart.
 The basic CLI recovery is:
 
 ```sh
-./factory/factory retry 8
+./factory/factory retry 8 \
+  --reason "The missing generated-output ignores were added to the corrected Ticket"
 ```
+
+Every manual retry requires a reason of at least 12 characters. The Factory
+records it in Ticket history, displays it in the Control Center, includes it in
+Supervisor coordination, and sends it to the next implementation prompt.
 
 When the blocked-ticket recovery says the protected QA harness is defective,
 use the dedicated recovery instead of generic Retry:
 
 ```sh
-./factory/factory retry 8 --reset-qa --yes
+./factory/factory retry 8 \
+  --reset-qa \
+  --reason "The protected test used an internal API instead of public behavior" \
+  --yes
 ```
 
 `--reset-qa` is refused for every other blocker. It clears the ticket's old QA
@@ -760,9 +768,10 @@ factory approve-tests ISSUE [--yes]
 factory request-test-changes ISSUE
                             (--feedback TEXT|--feedback-file PATH) [--yes]
 factory status [--repo PATH]
-factory retry ISSUE [--repo PATH] [--project-number N] [--mock]
+factory retry ISSUE --reason TEXT
+                    [--repo PATH] [--project-number N] [--mock]
                     [--reset-qa --yes]
-                    [--budget-lines N --reason TEXT --yes]
+                    [--budget-lines N --yes]
 factory release-claim ISSUE --owner-run-id RUN_ID --reason TEXT --yes
 factory reset [--repo PATH] [--start-over] [--local-state-only]
 factory recover [--repo PATH] [--project-number N] [--yes]

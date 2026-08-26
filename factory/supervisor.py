@@ -417,6 +417,7 @@ class AgentSupervisor:
                 "dependencies": ticket.get("dependencies", []),
                 "attempt": ticket.get("attempt", 0),
                 "failure": ticket.get("failure", "")[-1200:],
+                "retry_reason": ticket.get("last_retry_reason", "")[-1200:],
             }
             ticket_state.append(compact)
             if ticket.get("status") == "Ready":

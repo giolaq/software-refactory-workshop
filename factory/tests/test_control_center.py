@@ -58,7 +58,9 @@ class ControlCenterTests(unittest.TestCase):
 
     def test_parser_exposes_protected_qa_recovery(self):
         args = parser().parse_args([
-            "retry", "6", "--repo", "/tmp/workshop", "--reset-qa", "--yes",
+            "retry", "6", "--repo", "/tmp/workshop", "--reset-qa",
+            "--reason", "Regenerate the defective protected QA evidence",
+            "--yes",
         ])
 
         self.assertEqual(args.command, "retry")
@@ -462,6 +464,7 @@ class ControlCenterTests(unittest.TestCase):
                 "issue": 6,
                 "mode": "rehearsal",
                 "reset_qa": True,
+                "reason": "Regenerate the defective protected QA evidence",
             })
 
             self.assertIn("--reset-qa", commands[0])
@@ -475,6 +478,11 @@ class ControlCenterTests(unittest.TestCase):
                     "failure": "A required gate failed.",
                 }],
             }))
+            with self.assertRaisesRegex(InputError, "Reason is required"):
+                center.build_commands("retry", {
+                    "issue": 7,
+                    "mode": "rehearsal",
+                })
             with self.assertRaisesRegex(
                 InputError, "available only.*QA evidence defect",
             ):
@@ -482,6 +490,7 @@ class ControlCenterTests(unittest.TestCase):
                     "issue": 7,
                     "mode": "rehearsal",
                     "reset_qa": True,
+                    "reason": "Regenerate the defective protected QA evidence",
                 })
 
     def test_live_merge_rejects_persisted_rehearsal_evidence(self):
@@ -521,6 +530,9 @@ class ControlCenterTests(unittest.TestCase):
         self.assertIn("retry-with-budget", javascript)
         self.assertIn("Regenerate QA tests and retry", javascript)
         self.assertIn("retry-reset-qa", javascript)
+        self.assertIn('id="retry-reason"', javascript)
+        self.assertIn("Latest retry reason", javascript)
+        self.assertIn("why another attempt can succeed", javascript)
         self.assertIn("Reload issue and retry", javascript)
         self.assertIn("Reload contract and retry", javascript)
         self.assertIn("Release abandoned claim", javascript)
@@ -897,7 +909,11 @@ class ControlCenterTests(unittest.TestCase):
 
             self.assertEqual(approval["companion"]["action"], "approve-tests")
             self.assertEqual(approval["companion"]["status"], "succeeded")
-            retry = center.start("retry", {"issue": 4, "mode": "rehearsal"})
+            retry = center.start("retry", {
+                "issue": 4,
+                "mode": "rehearsal",
+                "reason": "Re-run the repaired verification gate",
+            })
             self.assertEqual(retry["companion"]["action"], "retry")
             self.assertEqual(retry["companion"]["status"], "succeeded")
             merge = center.start("merge", {"issue": 1, "mode": "rehearsal"})

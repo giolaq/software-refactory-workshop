@@ -338,6 +338,7 @@ def restart_ticket_from_repository_base(
         diff_budget=None,
         retry_context="",
         qa_retry_context="",
+        last_retry_reason="",
         failure="",
         recovery={},
         next_human_action="",
@@ -374,6 +375,10 @@ def apply_retry_event_to_ticket(repo: Path, ticket: dict, event: dict) -> str:
         and _preserve_retry_candidate(repo, ticket)
     )
     previous_failure = event.get("failure") or ticket.get("failure", "")
+    retry_reason = str(
+        event.get("retry_reason")
+        or "Legacy retry event created before retry reasons were required."
+    ).strip()
     reset_qa = event.get("reset_qa") is True
     previous_qa_revision = max(1, int(ticket.get("qa_revision") or 1))
     if preserve_candidate:
@@ -396,7 +401,7 @@ def apply_retry_event_to_ticket(repo: Path, ticket: dict, event: dict) -> str:
             ticket["qa_revision"] = previous_qa_revision + 1
             ticket["qa_retry_context"] = str(
                 event.get("qa_retry_context") or previous_failure
-            )[-3000:]
+            )[-2400:] + f"\n\nHuman retry reason:\n{retry_reason}"
         (repo / ".factory/qa-approvals" / str(ticket["number"])).unlink(missing_ok=True)
         note = (
             "Operator discarded defective QA evidence and restarted from repository base"
@@ -412,8 +417,10 @@ def apply_retry_event_to_ticket(repo: Path, ticket: dict, event: dict) -> str:
             f"; human approved a ticket-only {override['lines']}-line budget "
             f"exception: {override['reason']}"
         )
+    note += f"; retry reason: {retry_reason}"
     ticket.update(
         last_retry_event=event["event_id"],
+        last_retry_reason=retry_reason,
         next_human_action="",
         recovery={},
         blocking_questions=[],
@@ -1560,6 +1567,7 @@ class Factory:
                 "diff_budget": old.get("diff_budget"),
                 "budget_override": old.get("budget_override"),
                 "last_retry_event": old.get("last_retry_event", ""),
+                "last_retry_reason": old.get("last_retry_reason", ""),
                 "remote_run_summary": old.get("remote_run_summary", {}),
                 "recovered_run_id": old.get("recovered_run_id", ""),
                 "next_human_action": old.get("next_human_action", ""),
@@ -2110,6 +2118,14 @@ class Factory:
         path.parent.mkdir(parents=True, exist_ok=True)
         gates = "\n".join(f"- {g['name']}: `{g['cmd']}`" for g in self.cfg["gate"])
         retry = f"\n## Previous failure\n```\n{failure[-3000:]}\n```\n" if failure else ""
+        retry_reason = str(ticket.get("last_retry_reason") or "").strip()
+        retry_direction = (
+            "\n## Human retry direction\n"
+            "A person authorized this retry for the following reason. Address it explicitly "
+            "and report how this attempt differs from the rejected one:\n"
+            f"```\n{retry_reason[-3000:]}\n```\n"
+            if retry_reason else ""
+        )
         protected = ""
         existing_tests = ""
         contract = role_input(self.repo, "implementation")["text"]
@@ -2151,7 +2167,8 @@ class Factory:
             f"{self.diff_budget_prompt_context(ticket, 'implementation')}\n"
             f"## Verification gates\n{gates}\n{existing_tests}{protected}\n"
             f"Commit as `factory(#{ticket['number']}): <summary>`.\n"
-            "Work only in the current worktree. Do not change ticket scope.\n" + supervisor + "\n" + contract + retry
+            "Work only in the current worktree. Do not change ticket scope.\n"
+            + supervisor + retry_direction + "\n" + contract + retry
         )
         return path
 
@@ -3774,6 +3791,13 @@ def retry_ticket(
     reason: str = "",
     assume_yes: bool = False,
 ):
+    reason = reason.strip()
+    if len(reason) < 12:
+        raise SystemExit(
+            "--reason must explain why another attempt can succeed (at least 12 characters)"
+        )
+    if len(reason) > 300:
+        raise SystemExit("--reason must be 300 characters or fewer")
     store = StateStore(repo)
     for ticket in store.data.get("tickets", []):
         if ticket["number"] == number:
@@ -3802,14 +3826,10 @@ def retry_ticket(
             ticket["diff_budget"] = budget
             current_lines = budget.get("implementation_lines")
             current_limit = budget.get("effective_limit", charter.max_diff_lines)
-            if reset_qa and (budget_lines is not None or reason.strip()):
+            if reset_qa and budget_lines is not None:
                 raise SystemExit(
                     "--reset-qa cannot be combined with a diff-budget exception"
                 )
-            if (budget_lines is None and reason.strip()) or (
-                budget_lines is not None and not reason.strip()
-            ):
-                raise SystemExit("--budget-lines and --reason must be provided together")
             if budget_lines is not None:
                 if budget_lines <= charter.max_diff_lines:
                     raise SystemExit(
@@ -3827,8 +3847,6 @@ def retry_ticket(
                         f"{current_lines}-line implementation. Choose a limit at or above "
                         "the measured candidate."
                     )
-                if len(reason.strip()) < 12:
-                    raise SystemExit("--reason must explain the ticket-specific exception")
                 if not assume_yes:
                     answer = input(
                         f"Approve a {budget_lines}-line exception for Ticket #{number}? "
@@ -3849,6 +3867,13 @@ def retry_ticket(
                     f"--budget-lines {suggested} "
                     '--reason "Explain why this ticket needs the larger bound" --yes'
                 )
+            elif not assume_yes:
+                answer = input(
+                    f"Retry Ticket #{number} for this reason?\n{reason}\n"
+                    "Type RETRY TICKET: "
+                )
+                if answer.strip() != "RETRY TICKET":
+                    raise SystemExit("Ticket retry cancelled")
 
             recovery = ticket_recovery(ticket, repo)
             budget_approved = (
@@ -3879,7 +3904,7 @@ def retry_ticket(
                     "schema_version": 1,
                     "lines": budget_lines,
                     "charter_limit": charter.max_diff_lines,
-                    "reason": reason.strip(),
+                    "reason": reason,
                     "approved_at": created_at,
                     "approved_by": "human",
                 }
@@ -3934,7 +3959,9 @@ def retry_ticket(
                         f"Ticket #{number} still needs information. Edit its GitHub issue "
                         "before retrying."
                     )
-                backend.set_status(remote[number], "Ready", "Operator retry")
+                backend.set_status(
+                    remote[number], "Ready", f"Operator retry: {reason}",
+                )
             elif recovery["kind"] == "ticket_specification":
                 raise SystemExit(
                     "This rehearsal Ticket source still needs information. Correct the "
@@ -3946,6 +3973,7 @@ def retry_ticket(
                 "event_id": uuid.uuid4().hex,
                 "ticket": number,
                 "created_at": created_at,
+                "retry_reason": reason,
                 "failure": saved_failure,
                 "diff_budget": budget,
                 "budget_override": override,
@@ -3982,7 +4010,7 @@ def retry_ticket(
                 )
             print(
                 f"#{number} reset to Ready. A running Factory will consume retry event "
-                f"{event['event_id'][:12]}."
+                f"{event['event_id'][:12]}.\nRetry reason: {reason}"
             )
             return
     raise SystemExit(f"Ticket #{number} not found")
@@ -5624,7 +5652,8 @@ def parser():
     )
     retry.add_argument(
         "--reason",
-        help="required explanation for a ticket-only diff-budget exception",
+        required=True,
+        help="required human explanation of why another attempt can succeed",
     )
     retry.add_argument(
         "--reset-qa", action="store_true",
