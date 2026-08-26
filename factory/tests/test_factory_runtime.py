@@ -908,6 +908,41 @@ class RuntimeTests(unittest.TestCase):
                 "Expand the Ticket file ownership",
             )
 
+    def test_unowned_root_path_handoff_explains_cause_solution_and_retry_reason(self):
+        with tempfile.TemporaryDirectory() as directory:
+            repo = Path(directory)
+            log = repo / ".factory/logs/1-attempt3.log"
+            log.parent.mkdir(parents=True)
+            log.write_text(
+                "**Handoff Receipt**\n\n"
+                "All protected tests and lifecycle checks pass.\n"
+                "Residual risk: generated-path exclusions are repository-local because "
+                ".gitignore is outside Ticket #1 ownership.\n"
+            )
+            ticket = {
+                "number": 1,
+                "failure": "Agent produced no changes or commits.",
+                "current_log": ".factory/logs/1-attempt3.log",
+                "triage": {
+                    "declared_paths": [
+                        "package.json",
+                        "package-lock.json",
+                        "vite.config.js",
+                    ],
+                },
+            }
+
+            recovery = ticket_recovery(ticket, repo)
+
+            self.assertEqual(recovery["kind"], "ticket_specification")
+            self.assertEqual(recovery["required_paths"], [".gitignore"])
+            self.assertIn(".gitignore", recovery["cause"])
+            self.assertIn("Add .gitignore", recovery["solution"])
+            self.assertIn(
+                "Added .gitignore to Ticket File ownership",
+                recovery["suggested_retry_reason"],
+            )
+
     def test_scope_conflict_stops_without_consuming_identical_retries(self):
         factory = Factory.__new__(Factory)
         factory.cfg = {"factory": {"max_retries": 2}}

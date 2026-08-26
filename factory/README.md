@@ -526,6 +526,11 @@ Every transition to `Blocked` records one `recovery` classification and
 action above the ticket metadata and does not offer Retry when the unchanged
 state would fail again.
 
+Open the blocked Ticket's **Summary** first. Its recovery panel separates
+**Why it stopped**, **Proposed recovery**, and, when retry is valid, a
+**Suggested retry reason**. Make the proposed correction before adapting that
+reason and retrying; raw logs remain available as supporting evidence.
+
 | Recorded cause | Recovery |
 | --- | --- |
 | Missing or ambiguous Ticket specification | Edit the GitHub Issue, preserve its Factory Plan and governance comments, then choose **Reload issue and retry**. An unchanged issue is refused. |
