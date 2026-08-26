@@ -531,6 +531,13 @@ Open the blocked Ticket's **Summary** first. Its recovery panel separates
 **Suggested retry reason**. Make the proposed correction before adapting that
 reason and retrying; raw logs remain available as supporting evidence.
 
+When the Factory can express an exact File ownership correction, Summary also
+shows an editable **Proposed ticket body**. Accept it or revise it, review the
+prefilled retry reason, then choose **Save ticket and retry**. The Control
+Center preserves and validates the Ticket's Factory identity and governance
+markers, saves the reviewed body to the configured GitHub repository, and
+queues retry only after that save succeeds.
+
 | Recorded cause | Recovery |
 | --- | --- |
 | Missing or ambiguous Ticket specification | Edit the GitHub Issue, preserve its Factory Plan and governance comments, then choose **Reload issue and retry**. An unchanged issue is refused. |
@@ -546,11 +553,13 @@ reason and retrying; raw logs remain available as supporting evidence.
 
 For a corrected GitHub Ticket:
 
-1. Open its Summary in the Control Center and choose **Edit issue**.
-2. Correct the title, Spec, Acceptance criteria, dependencies, or registered
-   `agent:` line. Do not remove the hidden Factory Plan or governance comments.
-3. Choose **Reload issue and retry**. The Factory reloads GitHub rather than
-   trusting the local copy.
+1. Open its Summary in the Control Center.
+2. When an editable proposal is present, accept or revise it and choose
+   **Save ticket and retry**. Otherwise, choose **Edit issue** and correct the
+   title, Spec, Acceptance criteria, dependencies, or registered `agent:` line.
+   Do not remove the hidden Factory Plan or governance comments.
+3. For an externally edited issue, choose **Reload issue and retry**. The
+   Factory reloads GitHub rather than trusting the local copy.
 4. If the specification fingerprint changed, the old branch, QA evidence,
    gates, review, PR metadata, receipts, and ticket-only budget exception are
    cleared. The Ticket restarts from the current default branch.

@@ -493,6 +493,109 @@ class ControlCenterTests(unittest.TestCase):
                     "reason": "Regenerate the defective protected QA evidence",
                 })
 
+    def test_control_center_saves_a_validated_ticket_correction_before_retry(self):
+        with tempfile.TemporaryDirectory() as directory:
+            center = ControlCenter(self.make_repo(directory))
+            subprocess.run(
+                ["git", "init", "-q", "-b", "main"],
+                cwd=center.repo,
+                check=True,
+            )
+            subprocess.run(
+                [
+                    "git", "remote", "add", "origin",
+                    "https://github.com/attendee/workshop.git",
+                ],
+                cwd=center.repo,
+                check=True,
+            )
+            local = center.repo / ".factory/local.toml"
+            local.parent.mkdir(parents=True, exist_ok=True)
+            local.write_text(
+                'github_repository = "https://github.com/attendee/workshop"\n'
+                "project_number = 16\n"
+            )
+            body = (
+                "## Spec\n\nCreate the npm lifecycle.\n\n"
+                "## Acceptance criteria\n\n- [ ] npm test passes.\n\n"
+                "## File ownership\n\n- package.json\n\n"
+                "<!-- factory-plan:abc12345:TOOLING -->\n"
+                "<!-- factory-governance:v1;profile=standard;"
+                f"charter={'a' * 64};merge=human -->\n"
+            )
+            state = center.repo / ".factory/state.json"
+            state.write_text(json.dumps({
+                "mode": "live",
+                "tickets": [{
+                    "number": 1,
+                    "status": "Blocked",
+                    "body": body,
+                    "failure": (
+                        "TICKET_SCOPE_CONFLICT: .gitignore is outside Ticket "
+                        "#1 ownership."
+                    ),
+                    "triage": {"declared_paths": ["package.json"]},
+                    "history": [],
+                }],
+            }))
+            proposal = body.replace(
+                "- package.json",
+                "- package.json\n- .gitignore",
+            )
+
+            title, commands = center.build_commands("save-ticket-and-retry", {
+                "issue": 1,
+                "mode": "live",
+                "ticket_body": proposal,
+                "reason": (
+                    "Added .gitignore ownership so generated outputs remain untracked"
+                ),
+            })
+
+            self.assertEqual(title, "Save correction and retry ticket #1")
+            self.assertEqual(commands[0][:3], ["gh", "issue", "edit"])
+            self.assertIn("attendee/workshop", commands[0])
+            correction_file = Path(commands[0][commands[0].index("--body-file") + 1])
+            self.assertEqual(correction_file.read_text().strip(), proposal.strip())
+            self.assertEqual(commands[1][1:3], ["retry", "1"])
+            self.assertIn("--project-number", commands[1])
+            self.assertIn("--reason", commands[1])
+
+            without_marker = proposal.replace(
+                "<!-- factory-governance:v1;profile=standard;"
+                f"charter={'a' * 64};merge=human -->",
+                "",
+            )
+            with self.assertRaisesRegex(
+                InputError, "identity and governance markers",
+            ):
+                center.build_commands("save-ticket-and-retry", {
+                    "issue": 1,
+                    "mode": "live",
+                    "ticket_body": without_marker,
+                    "reason": "Save the reviewed Ticket correction",
+                })
+
+            without_required_path = proposal.replace(
+                "- .gitignore",
+                "- README.md",
+            )
+            with self.assertRaisesRegex(InputError, "must add these paths"):
+                center.build_commands("save-ticket-and-retry", {
+                    "issue": 1,
+                    "mode": "live",
+                    "ticket_body": without_required_path,
+                    "reason": "Save the reviewed Ticket correction",
+                })
+
+            with self.assertRaisesRegex(InputError, "requires a Live GitHub run"):
+                center.build_commands("save-ticket-and-retry", {
+                    "issue": 1,
+                    "mode": "rehearsal",
+                    "ticket_body": proposal,
+                    "reason": "Save the reviewed Ticket correction",
+                })
+
     def test_live_merge_rejects_persisted_rehearsal_evidence(self):
         with tempfile.TemporaryDirectory() as directory:
             center = ControlCenter(self.make_repo(directory))
@@ -536,6 +639,9 @@ class ControlCenterTests(unittest.TestCase):
         self.assertIn("Why it stopped", javascript)
         self.assertIn("Proposed recovery", javascript)
         self.assertIn("Suggested retry reason", javascript)
+        self.assertIn("Proposed ticket body", javascript)
+        self.assertIn("Save ticket and retry", javascript)
+        self.assertIn('action("save-ticket-and-retry"', javascript)
         self.assertIn("Reload issue and retry", javascript)
         self.assertIn("Reload contract and retry", javascript)
         self.assertIn("Release abandoned claim", javascript)
@@ -545,6 +651,7 @@ class ControlCenterTests(unittest.TestCase):
         self.assertIn("Create a replacement Ticket", javascript)
         self.assertIn(".recovery-panel", styles)
         self.assertIn(".recovery-guidance", styles)
+        self.assertIn(".ticket-correction-editor", styles)
 
     def test_completed_application_ui_has_start_stop_and_copy_controls(self):
         html = (Path(__file__).parents[1] / "control_center/index.html").read_text()

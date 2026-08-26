@@ -923,6 +923,17 @@ class RuntimeTests(unittest.TestCase):
                 "number": 1,
                 "failure": "Agent produced no changes or commits.",
                 "current_log": ".factory/logs/1-attempt3.log",
+                "body": (
+                    "## Spec\n\nCreate the npm lifecycle.\n\n"
+                    "## File ownership\n\n"
+                    "- package.json\n"
+                    "- package-lock.json\n"
+                    "- vite.config.js\n\n"
+                    "## QA evidence\n\n- Lifecycle checks pass.\n\n"
+                    "<!-- factory-plan:abc12345:TOOLING -->\n"
+                    "<!-- factory-governance:v1;profile=standard;"
+                    f"charter={'a' * 64};merge=human -->\n"
+                ),
                 "triage": {
                     "declared_paths": [
                         "package.json",
@@ -942,6 +953,14 @@ class RuntimeTests(unittest.TestCase):
                 "Added .gitignore to Ticket File ownership",
                 recovery["suggested_retry_reason"],
             )
+            proposal = recovery["proposed_ticket_body"]
+            self.assertIn("- .gitignore", proposal)
+            self.assertLess(
+                proposal.index("- .gitignore"),
+                proposal.index("## QA evidence"),
+            )
+            self.assertIn("factory-plan:abc12345:TOOLING", proposal)
+            self.assertEqual(proposal.count("factory-governance:v1"), 1)
 
     def test_scope_conflict_stops_without_consuming_identical_retries(self):
         factory = Factory.__new__(Factory)

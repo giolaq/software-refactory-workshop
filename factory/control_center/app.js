@@ -715,7 +715,7 @@ async function action(name, extra = {}) {
     if (name === "publish-setup" && !window.confirm("Commit and push only .gitignore, factory.project.toml, and the approved factory.charter.toml to the default branch?")) return;
     if (name === "merge" && !window.confirm("Merge only the exact approved revision shown for this Ticket? This records your human shipping decision.")) return;
     if (name === "prepare-project" && !window.confirm("Run the setup commands recorded in factory.project.toml? Review that file first.")) return;
-    const destructive = ["publish-plan", "approve-product", "approve-stage", "approve-tests", "request-test-changes", "retry", "release-claim"].includes(name);
+    const destructive = ["publish-plan", "approve-product", "approve-stage", "approve-tests", "request-test-changes", "retry", "save-ticket-and-retry", "release-claim"].includes(name);
     if (destructive && !window.confirm("Record this decision and continue?")) return;
     const operation = await request(`/api/actions/${name}`, { method: "POST", body: JSON.stringify(basePayload(extra)) });
     if (operation.companion) {
@@ -921,10 +921,10 @@ async function renderDrawer({ preservePosition = false } = {}) {
     const mergeState = mergeEligibility(ticket);
     const implementationLines = Number(budget.implementation_lines || 0);
     const suggestedLimit = Math.ceil(Math.max(implementationLines, implementationLines * 1.15) / 100) * 100;
-    const retryReasonField = (placeholder = "Explain what changed and why another attempt can succeed.") => `
+    const retryReasonField = (placeholder = "Explain what changed and why another attempt can succeed.", value = "") => `
       <div class="recovery-fields">
         <label>Reason for retry
-          <textarea id="retry-reason" rows="3" placeholder="${esc(placeholder)}"></textarea>
+          <textarea id="retry-reason" rows="3" placeholder="${esc(placeholder)}">${esc(value)}</textarea>
         </label>
       </div>`;
     const failureHeadline = String(ticket.failure || "The Factory could not complete this Ticket.")
@@ -1012,11 +1012,25 @@ async function renderDrawer({ preservePosition = false } = {}) {
         <h3 id="recovery-title">${esc(recoveryInfo.title || "Complete the GitHub Ticket")}</h3>
         ${recoveryGuidance("Add the missing specification and acceptance criteria in GitHub.")}
         ${recoveryInfo.required_paths?.length ? `<p><strong>Add to File ownership:</strong> ${recoveryInfo.required_paths.map((path) => `<code>${esc(path)}</code>`).join(", ")}</p>` : ""}
-        ${retryReasonField("Describe the GitHub Ticket correction that should be reloaded.")}
-        <div class="form-actions">
-          ${ticket.issue_url ? `<a class="button" href="${esc(ticket.issue_url)}" target="_blank" rel="noreferrer">Edit issue</a>` : ""}
-          <button class="button button-primary" type="button" data-ticket-action="retry">Reload issue and retry</button>
-        </div>
+        ${recoveryInfo.proposed_ticket_body ? `
+          <div class="ticket-correction-editor">
+            <label>Proposed ticket body
+              <textarea id="ticket-correction-body" rows="18" spellcheck="false">${esc(recoveryInfo.proposed_ticket_body)}</textarea>
+            </label>
+            <p class="field-help">Accept this proposal or edit it. Factory Plan and governance markers are validated before GitHub is changed.</p>
+          </div>
+          ${retryReasonField("Describe why the saved correction makes retry viable.", recoveryInfo.suggested_retry_reason || "")}
+          <div class="form-actions">
+            ${ticket.issue_url ? `<a class="button" href="${esc(ticket.issue_url)}" target="_blank" rel="noreferrer">Inspect issue</a>` : ""}
+            <button class="button button-primary" type="button" data-ticket-action="save-ticket-and-retry">Save ticket and retry</button>
+          </div>
+        ` : `
+          ${retryReasonField("Describe the GitHub Ticket correction that should be reloaded.")}
+          <div class="form-actions">
+            ${ticket.issue_url ? `<a class="button" href="${esc(ticket.issue_url)}" target="_blank" rel="noreferrer">Edit issue</a>` : ""}
+            <button class="button button-primary" type="button" data-ticket-action="retry">Reload issue and retry</button>
+          </div>
+        `}
       </section>`;
     else if (recoveryInfo.kind === "dependency") recovery = `
       <section class="recovery-panel" aria-labelledby="recovery-title">
@@ -1086,6 +1100,25 @@ async function renderDrawer({ preservePosition = false } = {}) {
     };
     $('[data-ticket-action="retry"]', content)?.addEventListener("click", () => submitRetry());
     $('[data-ticket-action="retry-reset-qa"]', content)?.addEventListener("click", () => submitRetry(true));
+    $('[data-ticket-action="save-ticket-and-retry"]', content)?.addEventListener("click", () => {
+      const ticketBody = $("#ticket-correction-body", content)?.value.trim() || "";
+      const reason = $("#retry-reason", content)?.value.trim() || "";
+      if (!ticketBody || ticketBody === String(ticket.body || "").trim()) {
+        toast("Review or edit the proposed Ticket correction before saving.", true);
+        $("#ticket-correction-body", content)?.focus();
+        return;
+      }
+      if (reason.length < 12) {
+        toast("Explain why the saved correction makes another attempt viable.", true);
+        $("#retry-reason", content)?.focus();
+        return;
+      }
+      action("save-ticket-and-retry", {
+        issue: ticket.number,
+        ticket_body: ticketBody,
+        reason,
+      });
+    });
     $('[data-open-ticket-reset]', content)?.addEventListener("click", openResetDialog);
     $('[data-ticket-mode]', content)?.addEventListener("click", (event) => {
       setMode(event.currentTarget.dataset.ticketMode);

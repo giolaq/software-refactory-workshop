@@ -422,6 +422,8 @@ input:focus, select:focus, textarea:focus { border-color: var(--blue); outline: 
 .budget-meter dd { margin: 3px 0 0; font-size: 17px; font-weight: 700; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
 .recovery-fields { display: grid; grid-template-columns: minmax(150px,.4fr) minmax(0,1fr); gap: 12px; }
 .recovery-fields textarea { resize: vertical; }
+.ticket-correction-editor { margin: 16px 0 12px; }
+.ticket-correction-editor textarea { width: 100%; min-height: 280px; resize: vertical; font: 11px/1.55 "SFMono-Regular", Consolas, monospace; }
 .recovery-alternative { padding-top: 12px; border-top: 1px solid var(--line); font-size: 12px; }
 .detail-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .detail-panel { margin-bottom: 12px; padding: 16px; border: 1px solid var(--line); border-radius: var(--radius-surface); }
