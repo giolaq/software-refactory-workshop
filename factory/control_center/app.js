@@ -861,6 +861,9 @@ function captureDrawerPosition() {
       key: element.id || element.name,
       value: element.value,
       checked: element.checked,
+      top: element.scrollTop,
+      left: element.scrollLeft,
+      nearBottom: element.scrollHeight - element.scrollTop - element.clientHeight < 20,
     })).filter((field) => field.key),
     focus: active ? {
       key: active.id || active.name,
@@ -889,6 +892,12 @@ function restoreDrawerPosition(position) {
       }
     }
   }
+  position.fields.forEach((saved) => {
+    const field = $$("input, textarea, select", content).find((element) => (element.id || element.name) === saved.key);
+    if (!field) return;
+    field.scrollTop = saved.nearBottom ? field.scrollHeight : saved.top;
+    field.scrollLeft = saved.left;
+  });
   $$("pre", content).forEach((element, index) => {
     const saved = position.pre[index];
     if (!saved) return;
