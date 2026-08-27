@@ -1058,6 +1058,17 @@ async function renderDrawer({ preservePosition = false } = {}) {
         </div>
         <p class="recovery-alternative"><strong>Do not retry:</strong> implementation, verification, and structured Code Review already passed for <code>${esc(recoveryInfo.reviewed_head || "the recorded candidate")}</code>.</p>
       </section>`;
+    else if (recoveryInfo.kind === "candidate_verification") recovery = `
+      <section class="recovery-panel" aria-labelledby="recovery-title">
+        <p class="recovery-kicker">Passing candidate preserved</p>
+        <h3 id="recovery-title">${esc(recoveryInfo.title || "Re-verify the saved candidate")}</h3>
+        ${recoveryGuidance("Keep the saved candidate and rerun its corrected verification path.")}
+        ${retryReasonField("Explain why the saved candidate is ready for re-verification.", recoveryInfo.suggested_retry_reason || "")}
+        <div class="form-actions">
+          <button class="button button-primary" type="button" data-ticket-action="retry">Re-verify saved candidate</button>
+        </div>
+        <p class="recovery-alternative"><strong>Preserved:</strong> candidate <code>${esc(recoveryInfo.candidate_head || "recorded revision")}</code> and its human-approved QA tests.</p>
+      </section>`;
     else if (recoveryInfo.kind === "revision_rebuild") recovery = `
       <section class="recovery-panel" aria-labelledby="recovery-title">
         <p class="recovery-kicker">Revision recovery</p>

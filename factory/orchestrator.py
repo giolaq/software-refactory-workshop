@@ -281,6 +281,39 @@ def _preserve_retry_candidate(repo: Path, ticket: dict) -> bool:
     )
 
 
+def saved_candidate_reverification(ticket: dict, repo: Path | None = None) -> str:
+    """Return a saved candidate whose successful focused test was misclassified."""
+    green = (ticket.get("qa_evidence") or {}).get("green") or {}
+    revision = str(green.get("revision") or "")
+    try:
+        exit_code = int(green.get("exit_code"))
+    except (TypeError, ValueError):
+        return ""
+    if (
+        green.get("result") == "GREEN PROVED"
+        or classify_focused_result(exit_code, str(green.get("output") or "")) != "pass"
+        or not re.fullmatch(r"[a-f0-9]{40,64}", revision)
+        or not ticket.get("branch")
+        or not ticket.get("base_sha")
+        or not ticket.get("qa_commit")
+        or not ticket.get("qa_tests")
+    ):
+        return ""
+    if repo is None:
+        return revision
+    worktree = worktree_path(repo, int(ticket.get("number") or 0))
+    if not worktree.is_dir():
+        return ""
+    head = subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        cwd=worktree,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    return revision if head.returncode == 0 and head.stdout.strip() == revision else ""
+
+
 def restart_ticket_from_repository_base(
     ticket: dict,
     *,
@@ -338,6 +371,7 @@ def restart_ticket_from_repository_base(
         diff_budget=None,
         retry_context="",
         qa_retry_context="",
+        reverify_candidate="",
         last_retry_reason="",
         failure="",
         recovery={},
@@ -369,7 +403,16 @@ def apply_retry_event_to_ticket(repo: Path, ticket: dict, event: dict) -> str:
         ticket["budget_override"] = override
     if isinstance(event.get("diff_budget"), dict):
         ticket["diff_budget"] = event["diff_budget"]
-    preserve_candidate = (
+    reverify_candidate = (
+        saved_candidate_reverification(ticket, repo)
+        if (
+            event.get("recovery_kind") == "candidate_verification"
+            and not spec_changed
+            and not event.get("force_repository_base")
+        )
+        else ""
+    )
+    preserve_candidate = bool(reverify_candidate) or (
         not spec_changed
         and not event.get("force_repository_base")
         and _preserve_retry_candidate(repo, ticket)
@@ -388,8 +431,13 @@ def apply_retry_event_to_ticket(repo: Path, ticket: dict, event: dict) -> str:
             retry_context=previous_failure,
             failure="",
             qa_approved=True,
+            reverify_candidate=reverify_candidate,
         )
-        note = "Operator retry from existing candidate and protected QA tests"
+        note = (
+            "Operator requested direct re-verification of the saved candidate"
+            if reverify_candidate else
+            "Operator retry from existing candidate and protected QA tests"
+        )
     else:
         restart_ticket_from_repository_base(
             ticket,
@@ -672,13 +720,16 @@ def implementation_attempt_failure(
     attempt_start_head: str,
     candidate_head: str,
     previously_reviewed_head: str = "",
+    allow_unchanged_candidate: bool = False,
 ) -> str:
     """Classify an adapter failure or a successful attempt that made no new change."""
     unchanged_review_retry = bool(
         previously_reviewed_head and candidate_head == previously_reviewed_head
     )
     unchanged_attempt = bool(
-        attempt_start_head and candidate_head == attempt_start_head
+        attempt_start_head
+        and candidate_head == attempt_start_head
+        and not allow_unchanged_candidate
     )
     if not (code or not commits or unchanged_review_retry or unchanged_attempt):
         return ""
@@ -959,6 +1010,25 @@ def ticket_recovery(ticket: dict, repo: Path | None = None) -> dict:
                 required_paths,
             ),
             suggested_retry_reason=suggested_retry_reason,
+        )
+    candidate_head = saved_candidate_reverification(ticket, repo)
+    if candidate_head:
+        return recovery(
+            "candidate_verification", "reverify_candidate",
+            "Re-verify the saved candidate",
+            f"Keep candidate {candidate_head[:12]} and the approved QA tests, then run "
+            "the corrected focused-test classifier and all required verification gates. "
+            "No implementation rewrite or Ticket edit is required.",
+            retry_allowed=True,
+            cause=(
+                f"Candidate {candidate_head[:12]} exited successfully on the focused "
+                "Acceptance Test, but Factory recorded the zero-skip report as skipped."
+            ),
+            candidate_head=candidate_head,
+            suggested_retry_reason=(
+                "Re-verify the saved candidate because the focused test passed with "
+                "zero skipped tests and the corrected classifier now recognizes it."
+            ),
         )
     configuration_failure = any(marker in lowered for marker in (
         "outside the configured test roots",
@@ -1686,6 +1756,7 @@ class Factory:
                 "failure": old.get("failure", ""), "warnings": old.get("warnings", []),
                 "retry_context": old.get("retry_context", ""),
                 "qa_retry_context": old.get("qa_retry_context", ""),
+                "reverify_candidate": old.get("reverify_candidate", ""),
                 "gate_results": old.get("gate_results", []),
                 "changed_files": old.get("changed_files", []),
                 "current_prompt": old.get("current_prompt", ""),
@@ -3248,8 +3319,11 @@ class Factory:
                 result = type("TimedOut", (), {"returncode": 124})()
                 output = f"{gate['name']} timed out after {self.cfg['factory']['gate_timeout']}s"
             misconfigured = result.returncode in {126, 127} or bool(
-                re.search(r"(?im)\b[1-9]\d*\s+skipped\b", output)
-                or re.search(r"(?im)(?:#|ℹ)\s*skipped\s+[1-9]\d*\b", output)
+                re.search(r"(?im)\b[1-9]\d*[ \t]+skipped\b", output)
+                or re.search(
+                    r"(?im)(?:#|ℹ)[ \t]*skipped[ \t]+[1-9]\d*\b",
+                    output,
+                )
                 or re.search(
                     r"(?im)\b(required tool unavailable|not installed|command not found)\b",
                     output,
@@ -3491,6 +3565,7 @@ class Factory:
 
     def process(self, ticket: dict):
         resume_qa = bool(ticket.get("qa_approved") and ticket.get("qa_commit") and ticket.get("branch"))
+        direct_reverification = str(ticket.get("reverify_candidate") or "")
         if self.backend and not resume_qa:
             try:
                 base_revision = self.git("rev-parse", "HEAD").stdout.strip()
@@ -3508,10 +3583,15 @@ class Factory:
                 )
                 self.transition(ticket, "Blocked", "Another Factory run owns this Ticket")
                 return
-        first_phase = (
-            f"Running {ticket['agent']} with approved Acceptance Tests"
-            if resume_qa else (f"Running QA {self.qa_agent}" if self.qa_agent else f"Running {ticket['agent']}")
-        )
+        if direct_reverification:
+            first_phase = f"Re-verifying saved candidate {direct_reverification[:12]}"
+        elif resume_qa:
+            first_phase = f"Running {ticket['agent']} with approved Acceptance Tests"
+        else:
+            first_phase = (
+                f"Running QA {self.qa_agent}"
+                if self.qa_agent else f"Running {ticket['agent']}"
+            )
         self.transition(ticket, "In Progress", first_phase)
         if resume_qa:
             worktree = worktree_path(self.repo, ticket["number"])
@@ -3559,6 +3639,7 @@ class Factory:
                     f"QA committed {len(ticket['qa_tests'])} protected test(s); running {ticket['agent']}",
                 )
         failure = ticket.pop("retry_context", "")
+        reverify_candidate = ticket.pop("reverify_candidate", "")
         max_attempts = self.cfg["factory"]["max_retries"] + 1
         for attempt in range(1, max_attempts + 1):
             ticket["attempt"] = attempt
@@ -3567,14 +3648,26 @@ class Factory:
                 ticket.get("code_review", {}).get("head", "")
                 if previous_failure.startswith("Code Review requested changes:") else ""
             )
-            prompt = self.make_prompt(ticket, previous_failure)
             try:
                 attempt_start_head = self.git(
                     "rev-parse", "HEAD", cwd=worktree,
                 ).stdout.strip()
             except Exception:
                 attempt_start_head = ""
-            code, output = self.run_agent(ticket, worktree, prompt)
+            reuse_existing_candidate = bool(
+                attempt == 1
+                and reverify_candidate
+                and attempt_start_head == reverify_candidate
+            )
+            if reuse_existing_candidate:
+                code = 0
+                output = (
+                    f"Factory preserved candidate {reverify_candidate[:12]} for direct "
+                    "re-verification after correcting the focused-test classifier."
+                )
+            else:
+                prompt = self.make_prompt(ticket, previous_failure)
+                code, output = self.run_agent(ticket, worktree, prompt)
             candidate_head = ""
             try:
                 self.commit_leftovers(ticket, worktree)
@@ -3613,6 +3706,7 @@ class Factory:
                 attempt_start_head,
                 candidate_head,
                 previously_reviewed_head,
+                allow_unchanged_candidate=reuse_existing_candidate,
             )
             if attempt_failure:
                 failure = attempt_failure
@@ -3648,8 +3742,16 @@ class Factory:
                 attempt=attempt,
                 input_revisions={"implementation_base": implementation_base_sha},
                 output_revisions={"implementation_commit": implementation_head},
-                claimed_result="Implementation committed",
-                verification=["Agent exited successfully and produced at least one commit."],
+                claimed_result=(
+                    "Existing implementation candidate reused"
+                    if reuse_existing_candidate else
+                    "Implementation committed"
+                ),
+                verification=[(
+                    "Saved candidate was preserved for direct re-verification."
+                    if reuse_existing_candidate else
+                    "Agent exited successfully and produced at least one commit."
+                )],
                 artifacts=[item["path"] for item in ticket["changed_files"]],
             )
             if "cleanup" in self.profile["execution_roles"]:

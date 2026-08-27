@@ -58,8 +58,8 @@ def classify_focused_result(exit_code: int, output: str) -> str:
     """Classify runner output without mistaking broken infrastructure for red."""
     lowered = output.lower()
     skipped = bool(
-        re.search(r"\b[1-9]\d*\s+skipped\b", lowered)
-        or re.search(r"#\s*skipped\s+[1-9]\d*\b", lowered)
+        re.search(r"\b[1-9]\d*[ \t]+skipped\b", lowered)
+        or re.search(r"#[ \t]*skipped[ \t]+[1-9]\d*\b", lowered)
     )
     if skipped:
         return "skipped"
