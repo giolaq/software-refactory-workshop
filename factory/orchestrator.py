@@ -764,6 +764,37 @@ def propose_file_ownership_update(body: str, required_paths: list[str]) -> str:
     return proposal + ("\n" + suffix if suffix else "")
 
 
+def self_review_fallback_head(ticket: dict) -> str:
+    """Return the exact reviewed head for a valid GitHub self-review fallback."""
+    review = ticket.get("code_review") or {}
+    publication = review.get("publication") or {}
+    result = review.get("result") or {}
+    head = str(review.get("head") or "")
+    failure = str(ticket.get("failure") or "").lower()
+    required_gates = [
+        gate for gate in ticket.get("gate_results", [])
+        if gate.get("required", True)
+    ]
+    self_review_failure = any(marker in failure for marker in (
+        "official review approval is missing",
+        "could not approve the author's own pull request",
+        "can not approve your own pull request",
+        "cannot approve your own pull request",
+    ))
+    return head if (
+        ticket.get("status") == "Blocked"
+        and ticket.get("phase") == "code-review"
+        and self_review_failure
+        and result.get("decision") == "APPROVE"
+        and publication.get("published") is True
+        and publication.get("official") is False
+        and publication.get("mode") == "factory-comment"
+        and re.fullmatch(r"[a-f0-9]{40,64}", head)
+        and required_gates
+        and all(gate.get("exit_code") == 0 for gate in required_gates)
+    ) else ""
+
+
 def ticket_recovery(ticket: dict, repo: Path | None = None) -> dict:
     """Return the one operator action that can make a blocked Ticket progress."""
     failure = _saved_implementation_failure(ticket, repo)
@@ -818,6 +849,20 @@ def ticket_recovery(ticket: dict, repo: Path | None = None) -> dict:
             "remote_claim", "release_or_resume_claim", "Resolve the remote claim",
             f"Resume Factory run {claim_owner}, or release that confirmed abandoned claim.",
             retry_allowed=False, claim_owner=str(claim_owner),
+        )
+    reviewed_head = self_review_fallback_head(ticket)
+    if reviewed_head:
+        return recovery(
+            "review_publication", "merge_reviewed_pull_request",
+            "Complete the reviewed pull request",
+            "The structured Code Review approval and green gates remain valid Factory "
+            "evidence. Inspect and merge the pull request at the exact reviewed revision "
+            f"{reviewed_head[:12]}. Keep the Factory running or restart it afterward; "
+            "Factory will verify the merged PR head before marking the Ticket Done. If "
+            "branch protection requires a formal approval, restart the Control Center "
+            "with FACTORY_REVIEW_GH_TOKEN from a different GitHub reviewer instead.",
+            retry_allowed=False,
+            reviewed_head=reviewed_head,
         )
     if budget.get("status") == "exceeded" or "diff_budget_exceeded" in lowered:
         return recovery(
@@ -3711,15 +3756,21 @@ class Factory:
             return
         merged = []
         for ticket in self.tickets.values():
-            if ticket["status"] == "In Review":
-                pr = self.backend.merged_pr(ticket)
-                if pr:
-                    merged.append((ticket, pr))
+            reviewed_fallback = self_review_fallback_head(ticket)
+            approved_head = (
+                ticket.get("approved_head", "")
+                if ticket["status"] == "In Review"
+                else reviewed_fallback
+            )
+            if not approved_head:
+                continue
+            pr = self.backend.merged_pr(ticket)
+            if pr:
+                merged.append((ticket, pr, approved_head, bool(reviewed_fallback)))
         if not merged:
             return
         head = self.sync_default_branch()
-        for ticket, pr in merged:
-            approved_head = ticket.get("approved_head", "")
+        for ticket, pr, approved_head, reviewed_fallback in merged:
             merged_pr_head = pr.get("headRefOid", "")
             if not approved_head or merged_pr_head != approved_head:
                 ticket["failure"] = (
@@ -3739,6 +3790,21 @@ class Factory:
                     ticket["failure"] = f"Merged PR commit {merge_sha} is not present in {self.backend.default_branch}"
                     self.transition(ticket, "Blocked", "Merged dependency is missing from the synchronized base")
                     continue
+            if reviewed_fallback:
+                ticket.update(
+                    approved_head=approved_head,
+                    merge_authority="human",
+                    merge_executed_by="human",
+                    failure="",
+                    recovery={},
+                    next_human_action="",
+                )
+            ticket.update(
+                pr_state="MERGED",
+                pr_head=merged_pr_head,
+                pr_merged_at=pr.get("mergedAt", ""),
+                pr_merge_commit=merge_sha or "",
+            )
             self.transition(ticket, "Done", "PR merged and synchronized")
             self.backend.close_issue(ticket)
             automated = ticket.get("merge_executed_by") == "supervisor"
@@ -3758,7 +3824,10 @@ class Factory:
                 ),
                 verification=[
                     f"Merge commit is reachable from {self.backend.default_branch}.",
-                    *(["Code Review role approval matched the merged candidate."] if automated else []),
+                    *(
+                        ["Code Review role approval matched the merged candidate."]
+                        if automated or reviewed_fallback else []
+                    ),
                 ],
                 artifacts=[
                     ticket.get("pr_url", ""),
@@ -3766,7 +3835,7 @@ class Factory:
                         [
                             ticket.get("code_review", {}).get("artifact", ""),
                         ]
-                        if automated else []
+                        if automated or reviewed_fallback else []
                     ),
                 ],
             )

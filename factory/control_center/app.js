@@ -1048,6 +1048,16 @@ async function renderDrawer({ preservePosition = false } = {}) {
         ${recoveryGuidance("Correct the dependency graph before resuming.")}
         <div class="form-actions">${ticket.issue_url ? `<a class="button button-primary" href="${esc(ticket.issue_url)}" target="_blank" rel="noreferrer">Open issue</a>` : ""}</div>
       </section>`;
+    else if (recoveryInfo.kind === "review_publication") recovery = `
+      <section class="recovery-panel" aria-labelledby="recovery-title">
+        <p class="recovery-kicker">Exact revision reviewed</p>
+        <h3 id="recovery-title">${esc(recoveryInfo.title || "Complete the reviewed pull request")}</h3>
+        ${recoveryGuidance("Inspect and merge the exact reviewed pull request, or configure a distinct reviewer identity when branch protection requires formal approval.")}
+        <div class="form-actions">
+          ${ticket.pr_url ? `<a class="button button-primary" href="${esc(ticket.pr_url)}" target="_blank" rel="noreferrer">Inspect reviewed pull request</a>` : ""}
+        </div>
+        <p class="recovery-alternative"><strong>Do not retry:</strong> implementation, verification, and structured Code Review already passed for <code>${esc(recoveryInfo.reviewed_head || "the recorded candidate")}</code>.</p>
+      </section>`;
     else if (recoveryInfo.kind === "revision_rebuild") recovery = `
       <section class="recovery-panel" aria-labelledby="recovery-title">
         <p class="recovery-kicker">Revision recovery</p>
