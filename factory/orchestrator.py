@@ -795,6 +795,21 @@ def self_review_fallback_head(ticket: dict) -> str:
     ) else ""
 
 
+def loaded_ticket_status(remote_status: str, previous: dict) -> str:
+    """Do not let a remote board move bypass local exact-revision evidence."""
+    status = str(remote_status or previous.get("status") or "Backlog")
+    if status != "Done" or not previous or not previous.get("pr_url"):
+        return status
+    previous_status = str(previous.get("status") or "")
+    history = previous.get("history") or []
+    last_status = str((history[-1] if history else {}).get("status") or "")
+    if previous_status != "Done":
+        return previous_status
+    if last_status and last_status != "Done":
+        return last_status
+    return status
+
+
 def ticket_recovery(ticket: dict, repo: Path | None = None) -> dict:
     """Return the one operator action that can make a blocked Ticket progress."""
     failure = _saved_implementation_failure(ticket, repo)
@@ -1639,7 +1654,10 @@ class Factory:
                 "title": refreshed["title"],
                 "body": refreshed["body"],
                 "labels": refreshed["labels"],
-                "status": raw.get("status", old.get("status", "Backlog")),
+                "status": loaded_ticket_status(
+                    raw.get("status", old.get("status", "Backlog")),
+                    old,
+                ),
                 "agent": refreshed["agent"],
                 "default_agent": default_agent,
                 "dependencies": refreshed["dependencies"],
