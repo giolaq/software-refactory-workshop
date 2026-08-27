@@ -27,6 +27,7 @@ from orchestrator import (
     implementation_attempt_failure,
     implementation_no_change_failure,
     latest_recovery_checkpoint,
+    loaded_ticket_status,
     publish_evidence_run_summaries,
     publish_repository_setup,
     recovery_checkpoints,
@@ -66,6 +67,26 @@ def install_approved_charter(repo: Path, merge_authority: str = "human") -> None
 
 
 class RuntimeTests(unittest.TestCase):
+    def test_remote_done_waits_for_local_exact_revision_reconciliation(self):
+        blocked = {
+            "status": "Blocked",
+            "pr_url": "https://github.test/example/pull/7",
+            "history": [{"status": "Blocked"}],
+        }
+        interrupted_load = {
+            **blocked,
+            "status": "Done",
+        }
+        reconciled = {
+            "status": "Done",
+            "pr_url": "https://github.test/example/pull/7",
+            "history": [{"status": "Done"}],
+        }
+
+        self.assertEqual(loaded_ticket_status("Done", blocked), "Blocked")
+        self.assertEqual(loaded_ticket_status("Done", interrupted_load), "Blocked")
+        self.assertEqual(loaded_ticket_status("Done", reconciled), "Done")
+
     def test_release_claim_reconciles_an_already_absent_remote_claim(self):
         with tempfile.TemporaryDirectory() as directory:
             repo = Path(directory)
