@@ -109,6 +109,12 @@ fits.
 4. Delivery trace.
 5. Activity output and historical evidence.
 
+Present this hierarchy through four operator stages: **Setup**, **Plan**,
+**Deliver**, and **Review**. Keep Supervisor activity and repository monitoring
+under a secondary **More tools** disclosure. Within a screen, show only the
+currently available primary action; advanced configuration, run options,
+diagnostics, and CLI output use progressive disclosure.
+
 ### Workshop Guide
 
 1. Current workshop step and its goal.
@@ -141,6 +147,8 @@ fits.
 - White surface with a soft right border.
 - Active item uses an orange left rail and pale blue-gray background.
 - Navigation text stays navy; blue is for navigable text and links.
+- Organize the primary workflow into Setup, Plan, Deliver, and Review.
+- Keep secondary tools collapsed until requested.
 - Mobile navigation uses a 44px menu target and an explicit scrim.
 
 ### Current Operation

@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>Factory Control Center</title>
   <meta name="description" content="Plan, run, and inspect the Software (re)-Factory from one local control center.">
-  <link rel="stylesheet" href="/styles.css">
+  <link rel="stylesheet" href="./styles.css">
 </head>
 <body>
   <a class="skip-link" href="#workspace">Skip to workspace</a>
@@ -18,30 +18,41 @@
     <div class="repo-chip"><span class="status-dot" id="repo-dot"></span><span id="repo-name">Connecting…</span><b id="repo-branch"></b></div>
     <div class="top-actions">
       <span class="live-status" id="connection-status" aria-live="polite"><i></i><span id="connection-label">Connecting</span></span>
-      <button class="button button-primary" id="global-next" type="button">Open current phase</button>
     </div>
   </header>
 
   <aside class="sidebar" id="sidebar">
     <nav aria-label="Control Center">
-      <p class="nav-label">Run</p>
-      <a href="#overview" class="active" data-view-link="overview"><span>⌂</span>Overview</a>
-      <p class="nav-label">Prepare</p>
-      <a href="#connect" data-view-link="connect"><span>◇</span>Connect</a>
-      <a href="#prd" data-view-link="prd"><span>≡</span>PRD</a>
-      <a href="#planning" data-view-link="planning"><span>⌘</span>Planning</a>
-      <p class="nav-label">Deliver</p>
-      <a href="#tickets" data-view-link="tickets"><span>▦</span>Tickets</a>
-      <a href="#supervisor" data-view-link="supervisor"><span>◎</span>Supervisor</a>
-      <p class="nav-label">Finish</p>
-      <a href="#evidence" data-view-link="evidence"><span>▶</span>Run app</a>
-      <a href="#monitor" data-view-link="monitor"><span>◌</span>Monitor</a>
+      <a href="#overview" class="nav-overview active" data-view-link="overview"><span aria-hidden="true">⌂</span>Current run</a>
+      <ol class="workflow-nav" aria-label="Factory workflow">
+        <li>
+          <div class="workflow-nav-heading"><span>1</span><strong>Setup</strong></div>
+          <a href="#connect" data-view-link="connect">Connection</a>
+        </li>
+        <li>
+          <div class="workflow-nav-heading"><span>2</span><strong>Plan</strong></div>
+          <a href="#prd" data-view-link="prd">Requirements</a>
+          <a href="#planning" data-view-link="planning">Review plan</a>
+        </li>
+        <li>
+          <div class="workflow-nav-heading"><span>3</span><strong>Deliver</strong></div>
+          <a href="#tickets" data-view-link="tickets">Tickets</a>
+        </li>
+        <li>
+          <div class="workflow-nav-heading"><span>4</span><strong>Review</strong></div>
+          <a href="#evidence" data-view-link="evidence">Run app</a>
+        </li>
+      </ol>
+      <details class="nav-more">
+        <summary>More tools</summary>
+        <a href="#supervisor" data-view-link="supervisor">Supervisor activity</a>
+        <a href="#monitor" data-view-link="monitor">Repository monitor</a>
+      </details>
     </nav>
     <div class="sidebar-footer">
-      <div class="profile-line"><span>Factory profile</span><strong id="sidebar-profile">Standard</strong></div>
-      <div class="profile-line"><span>Mode</span><strong id="sidebar-mode">Rehearsal</strong></div>
-      <button class="text-button" id="command-help" type="button">Show CLI mapping</button>
-      <button class="text-button reset-link" id="open-reset" type="button">Reset or start again</button>
+      <span class="sidebar-context">Run settings</span>
+      <div class="profile-line"><strong id="sidebar-profile">Standard</strong><span aria-hidden="true">·</span><strong id="sidebar-mode">Rehearsal</strong></div>
+      <button class="text-button reset-link" id="open-reset" type="button">Reset run</button>
     </div>
   </aside>
   <button class="sidebar-scrim" id="sidebar-scrim" type="button" aria-label="Close navigation" hidden></button>
@@ -49,21 +60,10 @@
   <main id="workspace">
     <section class="view active" data-view="overview" aria-labelledby="overview-title">
       <div class="page-heading">
-        <div><span class="eyebrow">Current run</span><h1 id="overview-title">Run overview</h1><p>Follow live delivery state, resolve decisions, and inspect the exact work behind each change.</p></div>
-        <div class="heading-actions"><button class="text-button reset-link" id="open-reset-overview" type="button">Reset or start again</button></div>
+        <div><span class="eyebrow">Control center</span><h1 id="overview-title">What needs your attention</h1><p>See the current work, take the next safe action, and leave the implementation details folded away until you need them.</p></div>
       </div>
 
-      <section class="system-strip" aria-labelledby="system-health-title">
-        <div class="system-strip-title"><span class="section-label">System health</span><h2 id="system-health-title">Factory signals</h2></div>
-        <dl class="system-signals">
-          <div><dt>Repository</dt><dd id="system-repository"><i class="signal-dot"></i>Inspecting</dd></div>
-          <div><dt>Event stream</dt><dd id="system-stream"><i class="signal-dot"></i>Connecting</dd></div>
-          <div><dt>Operation</dt><dd id="system-operation"><i class="signal-dot"></i>Idle</dd></div>
-          <div><dt>Last update</dt><dd id="system-updated">Waiting for state</dd></div>
-        </dl>
-      </section>
-
-      <div class="run-grid">
+      <div class="run-grid" id="run-grid">
         <section class="surface now-surface" id="now-surface" aria-live="polite">
           <div class="now-main">
             <div class="now-heading"><span class="now-pulse" id="journey-pulse"></span><span class="section-label" id="journey-kicker">Current phase</span><span class="journey-state" id="journey-state">Loading</span></div>
@@ -81,7 +81,7 @@
             <article><span>Completed</span><strong id="metric-done">0</strong></article>
           </div>
         </section>
-        <aside class="surface attention-surface" id="attention-surface">
+        <aside class="surface attention-surface" id="attention-surface" hidden>
           <div class="surface-heading"><div><span class="section-label">Attention queue</span><h2>Needs your decision</h2></div><span class="attention-count" id="decision-count">0</span></div>
           <p class="attention-intro" id="attention-intro">Human gates and blocked work appear here in priority order.</p>
           <div class="decision-list" id="decision-list"><p class="empty-state">No decisions are waiting.</p></div>
@@ -111,30 +111,49 @@
           <div class="operation-actions"><button class="button button-danger" id="stop-operation" type="button" hidden>Stop operation</button><button class="text-button" id="copy-operation" type="button">Copy command</button></div>
         </div>
       </details>
+
+      <details class="surface system-details">
+        <summary>
+          <span><span class="section-label">System health</span><strong id="system-health-title">Connection and operation details</strong></span>
+          <span class="summary-hint">Open diagnostics</span>
+          <span class="summary-chevron" aria-hidden="true">⌄</span>
+        </summary>
+        <dl class="system-signals">
+          <div><dt>Repository</dt><dd id="system-repository"><i class="signal-dot"></i>Inspecting</dd></div>
+          <div><dt>Event stream</dt><dd id="system-stream"><i class="signal-dot"></i>Connecting</dd></div>
+          <div><dt>Operation</dt><dd id="system-operation"><i class="signal-dot"></i>Idle</dd></div>
+          <div><dt>Last update</dt><dd id="system-updated">Waiting for state</dd></div>
+        </dl>
+      </details>
     </section>
 
     <section class="view" data-view="connect" aria-labelledby="connect-title" hidden>
-      <div class="page-heading"><div><span class="eyebrow">Step 1</span><h1 id="connect-title">Connect the factory</h1><p>Choose the adapters and confirm that this repository is ready.</p></div></div>
+      <div class="page-heading"><div><span class="eyebrow">Setup</span><h1 id="connect-title">Connect the factory</h1><p>Choose a preset and confirm that this repository is ready.</p></div></div>
       <div class="two-column">
         <section class="surface form-surface">
           <div class="surface-heading"><div><span class="section-label">Configuration</span><h2>Agent roles</h2></div></div>
           <form id="config-form">
-            <label>Quick preset<select name="preset"><option value="claude-workshop">Claude workshop</option><option value="codex-workshop">Codex workshop</option><option value="">Custom roles</option></select></label>
-            <div class="form-grid">
+            <div class="form-grid essential-settings">
+              <label>Agent preset<select name="preset"><option value="claude-workshop">Claude workshop</option><option value="codex-workshop">Codex workshop</option><option value="">Custom roles</option></select></label>
               <label>Run mode<select id="connect-mode"><option value="rehearsal">Rehearsal</option><option value="live">Live</option></select></label>
               <label>Profile<select name="profile"><option value="standard">Standard</option><option value="lean">Lean</option><option value="assured">Assured</option><option value="autonomous-demo">Autonomous Demo</option></select></label>
-              <label class="wide-field">GitHub repository URL<input name="github_repository" type="url" inputmode="url" placeholder="https://github.com/you/workshop-repo"><small>Required for Live. Saving verifies access and opens an isolated managed checkout. The factory never repoints another repository's <code>origin</code>.</small></label>
-              <label>Parallel tickets<input name="max_parallel" type="number" min="1" max="12" value="1"></label>
-              <label>Planning<select name="planning_agent" data-agent-select="planning"></select></label>
-              <label>Implementation<select name="agent" data-agent-select="implementation"></select></label>
-              <label>Independent QA (Standard/Assured)<select name="qa_agent" data-agent-select="qa"></select></label>
-              <label>Supervisor (Standard/Assured)<select name="supervisor_agent" data-agent-select="supervisor"></select></label>
-              <label>Code review (Standard/Assured)<select name="review_agent" data-agent-select="review"></select></label>
-              <label>GitHub Project number<input name="project_number" type="number" min="1" placeholder="Create during approval"></label>
+              <label class="wide-field" data-live-setting>GitHub repository URL<input name="github_repository" type="url" inputmode="url" placeholder="https://github.com/you/workshop-repo"><small>Saving verifies access and opens an isolated managed checkout. The factory never repoints another repository's <code>origin</code>.</small></label>
             </div>
             <label class="check-row" id="bootstrap-workshop-option"><input name="bootstrap_workshop" type="checkbox"><span><b>Seed the guided Pocket Cinema starter</b><small>Copies only the starter product and its governance into an empty repository. Factory runtime and workshop documentation stay in this control checkout.</small></span></label>
-            <label class="check-row"><input name="review_qa_tests" type="checkbox" checked><span><b>Require human QA approval</b><small>Implementation waits until a person approves the acceptance tests.</small></span></label>
-            <label class="check-row safety-note" id="autonomous-merge-warning" hidden><input id="autonomous-merge-opt-in" type="checkbox"><span><b>Delegate final merge accountability for this demonstration</b><small>This delegates final merge accountability: the Supervisor recommends and the orchestrator executes an exact-revision merge. This is a workshop contrast, not the normal shipping path. The choice is not saved and must be made again after a reload.</small></span></label>
+            <details class="advanced-settings">
+              <summary><span><strong>Advanced role settings</strong><small>Parallelism, role adapters, QA policy, and GitHub Project</small></span><span class="summary-chevron" aria-hidden="true">⌄</span></summary>
+              <div class="form-grid">
+                <label>Parallel tickets<input name="max_parallel" type="number" min="1" max="12" value="1"></label>
+                <label>Planning<select name="planning_agent" data-agent-select="planning"></select></label>
+                <label>Implementation<select name="agent" data-agent-select="implementation"></select></label>
+                <label>Independent QA (Standard/Assured)<select name="qa_agent" data-agent-select="qa"></select></label>
+                <label>Supervisor (Standard/Assured)<select name="supervisor_agent" data-agent-select="supervisor"></select></label>
+                <label>Code review (Standard/Assured)<select name="review_agent" data-agent-select="review"></select></label>
+                <label data-live-setting>GitHub Project number<input name="project_number" type="number" min="1" placeholder="Create during approval"></label>
+              </div>
+              <label class="check-row"><input name="review_qa_tests" type="checkbox" checked><span><b>Require human QA approval</b><small>Implementation waits until a person approves the acceptance tests.</small></span></label>
+              <label class="check-row safety-note" id="autonomous-merge-warning" hidden><input id="autonomous-merge-opt-in" type="checkbox"><span><b>Delegate final merge accountability for this demonstration</b><small>This delegates final merge accountability: the Supervisor recommends and the orchestrator executes an exact-revision merge. This is a workshop contrast, not the normal shipping path. The choice is not saved and must be made again after a reload.</small></span></label>
+            </details>
             <div class="form-actions"><button class="button button-primary" type="submit">Save configuration</button><button class="button" type="button" data-action="doctor">Run preflight</button></div>
           </form>
         </section>
@@ -160,15 +179,15 @@
     </section>
 
     <section class="view" data-view="prd" aria-labelledby="prd-title" hidden>
-      <div class="page-heading"><div><span class="eyebrow">Step 2</span><h1 id="prd-title">Define the outcome</h1><p>Write the product requirement the planning experts will receive.</p></div><div class="heading-actions"><span class="save-state" id="prd-save-state">Not edited</span><button class="button" id="save-prd" type="button">Save PRD</button><button class="button button-primary" id="start-planning" type="button">Start Product Review</button></div></div>
+      <div class="page-heading"><div><span class="eyebrow">Plan · Requirements</span><h1 id="prd-title">Define the outcome</h1><p>Write the product requirement the planning experts will receive. Your draft saves automatically.</p></div><div class="heading-actions"><span class="save-state" id="prd-save-state">Not edited</span><button class="button button-primary" id="start-planning" type="button">Start Product Review</button></div></div>
       <div class="prd-grid">
         <section class="surface editor-surface"><textarea id="prd-editor" aria-label="Product requirements document" spellcheck="true"></textarea></section>
-        <aside class="surface prd-checklist"><span class="section-label">Before planning</span><h2>A useful PRD answers</h2><ul><li>Who is the product for?</li><li>What changes for the user?</li><li>What must remain compatible?</li><li>What evidence proves success?</li></ul><label>Planning mode<select id="planning-mode"><option value="rehearsal">Rehearsal</option><option value="live">Live adapters</option></select></label><p class="config-reminder">The Factory Profile selected in Connect applies to planning and execution.</p></aside>
+        <aside class="surface prd-checklist"><span class="section-label">Before planning</span><h2>A useful PRD answers</h2><ul><li>Who is the product for?</li><li>What changes for the user?</li><li>What must remain compatible?</li><li>What evidence proves success?</li></ul><p class="config-reminder">The mode and Factory Profile selected in Setup apply to planning and execution.</p></aside>
       </div>
     </section>
 
     <section class="view" data-view="planning" aria-labelledby="planning-title" hidden>
-      <div class="page-heading"><div><span class="eyebrow">Steps 3–5</span><h1 id="planning-title">Review the plan</h1><p>Inspect each expert contract before allowing implementation.</p></div><div class="heading-actions"><span class="plan-id" id="plan-id">No plan</span><button class="button" id="continue-plan" type="button">Run remaining experts</button><button class="button button-primary" id="publish-plan" type="button">Create tickets</button></div></div>
+      <div class="page-heading"><div><span class="eyebrow">Plan · Review</span><h1 id="planning-title">Review the plan</h1><p>Inspect each expert contract before allowing implementation.</p></div><div class="heading-actions"><span class="plan-id" id="plan-id">No plan</span><button class="button" id="continue-plan" type="button" hidden>Run remaining experts</button><button class="button button-primary" id="publish-plan" type="button" hidden>Create tickets</button></div></div>
       <section class="planning-pipeline" id="planning-pipeline"></section>
       <div class="planning-grid">
         <section class="surface artifact-preview"><div class="surface-heading"><div><span class="section-label" id="artifact-label">Artifact</span><h2 id="artifact-title">Select a planning stage</h2></div><button class="text-button" id="open-artifact" type="button" hidden>Open source</button></div><pre id="artifact-content">The expert output will appear here.</pre></section>
@@ -177,7 +196,7 @@
     </section>
 
     <section class="view tickets-view" data-view="tickets" aria-labelledby="tickets-title" hidden>
-      <div class="page-heading"><div><span class="eyebrow">Steps 6–7</span><h1 id="tickets-title">Operate the factory</h1><p>Watch every ticket and inspect the evidence behind its state.</p></div><div class="heading-actions"><label class="inline-select">Mode<select id="run-mode"><option value="rehearsal">Rehearsal</option><option value="live">Live</option></select></label><button class="button" type="button" data-action="run-once">Run one cycle</button><button class="button button-primary" type="button" data-action="run">Run factory</button></div></div>
+      <div class="page-heading"><div><span class="eyebrow">Deliver</span><h1 id="tickets-title">Operate the factory</h1><p>Watch every ticket and inspect the evidence behind its state.</p></div><div class="heading-actions"><details class="action-menu"><summary>Run options</summary><div><label class="inline-select">Mode<select id="run-mode"><option value="rehearsal">Rehearsal</option><option value="live">Live</option></select></label><button class="text-button" type="button" data-action="run-once">Run one cycle</button></div></details><button class="button button-primary" type="button" data-action="run">Run factory</button></div></div>
       <div class="board-toolbar">
         <div><span class="section-label">Lane visibility</span><div class="segmented-control" aria-label="Ticket lane visibility"><button class="active" type="button" data-board-mode="focus" aria-pressed="true">Active lanes</button><button type="button" data-board-mode="all" aria-pressed="false">All lanes</button></div></div>
         <div class="board-observability"><div class="state-summary" id="state-summary"></div><span>Live from <code>.factory/state.json</code></span></div>
@@ -210,7 +229,7 @@
     </section>
 
     <section class="view" data-view="evidence" aria-labelledby="evidence-title" hidden>
-      <div class="page-heading"><div><span class="eyebrow">Step 8</span><h1 id="evidence-title">Run the completed app</h1><p>Start the generated application from the repository used by this run.</p></div></div>
+      <div class="page-heading"><div><span class="eyebrow">Review</span><h1 id="evidence-title">Run the completed app</h1><p>Start the generated application from the repository used by this run.</p></div></div>
       <div class="run-app-grid">
         <section class="surface">
           <span class="section-label">Terminal</span>
@@ -235,7 +254,7 @@
     <section class="view" data-view="monitor" aria-labelledby="monitor-title" hidden>
       <div class="page-heading">
         <div><span class="eyebrow">After delivery</span><h1 id="monitor-title">Monitor repository health</h1><p>Inspect read-only findings after the factory delivers. Monitoring never repairs product code or merges a pull request.</p></div>
-        <div class="heading-actions"><button class="button" type="button" data-action="monitor">Preview findings</button><button class="button button-primary" id="publish-monitor" type="button" data-action="publish-monitor">Publish findings</button></div>
+        <div class="heading-actions"><button class="button" type="button" data-action="monitor">Preview findings</button><button class="button button-primary" id="publish-monitor" type="button" data-action="publish-monitor" hidden>Publish findings</button></div>
       </div>
       <div class="monitor-grid">
         <section class="surface monitor-summary">
@@ -294,6 +313,6 @@
   </dialog>
 
   <div class="toast-region" id="toast-region" aria-live="polite"></div>
-  <script src="/app.js" defer></script>
+  <script src="./app.js" defer></script>
 </body>
 </html>

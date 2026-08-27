@@ -1971,6 +1971,29 @@ class ControlCenterTests(unittest.TestCase):
         self.assertIn(".ticket-card { display: block; width: 100%; min-width: 0;", stylesheet)
         self.assertIn("No tickets in this state", javascript)
 
+    def test_simplified_control_center_prioritizes_one_operator_workflow(self):
+        frontend = Path(__file__).parents[1] / "control_center"
+        source = (frontend / "index.html").read_text()
+        javascript = (frontend / "app.js").read_text()
+        styles = (frontend / "styles.css").read_text()
+
+        for label in ("Setup", "Plan", "Deliver", "Review", "More tools"):
+            self.assertIn(label, source)
+        self.assertIn('class="workflow-nav"', source)
+        self.assertIn('href="./styles.css"', source)
+        self.assertIn('src="./app.js"', source)
+        self.assertIn("Advanced role settings", source)
+        self.assertIn("Your draft saves automatically", source)
+        self.assertNotIn('id="global-next"', source)
+        self.assertNotIn('id="open-reset-overview"', source)
+        self.assertNotIn('id="command-help"', source)
+        self.assertNotIn('id="save-prd"', source)
+        self.assertNotIn('id="planning-mode"', source)
+        self.assertIn("function schedulePrdSave()", javascript)
+        self.assertIn('$("#attention-surface").hidden = decisions.length === 0', javascript)
+        self.assertIn('$("#continue-plan").hidden = !planning.can_continue', javascript)
+        self.assertIn("grid-template-columns: repeat(4,1fr)", styles)
+
     def test_factory_progress_pulses_only_the_current_running_phase(self):
         frontend = Path(__file__).parents[1] / "control_center"
         source = (frontend / "index.html").read_text()
