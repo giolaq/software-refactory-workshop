@@ -657,7 +657,90 @@ class ControlCenter:
         if log_path is not None and not log_path.is_absolute():
             log_path = self.control_repo / log_path
         value["output"] = tail_text(log_path) if log_path else ""
+        if value.get("status") == "failed" and not value.get("failure"):
+            guidance = self._operation_failure_guidance(
+                value.get("action", ""),
+                value.get("exit_code"),
+                value["output"],
+                value.get("command", ""),
+            )
+            value["failure"] = guidance
+            value["error"] = f"{guidance['cause']} {guidance['recovery']}"
         return value
+
+    @staticmethod
+    def _operation_failure_guidance(
+        action: str,
+        exit_code: int | None,
+        output: str,
+        command: str,
+    ) -> dict:
+        plain = re.sub(r"\x1b\[[0-9;?]*[ -/]*[@-~]", "", output or "")
+        lowered = plain.lower()
+        if action == "start-app":
+            missing_node_tool = (
+                "command not found" in lowered
+                or "is not recognized as an internal or external command" in lowered
+            ) and any(tool in lowered for tool in ("vite", "next", "react-scripts"))
+            if missing_node_tool:
+                return {
+                    "cause": (
+                        "The final checkout is missing installed Node dependencies, "
+                        "so the application package command is unavailable."
+                    ),
+                    "recovery": (
+                        "Choose Start app again. The Control Center will install the "
+                        "locked dependencies before retrying the server."
+                    ),
+                }
+            if (
+                "eaddrinuse" in lowered
+                or "address already in use" in lowered
+                or "port is already in use" in lowered
+            ):
+                return {
+                    "cause": "The application could not bind its selected port because another process is using it.",
+                    "recovery": (
+                        "Stop the other server, refresh the Control Center so it selects "
+                        "an available port, then choose Start app again."
+                    ),
+                }
+            if (
+                ("npm ci" in command or "npm install" in command)
+                and ("npm error" in lowered or "npm err!" in lowered)
+            ):
+                return {
+                    "cause": "The application dependencies could not be installed from package.json and its lockfile.",
+                    "recovery": (
+                        "Read the first npm error in Activity and CLI output, correct the "
+                        "reported package or network problem, then choose Start app again."
+                    ),
+                }
+
+        lines = [
+            line.strip()
+            for line in plain.splitlines()
+            if line.strip() and not line.lstrip().startswith("$ ")
+        ]
+        diagnostic = next(
+            (
+                line for line in reversed(lines)
+                if any(
+                    marker in line.lower()
+                    for marker in ("error", "failed", "fatal", "not found", "denied")
+                )
+            ),
+            lines[-1] if lines else "",
+        )
+        suffix = f" Last output: {diagnostic[:300]}" if diagnostic else ""
+        subject = "Application startup" if action == "start-app" else "The operation"
+        return {
+            "cause": f"{subject} exited with code {exit_code if exit_code is not None else 'unknown'}.{suffix}",
+            "recovery": (
+                "Use the displayed command and Activity and CLI output to correct the "
+                "first reported error, then repeat this action."
+            ),
+        }
 
     def journey(
         self,
@@ -1905,8 +1988,22 @@ class ControlCenter:
                 self.operation.update(status=status, finished_at=utc_now(), exit_code=exit_code)
                 if failure:
                     self.operation["error"] = failure
+                    self.operation["failure"] = {
+                        "cause": failure,
+                        "recovery": (
+                            "Check that the displayed command and required executable are "
+                            "available, then repeat this action."
+                        ),
+                    }
                 elif exit_code and status != "stopped":
-                    self.operation["error"] = "The operation failed. Read the final log lines for the cause."
+                    guidance = self._operation_failure_guidance(
+                        self.operation.get("action", ""),
+                        exit_code,
+                        tail_text(log),
+                        self.operation.get("command", ""),
+                    )
+                    self.operation["failure"] = guidance
+                    self.operation["error"] = f"{guidance['cause']} {guidance['recovery']}"
                 self.process = None
                 self.worker = None
                 self._save_operation()

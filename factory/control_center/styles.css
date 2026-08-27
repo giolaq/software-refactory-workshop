@@ -220,6 +220,10 @@ main { min-height: 100vh; margin-left: var(--sidebar); padding: calc(var(--topba
 .operation-status.succeeded { background: var(--green-soft); color: var(--green); }
 .operation-status.failed, .operation-status.stopped { background: var(--red-soft); color: var(--red); }
 .operation-context { margin: 14px 0 -6px; color: var(--muted); font-size: 12px; }
+.operation-failure { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1fr); gap: 16px; margin-top: 14px; padding: 14px 0; border-top: 1px solid color-mix(in srgb, var(--red) 45%, var(--line)); border-bottom: 1px solid var(--line); }
+.operation-failure[hidden] { display: none; }
+.operation-failure div { min-width: 0; }
+.operation-failure strong, .operation-failure p { display: block; margin: 5px 0 0; color: var(--ink); font-size: 13px; line-height: 1.5; }
 .command-line { min-height: 39px; margin-top: 18px; padding: 10px 12px; overflow: auto; border: 1px solid #495c71; border-radius: var(--radius-control) var(--radius-control) 0 0; background: #232f3e; color: #f0f2f4; font: 11px/1.5 "SFMono-Regular", "Cascadia Code", Consolas, monospace; white-space: nowrap; }
 .console { min-height: 220px; max-height: 390px; margin: 0; padding: 15px; overflow: auto; border: 0; border-radius: 0 0 var(--radius-control) var(--radius-control); background: #131a23; color: #e2edf4; font-size: 12px; line-height: 1.55; white-space: pre-wrap; }
 .operation-actions { display: flex; justify-content: space-between; margin-top: 13px; }
@@ -510,6 +514,7 @@ input:focus, select:focus, textarea:focus { border-color: var(--blue); outline: 
   .run-metrics article:nth-child(-n+2) { border-bottom: 1px solid var(--line); }
   .operation-surface > summary { min-height: 72px; padding: 0 14px; }
   .operation-body { padding: 0 14px 14px; }
+  .operation-failure { grid-template-columns: 1fr; }
   .board-toolbar { align-items: flex-start; flex-direction: column; }
   .board-observability { justify-items: start; }
   .ticket-load-state { align-items: stretch; flex-direction: column; }

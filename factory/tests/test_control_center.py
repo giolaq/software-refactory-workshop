@@ -232,6 +232,32 @@ class ControlCenterTests(unittest.TestCase):
             ):
                 center.build_commands("start-app", {})
 
+    def test_failed_app_start_explains_missing_dependencies_and_recovery(self):
+        with tempfile.TemporaryDirectory() as directory:
+            center = ControlCenter(self.make_repo(directory))
+            log = center.repo / ".factory/logs/start-app.log"
+            log.parent.mkdir(parents=True, exist_ok=True)
+            log.write_text(
+                "$ npm start\n\n"
+                "> attendee-app@1.0.0 start\n"
+                "> vite\n\n"
+                "sh: vite: command not found\n"
+            )
+            center.operation = {
+                "action": "start-app",
+                "status": "failed",
+                "exit_code": 127,
+                "command": "npm start",
+                "error": "The operation failed. Read the final log lines for the cause.",
+                "log": str(log),
+            }
+
+            operation = center.operation_snapshot()
+
+            self.assertIn("missing installed Node dependencies", operation["failure"]["cause"])
+            self.assertIn("Choose Start app again", operation["failure"]["recovery"])
+            self.assertIn(operation["failure"]["cause"], operation["error"])
+
     def test_external_repository_uses_the_bundled_control_plane_and_can_be_initialized(self):
         with tempfile.TemporaryDirectory() as directory:
             repo = Path(directory)
@@ -712,6 +738,10 @@ class ControlCenterTests(unittest.TestCase):
         self.assertIn('action("start-app")', javascript)
         self.assertIn('operation.action === "start-app"', javascript)
         self.assertIn("The application is running. Open it", javascript)
+        self.assertIn("Why it failed", html)
+        self.assertIn("What to do", html)
+        self.assertIn("operation.failure?.cause", javascript)
+        self.assertIn(".operation-failure", styles)
         self.assertIn(".run-app-grid > .surface { min-width: 0;", styles)
         self.assertIn(
             ".run-app-grid { grid-template-columns: minmax(0,1fr); }",

@@ -345,10 +345,15 @@ function renderOperation(operation) {
   badge.textContent = status;
   badge.className = `operation-status ${status}`;
   $("#operation-command").textContent = operation.command || "Actions show their exact CLI command here.";
+  const failure = operation.failure || {};
+  const failurePanel = $("#operation-failure");
+  failurePanel.hidden = status !== "failed";
+  $("#operation-failure-cause").textContent = failure.cause || operation.error || "The command stopped at an error.";
+  $("#operation-failure-recovery").textContent = failure.recovery || "Correct the first reported error, then repeat this action.";
   $("#operation-context").textContent = ["running", "stopping"].includes(status)
     ? "This is the active factory command. Output streams below until it finishes or is stopped."
     : status === "failed"
-      ? "The command stopped at an error. Fix the first reported cause before repeating it."
+      ? "The command stopped. Review the cause and recovery below before repeating it."
       : status === "succeeded"
         ? "The command completed. The current phase and next checkpoint above have been updated."
         : "No command is running. Use the next checkpoint above.";
@@ -630,6 +635,7 @@ function renderApplication(application, operation = {}) {
     : '<p class="empty-state">No application URLs were detected.</p>';
   const operationActive = ["running", "stopping"].includes(operation.status);
   const appRunning = operationActive && operation.action === "start-app";
+  const appFailed = operation.status === "failed" && operation.action === "start-app";
   const fallbackPort = application.port
     && application.preferred_port
     && application.port !== application.preferred_port;
@@ -646,6 +652,8 @@ function renderApplication(application, operation = {}) {
         : "The application is running. Open it using the browser link."
       : operationActive
         ? "Wait for the current Control Center operation to finish."
+        : appFailed
+          ? `${operation.failure?.cause || operation.error || "Application startup failed."} ${operation.failure?.recovery || "Correct the reported error, then choose Start app again."}`
         : fallbackPort
           ? `Port ${application.preferred_port} is already in use. Start the app on available port ${application.port}.`
           : "Start the server here, or run the exact command in your terminal.";
