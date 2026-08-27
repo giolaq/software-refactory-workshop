@@ -179,6 +179,48 @@ class ControlCenterTests(unittest.TestCase):
                 [["env", "PORT=3001", "npm", "start"]],
             )
 
+    def test_vite_application_installs_dependencies_and_uses_the_selected_port(self):
+        with tempfile.TemporaryDirectory() as directory:
+            center = ControlCenter(self.make_repo(directory))
+            (center.repo / "package.json").write_text(json.dumps({
+                "scripts": {"start": "vite"},
+                "dependencies": {"three": "0.180.0"},
+                "devDependencies": {"vite": "8.2.2"},
+            }))
+            (center.repo / "package-lock.json").write_text("{}\n")
+            ProjectContract.detect(center.repo).write()
+
+            with patch.object(center, "_port_available", return_value=True):
+                application = center.application_instructions()
+                _, commands = center.build_commands("start-app", {})
+
+            self.assertIn("npm ci\nnpm start --", application["command"])
+            self.assertEqual(commands, [
+                ["npm", "ci"],
+                [
+                    "npm", "start", "--",
+                    "--host", "127.0.0.1",
+                    "--port", "3000",
+                    "--strictPort",
+                ],
+            ])
+
+    def test_vite_application_repairs_an_incomplete_dependency_install(self):
+        with tempfile.TemporaryDirectory() as directory:
+            center = ControlCenter(self.make_repo(directory))
+            (center.repo / "package.json").write_text(json.dumps({
+                "scripts": {"start": "vite"},
+                "devDependencies": {"vite": "8.2.2"},
+            }))
+            (center.repo / "package-lock.json").write_text("{}\n")
+            (center.repo / "node_modules/vite").mkdir(parents=True)
+            ProjectContract.detect(center.repo).write()
+
+            with patch.object(center, "_port_available", return_value=True):
+                _, commands = center.build_commands("start-app", {})
+
+            self.assertEqual(commands[0], ["npm", "ci"])
+
     def test_start_app_refuses_a_repository_without_a_supported_entrypoint(self):
         with tempfile.TemporaryDirectory() as directory:
             center = ControlCenter(self.make_repo(directory))

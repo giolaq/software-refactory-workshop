@@ -447,6 +447,59 @@ class ControlCenter:
             self._application_port = int(probe.getsockname()[1])
         return self._application_port
 
+    @staticmethod
+    def _node_script_executable(script: str) -> str:
+        try:
+            tokens = shlex.split(script)
+        except ValueError:
+            return ""
+        if tokens and tokens[0] == "env":
+            tokens = tokens[1:]
+        for token in tokens:
+            if "=" in token and not token.startswith(("./", "../", "/")):
+                name, _, _ = token.partition("=")
+                if name.replace("_", "").isalnum():
+                    continue
+            return Path(token).name
+        return ""
+
+    def _node_dependency_setup(
+        self,
+        package: dict,
+        script: str,
+    ) -> list[str] | None:
+        dependencies = {
+            name
+            for section in ("dependencies", "devDependencies")
+            for name in (
+                package.get(section, {})
+                if isinstance(package.get(section), dict)
+                else {}
+            )
+            if isinstance(name, str) and name
+        }
+        if not dependencies:
+            return None
+
+        modules = self.repo / "node_modules"
+        missing = not modules.is_dir() or any(
+            not modules.joinpath(*name.split("/")).exists()
+            for name in dependencies
+        )
+        executable = self._node_script_executable(script)
+        if (
+            not missing
+            and executable in dependencies
+            and not (modules / ".bin" / executable).exists()
+        ):
+            missing = True
+        if not missing:
+            return None
+        return [
+            "npm",
+            "ci" if (self.repo / "package-lock.json").is_file() else "install",
+        ]
+
     def _application_entrypoint(self) -> dict | None:
         contract = ProjectContract.load(self.repo)
         package_path = self.repo / "package.json"
@@ -471,28 +524,44 @@ class ControlCenter:
                         if selected == "start" else
                         ["npm", "run", selected]
                     )
+                    script = scripts[selected]
+                    setup_command = self._node_dependency_setup(package, script)
                     urls, preferred_port, selected_port = (
                         self._documented_application_urls(
                             contract,
                             contract.ports[0] if contract.ports else 3000,
                         )
                     )
-                    command = (
-                        ["env", f"PORT={selected_port}", *base_command]
-                        if selected_port != preferred_port else
-                        base_command
-                    )
-                    display_command = (
-                        f"PORT={selected_port} {shlex.join(base_command)}"
-                        if selected_port != preferred_port else
-                        shlex.join(base_command)
-                    )
+                    if self._node_script_executable(script) == "vite":
+                        command = [
+                            *base_command,
+                            "--",
+                            "--host", "127.0.0.1",
+                            "--port", str(selected_port),
+                            "--strictPort",
+                        ]
+                        display_command = shlex.join(command)
+                    else:
+                        command = (
+                            ["env", f"PORT={selected_port}", *base_command]
+                            if selected_port != preferred_port else
+                            base_command
+                        )
+                        display_command = (
+                            f"PORT={selected_port} {shlex.join(base_command)}"
+                            if selected_port != preferred_port else
+                            shlex.join(base_command)
+                        )
+                    commands = [setup_command, command] if setup_command else [command]
                     return {
                         "argv": command,
                         "command": (
                             f"cd {shlex.quote(str(self.repo))}\n"
-                            f"{display_command}"
+                            + "\n".join(shlex.join(item) for item in commands[:-1])
+                            + ("\n" if len(commands) > 1 else "")
+                            + display_command
                         ),
+                        "prepare_argv": commands[:-1],
                         "urls": urls,
                         "kind": "node",
                         "preferred_port": preferred_port,
@@ -1244,7 +1313,10 @@ class ControlCenter:
                     "No supported application entry point was detected. Add a package.json "
                     "start/dev/serve script or a Python app.py entry point."
                 )
-            return "Run the completed application", [application["argv"]]
+            return "Run the completed application", [
+                *application.get("prepare_argv", []),
+                application["argv"],
+            ]
         if action == "configure":
             command = base + ["configure"]
             commands = []
