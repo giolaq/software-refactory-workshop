@@ -867,6 +867,40 @@ class RuntimeTests(unittest.TestCase):
         self.assertEqual(stale_merge["action"], "create_replacement_ticket")
         self.assertFalse(stale_merge["retry_allowed"])
 
+    def test_self_review_fallback_proposes_exact_merge_instead_of_retry(self):
+        reviewed_head = "a" * 40
+        recovery = ticket_recovery({
+            "number": 2,
+            "status": "Blocked",
+            "phase": "code-review",
+            "failure": (
+                "Supervisor blocked merge recommendation: Official review approval "
+                "is missing; the factory comment could not approve the author's own "
+                "pull request."
+            ),
+            "gate_results": [{
+                "name": "repository-integrity",
+                "required": True,
+                "exit_code": 0,
+            }],
+            "code_review": {
+                "head": reviewed_head,
+                "result": {"decision": "APPROVE"},
+                "publication": {
+                    "published": True,
+                    "official": False,
+                    "mode": "factory-comment",
+                },
+            },
+        })
+
+        self.assertEqual(recovery["kind"], "review_publication")
+        self.assertEqual(recovery["action"], "merge_reviewed_pull_request")
+        self.assertEqual(recovery["reviewed_head"], reviewed_head)
+        self.assertFalse(recovery["retry_allowed"])
+        self.assertIn(reviewed_head[:12], recovery["solution"])
+        self.assertIn("FACTORY_REVIEW_GH_TOKEN", recovery["solution"])
+
     def test_scope_conflict_log_requires_ticket_edit_instead_of_blind_retry(self):
         with tempfile.TemporaryDirectory() as directory:
             repo = Path(directory)
@@ -1838,6 +1872,76 @@ class RuntimeTests(unittest.TestCase):
         factory.transition.assert_called_once_with(ticket, "Done", "PR merged and synchronized")
         factory.backend.close_issue.assert_called_once_with(ticket)
         factory.record_receipt.assert_called_once()
+
+    def test_exact_manual_merge_reconciles_a_blocked_self_review_fallback(self):
+        factory = Factory.__new__(Factory)
+        reviewed_head = "a" * 40
+        merge_head = "c" * 40
+        ticket = {
+            "number": 2,
+            "status": "Blocked",
+            "phase": "code-review",
+            "attempt": 1,
+            "approved_head": "",
+            "pr_url": "https://github.test/example/pull/7",
+            "failure": (
+                "Supervisor blocked merge recommendation: Official review approval "
+                "is missing; the factory comment could not approve the author's own "
+                "pull request."
+            ),
+            "recovery": {"kind": "retry"},
+            "next_human_action": "retry_ticket",
+            "gate_results": [{
+                "name": "repository-integrity",
+                "required": True,
+                "exit_code": 0,
+            }],
+            "code_review": {
+                "head": reviewed_head,
+                "artifact": ".factory/reviews/ticket-2-attempt-1.json",
+                "result": {"decision": "APPROVE"},
+                "publication": {
+                    "published": True,
+                    "official": False,
+                    "mode": "factory-comment",
+                },
+            },
+        }
+        factory.tickets = {2: ticket}
+        factory.backend = mock.Mock()
+        factory.backend.default_branch = "main"
+        factory.backend.merged_pr.return_value = {
+            "headRefOid": reviewed_head,
+            "mergedAt": "2026-08-27T10:00:34Z",
+            "mergeCommit": {"oid": merge_head},
+        }
+        factory.sync_default_branch = mock.Mock(return_value=merge_head)
+        factory.transition = mock.Mock()
+        factory.record_receipt = mock.Mock()
+        factory.publish_remote_summary = mock.Mock()
+        factory.repo = Path("/unused")
+        factory.git = mock.Mock(return_value=subprocess.CompletedProcess([], 0, "", ""))
+
+        factory.sync_merged()
+
+        self.assertEqual(ticket["approved_head"], reviewed_head)
+        self.assertEqual(ticket["merge_executed_by"], "human")
+        self.assertEqual(ticket["failure"], "")
+        self.assertEqual(ticket["recovery"], {})
+        self.assertEqual(ticket["next_human_action"], "")
+        self.assertEqual(ticket["pr_state"], "MERGED")
+        self.assertEqual(ticket["pr_head"], reviewed_head)
+        self.assertEqual(ticket["pr_merge_commit"], merge_head)
+        factory.transition.assert_called_once_with(
+            ticket, "Done", "PR merged and synchronized",
+        )
+        factory.backend.close_issue.assert_called_once_with(ticket)
+        receipt = factory.record_receipt.call_args
+        self.assertEqual(receipt.args[1], "human_review")
+        self.assertIn(
+            "Code Review role approval matched the merged candidate.",
+            receipt.kwargs["verification"],
+        )
 
     def test_planning_approval_counts_toward_human_attention_capacity(self):
         with tempfile.TemporaryDirectory() as directory:

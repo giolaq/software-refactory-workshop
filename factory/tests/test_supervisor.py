@@ -296,7 +296,11 @@ class SupervisorTests(unittest.TestCase):
                 "code_review": {
                     "head": "deadbeef",
                     "result": {"decision": "APPROVE"},
-                    "publication": {"published": True, "official": True},
+                    "publication": {
+                        "published": True,
+                        "official": False,
+                        "mode": "factory-comment",
+                    },
                 },
             })
             response = {
@@ -312,6 +316,9 @@ class SupervisorTests(unittest.TestCase):
 
             self.assertEqual(decision["action"], "MERGE")
             self.assertEqual(decision["kind"], "merge")
+            prompt = (repo / decision["prompt"]).read_text()
+            self.assertIn("expected GitHub self-review fallback", prompt)
+            self.assertIn("do not infer that requirement", prompt)
             state = json.loads((repo / ".factory/supervisor/state.json").read_text())
             self.assertEqual(state["latest"]["id"], "supervisor-merge-1")
 
