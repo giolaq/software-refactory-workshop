@@ -102,6 +102,10 @@
         </summary>
         <div class="operation-body">
           <p class="operation-context" id="operation-context">No command is running. Use the next checkpoint above.</p>
+          <div class="operation-failure" id="operation-failure" hidden>
+            <div><span class="section-label">Why it failed</span><strong id="operation-failure-cause"></strong></div>
+            <div><span class="section-label">What to do</span><p id="operation-failure-recovery"></p></div>
+          </div>
           <div class="command-line" id="operation-command">Actions show their exact CLI command here.</div>
           <pre class="console" id="operation-output" tabindex="0">Select a workflow action to begin.</pre>
           <div class="operation-actions"><button class="button button-danger" id="stop-operation" type="button" hidden>Stop operation</button><button class="text-button" id="copy-operation" type="button">Copy command</button></div>
