@@ -29,6 +29,12 @@ Every operation shows the exact equivalent CLI command and streams its output.
 The interface runs one command at a time, so two buttons cannot start competing
 factory processes.
 
+The primary navigation follows four operator stages: **Setup**, **Plan**,
+**Deliver**, and **Review**. Supervisor activity and repository monitoring are
+available under **More tools**. Advanced role configuration, run options,
+diagnostics, and CLI output stay collapsed until needed so the next safe action
+remains visually dominant.
+
 If a planning expert cannot make a product or technical decision safely, its
 card shows each blocking question with an answer field. Answer every question
 and select **Submit decisions**. For System Architecture, Program Design, and

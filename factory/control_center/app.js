@@ -12,6 +12,7 @@ const app = {
   operationPoll: null,
   boardMode: localStorage.getItem("factory-board-mode") || "focus",
 };
+let prdSaveTimer = null;
 
 const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
@@ -45,6 +46,7 @@ function showView(name, updateHash = true) {
     view.classList.toggle("active", active);
   });
   $$('[data-view-link]').forEach((link) => link.classList.toggle("active", link.dataset.viewLink === name));
+  if (["supervisor", "monitor"].includes(name)) $(".nav-more").open = true;
   if (updateHash) history.replaceState(null, "", `#${name}`);
   closeSidebar();
   if (name === "prd") loadPrd();
@@ -64,7 +66,7 @@ function closeSidebar() {
 }
 
 function mode() {
-  return $("#connect-mode")?.value || $("#run-mode")?.value || $("#planning-mode")?.value || localStorage.getItem("factory-control-mode") || "rehearsal";
+  return $("#connect-mode")?.value || $("#run-mode")?.value || localStorage.getItem("factory-control-mode") || "rehearsal";
 }
 
 function mergeEligibility(ticket) {
@@ -107,7 +109,6 @@ function setMode(value) {
   localStorage.setItem("factory-control-mode", next);
   if ($("#connect-mode")) $("#connect-mode").value = next;
   if ($("#run-mode")) $("#run-mode").value = next;
-  if ($("#planning-mode")) $("#planning-mode").value = next;
   $("#sidebar-mode").textContent = next;
   const repository = $("#config-form")?.elements.namedItem("github_repository");
   if (repository) {
@@ -119,6 +120,8 @@ function setMode(value) {
     bootstrap.disabled = next !== "live";
     if (bootstrap.disabled) bootstrap.checked = false;
   }
+  $$('[data-live-setting]').forEach((field) => { field.hidden = next !== "live"; });
+  if ($("#bootstrap-workshop-option")) $("#bootstrap-workshop-option").hidden = next !== "live";
 }
 
 function formatTime(value) {
@@ -290,8 +293,19 @@ function renderJourney(journey) {
   $("#journey-next-label").textContent = journey.next?.label || "Open current phase";
   $("#journey-next-detail").textContent = journey.next?.detail || "Continue with the current workshop phase.";
   $("#journey-next").textContent = journey.next?.label || "Open current phase";
-  $("#global-next").textContent = `Next: ${journey.next?.label || journey.phase_label}`;
-  $("#journey-steps").innerHTML = journey.phases.map((phase, index) => {
+  const workflow = [
+    { label: "Setup", description: "Connect repository and policy", phases: ["connect"] },
+    { label: "Plan", description: "Define and approve the work", phases: ["prd", "plan", "tickets"] },
+    { label: "Deliver", description: "Build and verify tickets", phases: ["build"] },
+    { label: "Review", description: "Run the completed app", phases: ["evidence"] },
+  ].map((group) => {
+    const members = journey.phases.filter((phase) => group.phases.includes(phase.id));
+    const current = members.find((phase) => phase.status === "current");
+    const status = current ? "current" : members.length && members.every((phase) => phase.status === "complete") ? "complete" : "pending";
+    const target = current || members.find((phase) => phase.status !== "complete") || members.at(-1);
+    return { ...group, status, view: target?.view || "overview" };
+  });
+  $("#journey-steps").innerHTML = workflow.map((phase, index) => {
     const isRunning = journey.state === "running" && phase.status === "current";
     const phaseClass = `journey-step ${esc(phase.status)}${isRunning ? " running" : ""}`;
     const ariaCurrent = phase.status === "current" ? ' aria-current="step"' : "";
@@ -379,6 +393,8 @@ function renderOperation(operation) {
 
 function renderDecisions(data) {
   const decisions = data.decisions || [];
+  $("#run-grid").classList.toggle("has-decisions", decisions.length > 0);
+  $("#attention-surface").hidden = decisions.length === 0;
   $("#decision-count").textContent = decisions.length;
   $("#attention-surface").classList.toggle("has-attention", decisions.length > 0);
   $("#attention-intro").textContent = decisions.length
@@ -429,10 +445,12 @@ function renderPlanning(planning) {
 
   const running = ["running", "stopping"].includes(app.snapshot?.operation?.status);
   $("#continue-plan").disabled = running || !planning.can_continue;
+  $("#continue-plan").hidden = !planning.can_continue;
   $("#continue-plan").textContent = planning.presentation?.continue_label || "Run remaining experts";
   $("#continue-plan").title = planning.requires_decisions ? "Answer the blocked expert's questions below." : "";
   const canPublish = ["awaiting_alignment_approval", "alignment_approved"].includes(planning.status);
   $("#publish-plan").disabled = running || !canPublish;
+  $("#publish-plan").hidden = !canPublish;
   $("#publish-plan").textContent = planning.status === "alignment_approved" ? "Retry ticket publication" : "Create tickets";
 }
 
@@ -684,6 +702,7 @@ function renderMonitor(report, repo) {
     ? limitations.map((item) => `<p class="monitor-limitation">${esc(item.message || item)}</p>`).join("")
     : '<p class="empty-state">No limitations reported.</p>';
   $("#publish-monitor").disabled = !repo.github_connected || mode() !== "live";
+  $("#publish-monitor").hidden = $("#publish-monitor").disabled;
 }
 
 async function loadPrd() {
@@ -699,9 +718,24 @@ async function loadPrd() {
 }
 
 async function savePrd() {
+  if (prdSaveTimer) window.clearTimeout(prdSaveTimer);
+  prdSaveTimer = null;
   const value = await request("/api/prd", { method: "PUT", body: JSON.stringify({ text: $("#prd-editor").value }) });
   $("#prd-save-state").textContent = `Saved as ${value.path}`;
   return value;
+}
+
+function schedulePrdSave() {
+  if (prdSaveTimer) window.clearTimeout(prdSaveTimer);
+  $("#prd-save-state").textContent = "Saving draft…";
+  prdSaveTimer = window.setTimeout(async () => {
+    try {
+      await savePrd();
+    } catch (error) {
+      $("#prd-save-state").textContent = "Draft not saved";
+      toast(error.message, true);
+    }
+  }, 650);
 }
 
 function basePayload(extra = {}) {
@@ -1273,19 +1307,20 @@ function connectEvents() {
 
 function wireEvents() {
   $$('[data-view-link]').forEach((link) => link.addEventListener("click", (event) => { event.preventDefault(); showView(link.dataset.viewLink); }));
-  $$('[data-action]').forEach((button) => button.addEventListener("click", () => action(button.dataset.action, button.dataset.action === "doctor" ? { full: mode() === "live" } : {})));
+  $$('[data-action]').forEach((button) => button.addEventListener("click", () => {
+    button.closest(".action-menu")?.removeAttribute("open");
+    action(button.dataset.action, button.dataset.action === "doctor" ? { full: mode() === "live" } : {});
+  }));
   $("#menu-button").addEventListener("click", openSidebar);
   $("#sidebar-scrim").addEventListener("click", closeSidebar);
   $("#config-form").addEventListener("submit", submitConfig);
   $("#config-form").elements.namedItem("profile").addEventListener("change", updateAutonomousWarning);
-  $("#save-prd").addEventListener("click", async () => { try { await savePrd(); toast("PRD saved."); } catch (error) { toast(error.message, true); } });
-  $("#prd-editor").addEventListener("input", () => { $("#prd-save-state").textContent = "Unsaved changes"; });
-  $("#start-planning").addEventListener("click", async () => { try { await savePrd(); setMode($("#planning-mode").value); await action("plan"); } catch (error) { toast(error.message, true); } });
+  $("#prd-editor").addEventListener("input", schedulePrdSave);
+  $("#start-planning").addEventListener("click", async () => { try { await savePrd(); await action("plan"); } catch (error) { toast(error.message, true); } });
   $("#continue-plan").addEventListener("click", () => action("continue-plan"));
   $("#publish-plan").addEventListener("click", () => action("publish-plan", {
     project_title: $("#project-title")?.value || app.snapshot?.planning?.project || "Factory Delivery",
   }));
-  $("#planning-mode").addEventListener("change", (event) => { setMode(event.target.value); renderPlanning(app.snapshot?.planning || {}); });
   $("#connect-mode").addEventListener("change", (event) => setMode(event.target.value));
   $("#run-mode").addEventListener("change", (event) => setMode(event.target.value));
   $$("[data-board-mode]").forEach((button) => button.addEventListener("click", () => {
@@ -1295,11 +1330,8 @@ function wireEvents() {
   }));
   $("#stop-operation").addEventListener("click", async () => { if (!window.confirm("Stop the running factory process? The next run will recover interrupted tickets.")) return; try { await request("/api/stop", { method: "POST", body: "{}" }); toast("Stopping operation."); } catch (error) { toast(error.message, true); } });
   $("#copy-operation").addEventListener("click", async () => { const command = app.snapshot?.operation?.command; if (!command) return toast("No command to copy."); await navigator.clipboard.writeText(command); toast("Command copied."); });
-  $("#command-help").addEventListener("click", () => { showView("overview"); toast("Every operation displays its exact CLI command above the live output."); });
-  $("#global-next").addEventListener("click", followJourney);
   $("#journey-next").addEventListener("click", followJourney);
   $("#open-reset").addEventListener("click", openResetDialog);
-  $("#open-reset-overview").addEventListener("click", openResetDialog);
   $("#close-reset").addEventListener("click", () => $("#reset-dialog").close());
   $("#reset-run").addEventListener("click", resetRun);
   $("#recover-latest").addEventListener("click", recoverLatest);
