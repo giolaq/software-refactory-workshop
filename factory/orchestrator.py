@@ -281,6 +281,29 @@ def _preserve_retry_candidate(repo: Path, ticket: dict) -> bool:
     )
 
 
+def candidate_worktree_matches(ticket: dict, repo: Path, revision: str) -> bool:
+    """Return whether the isolated worktree still has the exact saved candidate."""
+    if (
+        not re.fullmatch(r"[a-f0-9]{40,64}", revision)
+        or not ticket.get("branch")
+        or not ticket.get("base_sha")
+        or not ticket.get("qa_commit")
+        or not ticket.get("qa_tests")
+    ):
+        return False
+    worktree = worktree_path(repo, int(ticket.get("number") or 0))
+    if not worktree.is_dir():
+        return False
+    head = subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        cwd=worktree,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    return head.returncode == 0 and head.stdout.strip() == revision
+
+
 def saved_candidate_reverification(ticket: dict, repo: Path | None = None) -> str:
     """Return a saved candidate whose successful focused test was misclassified."""
     green = (ticket.get("qa_evidence") or {}).get("green") or {}
@@ -293,25 +316,47 @@ def saved_candidate_reverification(ticket: dict, repo: Path | None = None) -> st
         green.get("result") == "GREEN PROVED"
         or classify_focused_result(exit_code, str(green.get("output") or "")) != "pass"
         or not re.fullmatch(r"[a-f0-9]{40,64}", revision)
-        or not ticket.get("branch")
-        or not ticket.get("base_sha")
-        or not ticket.get("qa_commit")
-        or not ticket.get("qa_tests")
     ):
         return ""
     if repo is None:
         return revision
-    worktree = worktree_path(repo, int(ticket.get("number") or 0))
-    if not worktree.is_dir():
-        return ""
-    head = subprocess.run(
-        ["git", "rev-parse", "HEAD"],
-        cwd=worktree,
-        text=True,
-        capture_output=True,
-        check=False,
+    return revision if candidate_worktree_matches(ticket, repo, revision) else ""
+
+
+def recover_interrupted_reverification(
+    repo: Path,
+    ticket: dict,
+    *,
+    specification_changed: bool,
+) -> bool:
+    """Preserve an exact saved candidate when direct re-verification is interrupted."""
+    if specification_changed:
+        return False
+    revision = str(ticket.get("reverify_candidate") or "")
+    if revision and not candidate_worktree_matches(ticket, repo, revision):
+        revision = ""
+    revision = revision or saved_candidate_reverification(ticket, repo)
+    if not revision:
+        return False
+    ticket.update(
+        status="Backlog",
+        phase="backlog",
+        attempt=0,
+        failure="",
+        recovery={},
+        next_human_action="",
+        reverify_candidate=revision,
+        finished_at="",
     )
-    return revision if head.returncode == 0 and head.stdout.strip() == revision else ""
+    ticket.setdefault("history", []).append({
+        "at": now(),
+        "status": "Backlog",
+        "note": (
+            f"Recovered interrupted re-verification of saved candidate "
+            f"{revision[:12]}"
+        ),
+    })
+    return True
 
 
 def restart_ticket_from_repository_base(
@@ -1822,14 +1867,24 @@ class Factory:
                 )
             recovered = ticket["status"] in ACTIVE and not foreign_claim and bool(old)
             if recovered:
-                qa_retry_context = ticket.get("qa_retry_context", "")
-                restart_ticket_from_repository_base(
+                recovered_reverification = recover_interrupted_reverification(
+                    self.repo,
                     ticket,
-                    status="Backlog",
                     specification_changed=spec_changed,
                 )
-                ticket["qa_retry_context"] = qa_retry_context
-                ticket["history"].append({"at": now(), "status": "Backlog", "note": "Recovered after restart"})
+                if not recovered_reverification:
+                    qa_retry_context = ticket.get("qa_retry_context", "")
+                    restart_ticket_from_repository_base(
+                        ticket,
+                        status="Backlog",
+                        specification_changed=spec_changed,
+                    )
+                    ticket["qa_retry_context"] = qa_retry_context
+                    ticket["history"].append({
+                        "at": now(),
+                        "status": "Backlog",
+                        "note": "Recovered after restart",
+                    })
             elif spec_changed and ticket["status"] not in {"Done", "In Review"}:
                 restart_ticket_from_repository_base(
                     ticket,
@@ -1844,7 +1899,15 @@ class Factory:
             self.tickets[number] = ticket
             if self.backend and not self.args.dry_run:
                 if recovered:
-                    self.backend.set_status(ticket, "Backlog", "Recovered after restart")
+                    self.backend.set_status(
+                        ticket,
+                        "Backlog",
+                        (
+                            "Recovered interrupted saved-candidate re-verification"
+                            if recovered_reverification else
+                            "Recovered after restart"
+                        ),
+                    )
                 elif spec_changed and ticket["status"] == "Backlog":
                     self.backend.set_status(
                         ticket, "Backlog",
@@ -3639,7 +3702,7 @@ class Factory:
                     f"QA committed {len(ticket['qa_tests'])} protected test(s); running {ticket['agent']}",
                 )
         failure = ticket.pop("retry_context", "")
-        reverify_candidate = ticket.pop("reverify_candidate", "")
+        reverify_candidate = ticket.get("reverify_candidate", "")
         max_attempts = self.cfg["factory"]["max_retries"] + 1
         for attempt in range(1, max_attempts + 1):
             ticket["attempt"] = attempt
@@ -3854,6 +3917,7 @@ class Factory:
                 if self.block_or_retry(ticket, failure):
                     continue
                 return
+            ticket["reverify_candidate"] = ""
             ticket["failure"] = ""
             try:
                 if self.review_agent:
