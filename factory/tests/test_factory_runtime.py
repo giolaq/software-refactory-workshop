@@ -32,6 +32,7 @@ from orchestrator import (
     publish_evidence_run_summaries,
     publish_repository_setup,
     recovery_checkpoints,
+    recover_interrupted_reverification,
     recover_latest_state,
     recover_remote_ticket_state,
     release_ticket_claim,
@@ -1173,6 +1174,28 @@ class RuntimeTests(unittest.TestCase):
                     allow_unchanged_candidate=True,
                 ),
                 "",
+            )
+
+            ticket.update(
+                status="In Progress",
+                phase="implementation",
+                attempt=1,
+                reverify_candidate="",
+            )
+            self.assertTrue(
+                recover_interrupted_reverification(
+                    repo,
+                    ticket,
+                    specification_changed=False,
+                )
+            )
+            self.assertEqual(ticket["status"], "Backlog")
+            self.assertEqual(ticket["reverify_candidate"], candidate)
+            self.assertEqual(ticket["branch"], "factory/4-playable")
+            self.assertEqual(ticket["qa_commit"], qa_commit)
+            self.assertIn(
+                "Recovered interrupted re-verification",
+                ticket["history"][-1]["note"],
             )
 
     def test_qa_harness_defect_stops_without_consuming_identical_retries(self):
