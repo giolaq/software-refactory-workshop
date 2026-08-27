@@ -21,6 +21,7 @@ from codex_cli import (
 )
 from orchestrator import (
     Factory,
+    apply_retry_event_to_ticket,
     approve_qa_tests,
     create_recovery_checkpoint,
     human_merge_ticket,
@@ -38,6 +39,7 @@ from orchestrator import (
     restore_recovery_checkpoint,
     resolve_codex_cli,
     retry_ticket,
+    saved_candidate_reverification,
     ticket_diff_budget,
     ticket_recovery,
     ticket_spec_fingerprint,
@@ -1087,6 +1089,92 @@ class RuntimeTests(unittest.TestCase):
 
         self.assertTrue(failure.startswith("QA_EVIDENCE_DEFECT:"))
 
+    def test_zero_skip_false_negative_proposes_direct_candidate_reverification(self):
+        with tempfile.TemporaryDirectory() as directory:
+            repo = Path(directory) / "repo"
+            repo.mkdir()
+            worktree = worktree_path(repo, 4)
+            worktree.mkdir()
+            git(worktree, "init")
+            git(worktree, "config", "user.name", "Factory Tests")
+            git(worktree, "config", "user.email", "factory@example.test")
+            (worktree / "base.txt").write_text("base\n")
+            git(worktree, "add", "base.txt")
+            git(worktree, "commit", "-m", "base")
+            base = git(worktree, "rev-parse", "HEAD")
+            (worktree / "tests").mkdir()
+            (worktree / "tests/ticket-4.test.js").write_text("// protected\n")
+            git(worktree, "add", "tests/ticket-4.test.js")
+            git(worktree, "commit", "-m", "qa")
+            qa_commit = git(worktree, "rev-parse", "HEAD")
+            (worktree / "app.js").write_text("export const ready = true;\n")
+            git(worktree, "add", "app.js")
+            git(worktree, "commit", "-m", "implementation")
+            candidate = git(worktree, "rev-parse", "HEAD")
+            ticket = {
+                "number": 4,
+                "status": "Blocked",
+                "phase": "implementation",
+                "attempt": 3,
+                "branch": "factory/4-playable",
+                "base_sha": base,
+                "qa_commit": qa_commit,
+                "qa_tests": {"tests/ticket-4.test.js": "hash"},
+                "qa_approved": True,
+                "qa_evidence": {
+                    "green": {
+                        "result": "GREEN NOT PROVED",
+                        "classification": "skipped",
+                        "exit_code": 0,
+                        "revision": candidate,
+                        "output": (
+                            "Passed: 8\nSkipped: 0\n"
+                            "# pass 1\n# skipped 0\n"
+                        ),
+                    },
+                },
+                "failure": "Agent produced no changes or commits.",
+                "history": [],
+            }
+
+            recovery = ticket_recovery(ticket, repo)
+
+            self.assertEqual(
+                saved_candidate_reverification(ticket, repo),
+                candidate,
+            )
+            self.assertEqual(recovery["kind"], "candidate_verification")
+            self.assertEqual(recovery["action"], "reverify_candidate")
+            self.assertEqual(recovery["candidate_head"], candidate)
+            self.assertTrue(recovery["retry_allowed"])
+            self.assertIn("zero-skip", recovery["cause"])
+            self.assertIn("No implementation rewrite", recovery["solution"])
+
+            event = {
+                "event_id": "retry-event",
+                "recovery_kind": recovery["kind"],
+                "retry_reason": recovery["suggested_retry_reason"],
+                "failure": ticket["failure"],
+                "spec_changed": False,
+                "force_repository_base": False,
+            }
+            note = apply_retry_event_to_ticket(repo, ticket, event)
+
+            self.assertEqual(ticket["status"], "Ready")
+            self.assertEqual(ticket["reverify_candidate"], candidate)
+            self.assertIn("direct re-verification", note)
+            self.assertEqual(
+                implementation_attempt_failure(
+                    "Saved candidate",
+                    code=0,
+                    commits=2,
+                    attempt_start_head=candidate,
+                    candidate_head=candidate,
+                    allow_unchanged_candidate=True,
+                ),
+                "",
+            )
+
     def test_qa_harness_defect_stops_without_consuming_identical_retries(self):
         factory = Factory.__new__(Factory)
         factory.cfg = {"factory": {"max_retries": 2}}
@@ -1803,6 +1891,28 @@ class RuntimeTests(unittest.TestCase):
 
         self.assertIn("[tests] exit 0", failure)
         self.assertEqual(ticket["gate_results"][0]["classification"], "MISCONFIGURED")
+
+    def test_zero_skipped_gate_report_is_green(self):
+        factory = Factory.__new__(Factory)
+        factory.cfg = {
+            "factory": {"gate_timeout": 10},
+            "gate": [{
+                "name": "tests",
+                "cmd": "printf 'Passed: 8\\nSkipped: 0\\n# pass 1\\n# skipped 0\\n'",
+                "required": True,
+                "level": "full",
+            }],
+        }
+        factory.project = SimpleNamespace(render_command=lambda command, python: command)
+        factory.charter = SimpleNamespace(gate_level="full")
+        factory.python = sys.executable
+        factory._sync_store = mock.Mock()
+        ticket = {"triage": {"controls": {"gate_level": "full"}}}
+
+        failure = factory.verify(ticket, Path.cwd())
+
+        self.assertEqual(failure, "")
+        self.assertEqual(ticket["gate_results"][0]["classification"], "PASS")
 
     def test_missing_tool_and_nonzero_skip_are_misconfigured_not_generic_failures(self):
         commands = (

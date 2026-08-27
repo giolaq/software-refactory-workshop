@@ -50,6 +50,13 @@ class AcceptanceEvidenceTests(unittest.TestCase):
         self.assertEqual(classify_focused_result(0, "1 passed"), "pass")
         self.assertEqual(classify_focused_result(0, "1 skipped"), "skipped")
         self.assertEqual(classify_focused_result(0, "# tests 1\n# skipped 1"), "skipped")
+        self.assertEqual(
+            classify_focused_result(
+                0,
+                "Passed: 8\nSkipped: 0\n# pass 1\n# skipped 0\n",
+            ),
+            "pass",
+        )
 
 
 if __name__ == "__main__":
