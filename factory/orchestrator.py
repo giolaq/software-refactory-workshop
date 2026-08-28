@@ -60,7 +60,7 @@ from github_repository import (
     parse_github_repository,
 )
 from human_attention import human_attention_snapshot as build_human_attention_snapshot
-from planner import approve_plan
+from planner import approve_plan, governance_marker
 from planning_pipeline import (
     approve_planning_stage,
     approve_rehearsal,
@@ -78,6 +78,13 @@ from project_contract import ProjectContract, ProjectContractError
 from triage import GATE_ORDER, classify_controls, declared_paths, triage_ticket
 from run_summary import factory_run_summary, render_factory_run_summary
 from monitor import FactoryMonitor
+from issue_listener import (
+    INTAKE_LABEL,
+    RepositoryIssueListener,
+    factory_issue_kind,
+    is_intake_issue,
+    render_intake_body,
+)
 from session_config import (
     FACTORY_PROFILES,
     PRESETS,
@@ -110,6 +117,7 @@ RECOVERY_RUNTIME_PATHS = (
     "qa-approvals",
     "qa-revision-events",
     "merge-events",
+    "issue-listener.json",
     "control-center/workshop-prd.md",
     "control-center/factory-canvas.md",
     "control-center/product-feedback.md",
@@ -852,12 +860,90 @@ def propose_file_ownership_update(body: str, required_paths: list[str]) -> str:
     if section:
         replacement = section.group(0).rstrip() + "\n" + additions + "\n\n"
         return body[:section.start()] + replacement + body[section.end():]
-    marker = re.search(r"(?m)^<!--\s*factory-(?:plan|governance):", body or "")
+    marker = re.search(
+        r"(?m)^<!--\s*factory-(?:plan|intake|governance):", body or "",
+    )
     insertion_at = marker.start() if marker else len(body)
     prefix = body[:insertion_at].rstrip()
     suffix = body[insertion_at:].lstrip()
     proposal = prefix + "\n\n## File ownership\n" + additions + "\n"
     return proposal + ("\n" + suffix if suffix else "")
+
+
+def propose_ticket_completion(body: str, title: str) -> str:
+    """Add deterministic, editable Spec and Acceptance criteria sections."""
+    value = body or ""
+    has_spec = bool(re.search(r"(?im)^## Spec\s*$", value))
+    criteria_section = re.search(
+        r"(?ims)^## Acceptance criteria\s*\n(.+?)(?=^## |\Z)", value,
+    )
+    has_criteria = bool(
+        criteria_section
+        and re.search(
+            r"(?im)^\s*-\s*(?:\[[ x]\]\s*)?(.+)$",
+            criteria_section.group(1),
+        )
+    )
+    if has_spec and has_criteria:
+        return value
+    outcome = (title or "Complete the requested repository change").strip().rstrip(".")
+    criterion = (
+        "- The behavior described in the Spec is observable through the "
+        "repository's public interface and covered by an acceptance test."
+    )
+
+    criteria_heading = re.search(r"(?im)^## Acceptance criteria\s*$", value)
+    if not has_criteria and criteria_heading:
+        boundaries = [len(value)]
+        next_heading = re.search(r"(?m)^## ", value[criteria_heading.end():])
+        if next_heading:
+            boundaries.append(criteria_heading.end() + next_heading.start())
+        marker = re.search(
+            r"(?m)^<!--\s*factory-(?:plan|intake|governance):",
+            value[criteria_heading.end():],
+        )
+        if marker:
+            boundaries.append(criteria_heading.end() + marker.start())
+        insertion_at = min(boundaries)
+        value = (
+            value[:insertion_at].rstrip()
+            + "\n"
+            + criterion
+            + "\n\n"
+            + value[insertion_at:].lstrip()
+        )
+        has_criteria = True
+
+    if not has_spec:
+        criteria_heading = re.search(r"(?im)^## Acceptance criteria\s*$", value)
+        marker = re.search(
+            r"(?m)^<!--\s*factory-(?:plan|intake|governance):", value,
+        )
+        insertion_at = (
+            criteria_heading.start()
+            if criteria_heading else marker.start()
+            if marker else len(value)
+        )
+        value = (
+            value[:insertion_at].rstrip()
+            + "\n\n## Spec\n"
+            + f"Implement the requested outcome: {outcome}.\n\n"
+            + value[insertion_at:].lstrip()
+        )
+
+    if not has_criteria:
+        marker = re.search(
+            r"(?m)^<!--\s*factory-(?:plan|intake|governance):", value,
+        )
+        insertion_at = marker.start() if marker else len(value)
+        value = (
+            value[:insertion_at].rstrip()
+            + "\n\n## Acceptance criteria\n"
+            + criterion
+            + "\n\n"
+            + value[insertion_at:].lstrip()
+        )
+    return value.rstrip() + "\n"
 
 
 def self_review_fallback_head(ticket: dict) -> str:
@@ -1108,8 +1194,17 @@ def ticket_recovery(ticket: dict, repo: Path | None = None) -> dict:
         return recovery(
             "ticket_specification", "edit_ticket_and_retry",
             "Complete the GitHub Ticket",
-            "Edit the issue with a Spec and observable Acceptance criteria, then reload and retry it.",
+            "Review the proposed Spec and observable Acceptance criteria, edit them "
+            "if needed, then save the issue and retry it.",
             retry_allowed=True,
+            proposed_ticket_body=propose_ticket_completion(
+                str(ticket.get("body") or ""),
+                str(ticket.get("title") or ""),
+            ),
+            suggested_retry_reason=(
+                "Completed the Ticket Spec and observable Acceptance criteria so "
+                "deterministic triage can admit implementation."
+            ),
         )
     if "dependency cycle" in lowered or "merged dependency is missing" in lowered:
         return recovery(
@@ -1170,6 +1265,10 @@ def factory_execution_mode(state: dict) -> str:
 def parse_plan_id(body: str) -> str:
     match = re.search(r"factory-plan:([a-zA-Z0-9_-]+):", body or "")
     return match.group(1) if match else ""
+
+
+def parse_intake_id(body: str) -> bool:
+    return is_intake_issue(body or "")
 
 
 def parse_ticket_governance(body: str) -> dict:
@@ -1618,6 +1717,11 @@ class Factory:
         ):
             raise ValueError("--review-agent must name a configured non-mock adapter")
         self.review_qa_tests = bool(args.review_qa_tests or self.cfg["qa"].get("require_human_approval", False))
+        self.listen_for_issues = bool(getattr(args, "listen", False))
+        if self.listen_for_issues and args.mock:
+            raise ValueError("Repository issue listening is available only for a connected Live run")
+        if self.listen_for_issues and args.dry_run:
+            raise ValueError("Repository issue listening cannot be combined with --dry-run")
         self.python = sys.executable
         self.store = StateStore(self.repo)
         if recovering:
@@ -1693,6 +1797,8 @@ class Factory:
         self.last_qa_wait = None
         self.codex_bin = None
         self.supervisor = None
+        self.issue_listener = None
+        self.listener_wait_announced = False
         self.backend = None if args.mock else GitHubBackend(self.repo, args.project_number)
 
     def load_tickets(self, source: list[dict] | None = None):
@@ -1742,8 +1848,9 @@ class Factory:
                 raw.get("remote_run_summary") if self.backend else None,
             )
             ticket_plan_id = parse_plan_id(raw.get("body", ""))
+            intake_ticket = parse_intake_id(raw.get("body", ""))
             ticket_governance = parse_ticket_governance(raw.get("body", ""))
-            governed_ticket_required = bool(ticket_plan_id) and (
+            governed_ticket_required = bool(ticket_plan_id or intake_ticket) and (
                 not self.args.mock or bool(rehearsal_plan_id)
             )
             if governed_ticket_required and not ticket_governance:
@@ -1764,6 +1871,17 @@ class Factory:
                         f"Ticket #{number} governance does not match this Factory Run: "
                         + ", ".join(drift)
                     )
+            requested_agent = refreshed["agent"]
+            intake_metadata = dict(raw.get("intake", old.get("intake", {})) or {})
+            if intake_ticket and requested_agent not in self.cfg["agents"]:
+                refreshed["agent"] = default_agent
+                intake_metadata.update({
+                    "requested_agent": requested_agent,
+                    "agent_warning": (
+                        f"Requested agent {requested_agent!r} is not configured; "
+                        f"using {default_agent!r}."
+                    ),
+                })
             ticket = {
                 "number": number,
                 "title": refreshed["title"],
@@ -1812,7 +1930,13 @@ class Factory:
                     or rehearsal_plan_id
                     or old.get("plan_id", "")
                 ),
-                "planned": bool(ticket_plan_id) or self.args.mock,
+                "planned": bool(ticket_plan_id or intake_ticket) or self.args.mock,
+                "source": (
+                    "repository-issue"
+                    if intake_ticket else
+                    old.get("source", "factory-plan" if ticket_plan_id else "")
+                ),
+                "intake": intake_metadata,
                 "triage": old.get("triage", {}),
                 "governance": ticket_governance or self.governance,
                 "receipts": old.get("receipts", []),
@@ -1864,6 +1988,15 @@ class Factory:
                 raise ValueError(
                     f"Ticket #{number} requests unregistered agent {ticket['agent']!r}; "
                     "add it to factory/factory.toml [agents] or edit the ticket"
+                )
+            if (
+                intake_metadata.get("agent_warning")
+                and intake_metadata.get("agent_warning")
+                != (old.get("intake") or {}).get("agent_warning")
+            ):
+                print(
+                    f"#{number:<3} Intake       {intake_metadata['agent_warning']}",
+                    flush=True,
                 )
             recovered = ticket["status"] in ACTIVE and not foreign_claim and bool(old)
             if recovered:
@@ -1931,6 +2064,14 @@ class Factory:
         self.store.data["qa_review_required"] = self.review_qa_tests
         self.store.data["supervisor_agent"] = self.supervisor_agent or "disabled"
         self.store.data["review_agent"] = self.review_agent or "disabled"
+        if self.issue_listener is not None:
+            self.store.data["intake"] = self.issue_listener.snapshot()
+        elif "intake" in self.store.data:
+            self.store.data["intake"] = {
+                **self.store.data["intake"],
+                "enabled": False,
+                "status": "stopped",
+            }
         self.store.data["states"] = STATES
         self.store.data["tickets"] = sorted(self.tickets.values(), key=lambda t: t["number"])
         attention = self.human_attention_snapshot()
@@ -2289,6 +2430,133 @@ class Factory:
         return bool(self.tickets) and all(
             ticket.get("status") == "Done" for ticket in self.tickets.values()
         )
+
+    def start_issue_listener(self) -> None:
+        if not self.listen_for_issues or not self.backend:
+            return
+        repository = f"{self.backend.owner}/{self.backend.name}"
+        listener = RepositoryIssueListener(self.repo, repository)
+        issues = self.backend.list_repository_issues()
+        created = listener.begin(issues)
+        self.issue_listener = listener
+        self._sync_store()
+        if created:
+            print(
+                f"Repository issue listener started for {repository}. "
+                f"Recorded {len(issues)} existing open issue(s) as the baseline; "
+                "only later issues will be admitted.",
+                flush=True,
+            )
+        else:
+            print(
+                f"Repository issue listener resumed for {repository}. "
+                "Issues opened since the previous poll will be admitted.",
+                flush=True,
+            )
+
+    def poll_issue_listener(self) -> None:
+        if self.issue_listener is None or not self.backend:
+            return
+        try:
+            issues = self.backend.list_repository_issues()
+            by_number = {int(issue["number"]): issue for issue in issues}
+
+            for number, ticket in list(self.tickets.items()):
+                if ticket.get("source") != "repository-issue":
+                    continue
+                if ticket.get("status") in {"Done", "In Review", "In Progress", "Verifying"}:
+                    continue
+                remote = by_number.get(number)
+                if remote is None:
+                    continue
+                body = render_intake_body(
+                    str(remote.get("body") or ""),
+                    governance_marker(self.governance),
+                )
+                triage = triage_ticket(
+                    body,
+                    dependencies_ready=True,
+                    planned=True,
+                    profile=self.profile_name,
+                    charter=self.charter,
+                )
+                ready = triage["result"] != "NEEDS_INFORMATION"
+                refreshed = ticket_refresh_payload(
+                    {**remote, "body": body},
+                    "mock" if self.args.mock else self.args.agent,
+                )
+                if refreshed["spec_sha256"] == ticket.get("spec_sha256"):
+                    continue
+                remote = self.backend.restore_repository_issue_contract(
+                    remote,
+                    body,
+                    ready=ready,
+                )
+                self.load_tickets(source=[{
+                    **remote,
+                    "status": ticket.get("status", "Backlog"),
+                    "intake": {"source": "repository", "admitted": True},
+                }])
+                self.issue_listener.record_refresh(number)
+                print(f"#{number:<3} Backlog      Reloaded edited repository issue for triage", flush=True)
+
+            for issue in self.issue_listener.candidates(issues):
+                number = int(issue["number"])
+                marker = factory_issue_kind(str(issue.get("body") or ""))
+                recovering_admission = (
+                    marker == "intake"
+                    and INTAKE_LABEL in {
+                        str(label) for label in issue.get("labels", [])
+                    }
+                )
+                if marker and not recovering_admission:
+                    self.issue_listener.acknowledge(
+                        number,
+                        outcome="ignored",
+                        detail=f"Ignored Factory-managed {marker} issue.",
+                    )
+                    continue
+                body = render_intake_body(
+                    str(issue.get("body") or ""),
+                    governance_marker(self.governance),
+                )
+                triage = triage_ticket(
+                    body,
+                    dependencies_ready=True,
+                    planned=True,
+                    profile=self.profile_name,
+                    charter=self.charter,
+                )
+                ready = triage["result"] != "NEEDS_INFORMATION"
+                admitted = self.backend.admit_repository_issue(
+                    issue,
+                    body=body,
+                    ready=ready,
+                )
+                self.load_tickets(source=[admitted])
+                self.issue_listener.acknowledge(
+                    number,
+                    outcome="admitted",
+                    detail=(
+                        "Recovered an interrupted admission for implementation."
+                        if recovering_admission and ready else
+                        "Recovered an interrupted admission; blocked until the issue "
+                        "has a Spec and Acceptance criteria."
+                        if recovering_admission else
+                        "Admitted for implementation."
+                        if ready else
+                        "Admitted and blocked until the issue has a Spec and Acceptance criteria."
+                    ),
+                )
+                print(
+                    f"#{number:<3} Backlog      Admitted user-created repository issue for triage",
+                    flush=True,
+                )
+            self.issue_listener.mark_healthy()
+        except (GitHubError, OSError, ValueError) as exc:
+            self.issue_listener.record_error(str(exc))
+            print(f"Repository issue listener degraded: {exc}", flush=True)
+        self._sync_store()
 
     def git(self, *args, cwd=None, **kwargs):
         return run(["git", *args], cwd or self.repo, **kwargs)
@@ -4035,13 +4303,24 @@ class Factory:
             self.dry_plan(); return
         if self.backend:
             self.sync_default_branch()
+        self.start_issue_listener()
         unfinished = any(ticket["status"] != "Done" for ticket in self.tickets.values())
         needs_codex = any(
             ticket["agent"] == "codex" and ticket["status"] != "Done"
             for ticket in self.tickets.values()
         ) or (self.qa_agent == "codex" and unfinished) or (
             self.supervisor_agent == "codex" and unfinished
-        ) or (self.review_agent == "codex" and unfinished)
+        ) or (self.review_agent == "codex" and unfinished) or (
+            self.listen_for_issues and any(
+                agent == "codex"
+                for agent in (
+                    self.args.agent,
+                    self.qa_agent,
+                    self.supervisor_agent,
+                    self.review_agent,
+                )
+            )
+        )
         if needs_codex:
             self.codex_bin = resolve_codex_cli()
             print(f"Codex adapter: {self.codex_bin}", flush=True)
@@ -4064,6 +4343,7 @@ class Factory:
                 self.tickets[n]["failure"] = note
                 self.transition(self.tickets[n], "Blocked", note)
         while True:
+            self.poll_issue_listener()
             self.apply_retry_events()
             self.apply_human_merge_events()
             self.sync_merged()
@@ -4071,8 +4351,19 @@ class Factory:
             self.apply_qa_approvals()
             self.refresh_readiness()
             if self.delivery_complete():
+                if self.listen_for_issues:
+                    if not self.listener_wait_announced:
+                        print(
+                            "All admitted Tickets are Done. Listening for new user-created "
+                            "repository issues.",
+                            flush=True,
+                        )
+                        self.listener_wait_announced = True
+                    time.sleep(max(15, int(self.cfg["factory"]["poll_interval"])))
+                    continue
                 print("Factory run complete: all Tickets are Done.", flush=True)
                 return
+            self.listener_wait_announced = False
             candidates = [t for t in self.tickets.values() if t["status"] == "Ready"]
             ready = self.coordinate_ready(candidates) if candidates else []
             if ready:
@@ -4137,6 +4428,15 @@ def retry_ticket(
     for ticket in store.data.get("tickets", []):
         if ticket["number"] == number:
             if ticket["status"] != "Blocked":
+                if (
+                    ticket.get("source") == "repository-issue"
+                    and ticket["status"] in {"Backlog", "Ready"}
+                ):
+                    print(
+                        f"#{number} was already reloaded from GitHub and is "
+                        f"{ticket['status']}; no retry event is needed."
+                    )
+                    return
                 interrupted_qa_defect = (
                     _logged_implementation_blocker(ticket, repo)
                     if reset_qa and ticket["status"] in ACTIVE else ""
@@ -5958,6 +6258,10 @@ def parser():
         help="deterministic scenario used by --mock",
     )
     run_p.add_argument("--once", action="store_true"); run_p.add_argument("--dry-run", action="store_true")
+    run_p.add_argument(
+        "--listen", action="store_true",
+        help="keep a Live run open and admit user-created repository issues opened after the listener baseline",
+    )
     run_p.add_argument("--mock", action="store_true", help="use seed tickets, mock agent, and local merges")
     run_p.add_argument(
         "--allow-autonomous-merge",

@@ -47,6 +47,7 @@ from orchestrator import (
     worktree_path,
 )
 from factory_charter import FactoryCharter
+from issue_listener import INTAKE_LABEL, INTAKE_MARKER, RepositoryIssueListener
 from planner import governance_marker
 from project_contract import ProjectContract
 
@@ -1678,6 +1679,177 @@ class RuntimeTests(unittest.TestCase):
             review_qa_tests=False, scenario="tv", agent="mock", dry_run=False,
             max_parallel=1, once=True, profile="lean",
         )
+
+    def test_repository_intake_is_governed_and_unknown_agent_falls_back(self):
+        with tempfile.TemporaryDirectory() as directory:
+            repo = Path(directory)
+            install_approved_charter(repo)
+            factory = Factory(self.factory_args(repo))
+            body = (
+                "## Spec\nAdd a deterministic health report.\n\n"
+                "## Acceptance criteria\n- The health report returns the current state.\n\n"
+                "agent: missing-adapter\n\n"
+                f"{INTAKE_MARKER}\n{governance_marker(factory.governance)}\n"
+            )
+
+            factory.load_tickets(source=[{
+                "number": 21,
+                "title": "Add health report",
+                "body": body,
+                "labels": ["factory-intake", "agent-ready"],
+                "status": "Backlog",
+                "url": "https://github.test/issues/21",
+                "intake": {"source": "repository", "admitted": True},
+            }])
+
+            ticket = factory.tickets[21]
+            self.assertTrue(ticket["planned"])
+            self.assertEqual(ticket["source"], "repository-issue")
+            self.assertEqual(
+                ticket["governance"],
+                {
+                    key: factory.governance[key]
+                    for key in (
+                        "schema_version",
+                        "profile",
+                        "charter_sha256",
+                        "merge_authority",
+                    )
+                },
+            )
+            self.assertEqual(ticket["agent"], "mock")
+            self.assertEqual(ticket["intake"]["requested_agent"], "missing-adapter")
+            self.assertIn("using 'mock'", ticket["intake"]["agent_warning"])
+
+    def test_incomplete_intake_gets_an_editable_completion_proposal(self):
+        ticket = {
+            "number": 22,
+            "title": "Show connection state",
+            "body": (
+                "Please show whether the service is connected.\n\n"
+                "## Acceptance criteria\n"
+                "The connection state should be understandable.\n\n"
+                f"{INTAKE_MARKER}\n"
+                "<!-- factory-governance:v1;profile=standard;"
+                f"charter={'a' * 64};merge=human -->\n"
+            ),
+            "phase": "triage",
+            "failure": "Add a Spec and at least one observable Acceptance criterion.",
+            "triage": {"result": "NEEDS_INFORMATION"},
+        }
+
+        recovery = ticket_recovery(ticket)
+
+        self.assertEqual(recovery["kind"], "ticket_specification")
+        self.assertIn("## Spec", recovery["proposed_ticket_body"])
+        self.assertIn("## Acceptance criteria", recovery["proposed_ticket_body"])
+        self.assertEqual(
+            recovery["proposed_ticket_body"].count("## Acceptance criteria"),
+            1,
+        )
+        self.assertIn(
+            "- The behavior described in the Spec is observable",
+            recovery["proposed_ticket_body"],
+        )
+        self.assertIn(INTAKE_MARKER, recovery["proposed_ticket_body"])
+        self.assertIn("factory-governance:v1", recovery["proposed_ticket_body"])
+        self.assertGreaterEqual(len(recovery["suggested_retry_reason"]), 12)
+
+    def test_interrupted_remote_intake_is_recovered_instead_of_ignored(self):
+        with tempfile.TemporaryDirectory() as directory:
+            repo = Path(directory)
+            install_approved_charter(repo)
+            factory = Factory(self.factory_args(repo))
+            listener = RepositoryIssueListener(repo, "attendee/product")
+            listener.begin([])
+            body = (
+                "## Spec\nAdd a deterministic health report.\n\n"
+                "## Acceptance criteria\n- The health report returns the current state.\n\n"
+                f"{INTAKE_MARKER}\n{governance_marker(factory.governance)}\n"
+            )
+            issue = {
+                "number": 23,
+                "title": "Add health report",
+                "body": body,
+                "labels": [INTAKE_LABEL, "agent-ready"],
+                "url": "https://github.test/issues/23",
+            }
+            backend = mock.Mock()
+            backend.list_repository_issues.return_value = [issue]
+            backend.admit_repository_issue.return_value = {
+                **issue,
+                "status": "Backlog",
+                "intake": {"source": "repository", "admitted": True},
+            }
+            factory.backend = backend
+            factory.issue_listener = listener
+            factory.load_tickets = mock.Mock()
+
+            factory.poll_issue_listener()
+
+            backend.admit_repository_issue.assert_called_once()
+            factory.load_tickets.assert_called_once()
+            snapshot = listener.snapshot()
+            self.assertEqual(snapshot["admitted"][0]["number"], 23)
+            self.assertIn("Recovered an interrupted admission", snapshot["last_issue"]["detail"])
+            self.assertEqual(snapshot["ignored"], [])
+
+    def test_listener_waits_after_all_admitted_tickets_are_done(self):
+        with tempfile.TemporaryDirectory() as directory:
+            repo = Path(directory)
+            install_approved_charter(repo)
+            factory = Factory(self.factory_args(repo))
+            factory.listen_for_issues = True
+
+            def load_done_ticket():
+                factory.tickets = {
+                    24: {
+                        "number": 24,
+                        "title": "Completed intake",
+                        "status": "Done",
+                        "agent": "mock",
+                        "dependencies": [],
+                    },
+                }
+
+            with mock.patch.object(factory, "load_tickets", side_effect=load_done_ticket), \
+                    mock.patch.object(factory, "start_issue_listener"), \
+                    mock.patch.object(factory, "poll_issue_listener") as poll, \
+                    mock.patch.object(factory, "apply_retry_events"), \
+                    mock.patch.object(factory, "apply_human_merge_events"), \
+                    mock.patch.object(factory, "sync_merged"), \
+                    mock.patch.object(factory, "apply_qa_revision_events"), \
+                    mock.patch.object(factory, "apply_qa_approvals"), \
+                    mock.patch.object(factory, "refresh_readiness"), \
+                    mock.patch("orchestrator.time.sleep", side_effect=RuntimeError("stop")), \
+                    self.assertRaisesRegex(RuntimeError, "stop"):
+                factory.run_loop()
+
+            poll.assert_called_once()
+
+    def test_retry_is_idempotent_when_listener_already_reloaded_intake(self):
+        with tempfile.TemporaryDirectory() as directory:
+            repo = Path(directory)
+            state = repo / ".factory/state.json"
+            state.parent.mkdir(parents=True)
+            state.write_text(json.dumps({
+                "tickets": [{
+                    "number": 25,
+                    "status": "Ready",
+                    "source": "repository-issue",
+                }],
+            }))
+
+            with mock.patch("sys.stdout", new_callable=io.StringIO) as output:
+                retry_ticket(
+                    repo,
+                    25,
+                    reason="The listener already reloaded the corrected specification",
+                    assume_yes=True,
+                )
+
+            self.assertIn("no retry event is needed", output.getvalue())
+            self.assertFalse((repo / ".factory/retry-events/25.json").exists())
 
     def test_default_branch_sync_fast_forwards_before_new_work(self):
         with tempfile.TemporaryDirectory() as directory:

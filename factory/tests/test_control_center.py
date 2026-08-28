@@ -46,6 +46,60 @@ class ControlCenterTests(unittest.TestCase):
         self.assertEqual(args.port, 5050)
         self.assertTrue(args.no_open)
 
+    def test_parser_exposes_live_repository_issue_listener(self):
+        args = parser().parse_args([
+            "run", "--repo", "/tmp/workshop", "--listen",
+        ])
+
+        self.assertEqual(args.command, "run")
+        self.assertTrue(args.listen)
+
+    def test_control_center_builds_live_listener_and_rejects_rehearsal(self):
+        with tempfile.TemporaryDirectory() as directory:
+            center = ControlCenter(self.make_repo(directory))
+
+            title, commands = center.build_commands("listen", {"mode": "live"})
+
+            self.assertEqual(title, "Listen for repository issues")
+            self.assertIn("run", commands[0])
+            self.assertIn("--listen", commands[0])
+            self.assertNotIn("--mock", commands[0])
+            with self.assertRaisesRegex(InputError, "requires Live mode"):
+                center.build_commands("listen", {"mode": "rehearsal"})
+
+    def test_listener_accepts_ticket_companion_actions_while_running(self):
+        with tempfile.TemporaryDirectory() as directory:
+            center = ControlCenter(self.make_repo(directory))
+            state = center.repo / ".factory/state.json"
+            state.parent.mkdir(parents=True, exist_ok=True)
+            state.write_text(json.dumps({
+                "mode": "github",
+                "tickets": [{
+                    "number": 6,
+                    "status": "QA Review",
+                    "qa_commit": "a" * 40,
+                }],
+            }))
+            center.operation = {"action": "listen", "status": "running"}
+            center.process = type(
+                "RunningProcess",
+                (),
+                {"poll": lambda self: None},
+            )()
+
+            with patch.object(
+                center,
+                "_run_companion",
+                return_value={"status": "running"},
+            ) as companion:
+                result = center.start("approve-tests", {
+                    "mode": "live",
+                    "issue": 6,
+                })
+
+            self.assertEqual(result["status"], "running")
+            companion.assert_called_once()
+
     def test_parser_exposes_recover_command(self):
         args = parser().parse_args([
             "recover", "--repo", "/tmp/workshop",
@@ -1887,6 +1941,8 @@ class ControlCenterTests(unittest.TestCase):
             "Activity and CLI output",
             "Active lanes",
             "All lanes",
+            "Listen for new issues",
+            "Repository issue listener",
             "Supervisor",
             "Handoff Receipts",
             "GitHub repository URL",
@@ -1959,6 +2015,9 @@ class ControlCenterTests(unittest.TestCase):
         self.assertIn('id="ticket-load-state"', source)
         self.assertIn('localStorage.setItem("factory-board-mode"', javascript)
         self.assertIn('["running", "stopping", "failed"].includes(status)', javascript)
+        self.assertIn("function renderIssueListener", javascript)
+        self.assertIn('button.dataset.action === "listen" && mode() !== "live"', javascript)
+        self.assertIn("factory.intake || {}", javascript)
 
     def test_ticket_board_headers_stay_in_flow_and_cards_are_contained(self):
         frontend = Path(__file__).parents[1] / "control_center"

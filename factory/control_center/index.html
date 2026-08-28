@@ -196,11 +196,15 @@
     </section>
 
     <section class="view tickets-view" data-view="tickets" aria-labelledby="tickets-title" hidden>
-      <div class="page-heading"><div><span class="eyebrow">Deliver</span><h1 id="tickets-title">Operate the factory</h1><p>Watch every ticket and inspect the evidence behind its state.</p></div><div class="heading-actions"><details class="action-menu"><summary>Run options</summary><div><label class="inline-select">Mode<select id="run-mode"><option value="rehearsal">Rehearsal</option><option value="live">Live</option></select></label><button class="text-button" type="button" data-action="run-once">Run one cycle</button></div></details><button class="button button-primary" type="button" data-action="run">Run factory</button></div></div>
+      <div class="page-heading"><div><span class="eyebrow">Deliver</span><h1 id="tickets-title">Operate the factory</h1><p>Watch every ticket and inspect the evidence behind its state.</p></div><div class="heading-actions"><details class="action-menu"><summary>Run options</summary><div><label class="inline-select">Mode<select id="run-mode"><option value="rehearsal">Rehearsal</option><option value="live">Live</option></select></label><button class="text-button" type="button" data-action="run-once">Run one cycle</button><button class="text-button" type="button" data-action="listen">Listen for new issues</button></div></details><button class="button button-primary" type="button" data-action="run">Run factory</button></div></div>
       <div class="board-toolbar">
         <div><span class="section-label">Lane visibility</span><div class="segmented-control" aria-label="Ticket lane visibility"><button class="active" type="button" data-board-mode="focus" aria-pressed="true">Active lanes</button><button type="button" data-board-mode="all" aria-pressed="false">All lanes</button></div></div>
         <div class="board-observability"><div class="state-summary" id="state-summary"></div><span>Live from <code>.factory/state.json</code></span></div>
       </div>
+      <section class="issue-listener-state" id="issue-listener-state" aria-live="polite">
+        <div><span class="section-label">Repository issue listener</span><h2 id="issue-listener-title">Stopped</h2><p id="issue-listener-detail">In Live mode, start the listener from Run options. Its first start records the existing backlog and admits only later user-created issues.</p></div>
+        <dl id="issue-listener-counts"><div><dt>Baseline</dt><dd id="issue-listener-baseline">0</dd></div><div><dt>Admitted</dt><dd id="issue-listener-admitted">0</dd></div><div><dt>Ignored</dt><dd id="issue-listener-ignored">0</dd></div></dl>
+      </section>
       <section class="ticket-load-state" id="ticket-load-state" hidden></section>
       <div class="ticket-board" id="ticket-board"></div>
     </section>
