@@ -122,6 +122,8 @@ function setMode(value) {
   }
   $$('[data-live-setting]').forEach((field) => { field.hidden = next !== "live"; });
   if ($("#bootstrap-workshop-option")) $("#bootstrap-workshop-option").hidden = next !== "live";
+  const listen = $('[data-action="listen"]');
+  if (listen) listen.disabled = next !== "live";
 }
 
 function formatTime(value) {
@@ -268,7 +270,7 @@ function renderSnapshot(data) {
   renderJourney(data.journey || {});
   renderDecisions(data);
   renderPlanning(data.planning || {});
-  renderTickets(data.factory || {}, data.planning || {});
+  renderTickets(data.factory || {}, data.planning || {}, data.operation || {});
   renderSupervisor(data.supervisor || {}, data.factory || {}, data.config || {});
   renderApplication(data.application || {}, data.operation || {});
   renderMonitor(data.monitor || {}, data.repo || {});
@@ -387,7 +389,8 @@ function renderOperation(operation) {
   setSignal("#system-operation", status[0].toUpperCase() + status.slice(1), operationTone);
   $$('[data-action]').forEach((button) => {
     if (button.dataset.action === "doctor") return;
-    button.disabled = status === "running" || status === "stopping";
+    const busy = status === "running" || status === "stopping";
+    button.disabled = busy || (button.dataset.action === "listen" && mode() !== "live");
   });
 }
 
@@ -562,7 +565,52 @@ function renderPlanningGate(item, planning) {
   }
 }
 
-function renderTickets(factory, planning = {}) {
+function renderIssueListener(intake = {}, operation = {}) {
+  const panel = $("#issue-listener-state");
+  const operationRunning = (
+    operation.action === "listen"
+    && ["running", "stopping"].includes(operation.status)
+  );
+  const operationStopped = (
+    operation.action === "listen"
+    && !["running", "stopping"].includes(operation.status)
+  );
+  const status = operationRunning && !intake.status
+    ? "starting"
+    : operationStopped
+      ? "stopped"
+      : intake.status || "stopped";
+  panel.className = `issue-listener-state ${status}`;
+  const titles = {
+    starting: "Starting",
+    listening: "Listening",
+    degraded: "Listening with an error",
+    stopped: "Stopped",
+  };
+  $("#issue-listener-title").textContent = titles[status] || status;
+  const latest = intake.last_issue || {};
+  let detail = "In Live mode, start the listener from Run options. Its first start records the existing backlog and admits only later user-created issues.";
+  if (status === "starting") {
+    detail = "Connecting to GitHub and recording the current open issues as the no-backlog baseline.";
+  } else if (status === "degraded") {
+    detail = `The listener will retry its next poll. ${intake.last_error || "Inspect the active command output for the GitHub error."}`;
+  } else if (status === "listening") {
+    detail = latest.detail
+      ? `${latest.detail} Last checked ${formatDateTime(intake.last_polled_at)}.`
+      : `Existing issues are the baseline. New user-created issues will be triaged after the next poll; Factory-managed issues are ignored. Last checked ${formatDateTime(intake.last_polled_at)}.`;
+  }
+  $("#issue-listener-detail").textContent = detail;
+  $("#issue-listener-baseline").textContent = Number(intake.baseline_count || 0);
+  $("#issue-listener-admitted").textContent = Number(
+    intake.admitted_count ?? (intake.admitted || []).length,
+  );
+  $("#issue-listener-ignored").textContent = Number(
+    intake.ignored_count ?? (intake.ignored || []).length,
+  );
+}
+
+function renderTickets(factory, planning = {}, operation = {}) {
+  renderIssueListener(factory.intake || {}, operation);
   const localTickets = factory.tickets || [];
   const publication = planning.publication || {};
   const publishedCount = publication.ticket_count || Object.keys(publication.issues || {}).length;
@@ -1326,7 +1374,11 @@ function wireEvents() {
   $$("[data-board-mode]").forEach((button) => button.addEventListener("click", () => {
     app.boardMode = button.dataset.boardMode === "all" ? "all" : "focus";
     localStorage.setItem("factory-board-mode", app.boardMode);
-    renderTickets(app.snapshot?.factory || {}, app.snapshot?.planning || {});
+    renderTickets(
+      app.snapshot?.factory || {},
+      app.snapshot?.planning || {},
+      app.snapshot?.operation || {},
+    );
   }));
   $("#stop-operation").addEventListener("click", async () => { if (!window.confirm("Stop the running factory process? The next run will recover interrupted tickets.")) return; try { await request("/api/stop", { method: "POST", body: "{}" }); toast("Stopping operation."); } catch (error) { toast(error.message, true); } });
   $("#copy-operation").addEventListener("click", async () => { const command = app.snapshot?.operation?.command; if (!command) return toast("No command to copy."); await navigator.clipboard.writeText(command); toast("Command copied."); });

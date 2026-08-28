@@ -11,6 +11,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from github_repository import parse_github_repository, repository_from_remote
+from issue_listener import INTAKE_LABEL, is_intake_issue
 from session_config import load_session_config
 from run_summary import parse_factory_run_summary
 
@@ -445,6 +446,130 @@ class GitHubBackend:
         )
         self.items[number] = item["id"]
         return True
+
+    def list_repository_issues(self) -> list[dict]:
+        """List open repository issues independently from Factory Project membership."""
+        if not self.owner or not self.name:
+            self.preflight()
+        issues = self.json(
+            "issue", "list", "--repo", f"{self.owner}/{self.name}",
+            "--state", "open", "--limit", 1000,
+            "--json", "number,title,body,state,url,labels,createdAt,updatedAt",
+        )
+        for issue in issues:
+            issue["labels"] = [
+                label.get("name", "") if isinstance(label, dict) else str(label)
+                for label in issue.get("labels", [])
+            ]
+        return issues
+
+    def admit_repository_issue(
+        self,
+        issue: dict,
+        *,
+        body: str,
+        ready: bool,
+    ) -> dict:
+        """Admit one user-created issue into the Factory Project with an audit trail."""
+        number = int(issue["number"])
+        repository = f"{self.owner}/{self.name}"
+        existing_labels = [str(label) for label in issue.get("labels", [])]
+        first_admission = (
+            INTAKE_LABEL not in existing_labels
+            or not is_intake_issue(str(issue.get("body") or ""))
+        )
+        self.gh(
+            "label", "create", INTAKE_LABEL, "--repo", repository,
+            "--color", "0969da",
+            "--description", "User-created repository issue admitted by Factory intake",
+            "--force", check=False,
+        )
+        self.gh(
+            "label", "create", "agent-ready", "--repo", repository,
+            "--color", "c9f75f",
+            "--description", "Ready for factory dispatch",
+            "--force", check=False,
+        )
+        labels = [
+            label for label in existing_labels
+            if not str(label).startswith("state:")
+        ]
+        for label in existing_labels:
+            if label.startswith("state:"):
+                self.gh(
+                    "issue", "edit", number, "--repo", repository,
+                    "--remove-label", label, check=False,
+                )
+        for label in (INTAKE_LABEL, "agent-ready" if ready else ""):
+            if label and label not in labels:
+                labels.append(label)
+        self.gh(
+            "issue", "edit", number, "--repo", repository,
+            "--body", body,
+            "--add-label", ",".join(
+                label for label in (INTAKE_LABEL, "agent-ready" if ready else "")
+                if label
+            ),
+        )
+        self.add_issue_to_project(number, str(issue["url"]))
+        if first_admission:
+            self.gh(
+                "issue", "comment", number, "--repo", repository,
+                "--body", (
+                    "<!-- factory-intake-admission:v1 -->\n"
+                    "Factory admitted this user-created repository issue for deterministic "
+                    "triage. It will implement the issue when the body contains a `## Spec` "
+                    "section and at least one observable `## Acceptance criteria` item. "
+                    "Factory-created planning and monitoring issues are never re-admitted."
+                ),
+                check=False,
+            )
+        return {
+            **issue,
+            "body": body,
+            "labels": labels,
+            "status": "Backlog",
+            "pr_url": "",
+            "intake": {"source": "repository", "admitted": True},
+        }
+
+    def restore_repository_issue_contract(
+        self,
+        issue: dict,
+        body: str,
+        *,
+        ready: bool,
+    ) -> dict:
+        """Restore hidden governance markers after a user edits an admitted issue."""
+        number = int(issue["number"])
+        labels = [str(label) for label in issue.get("labels", [])]
+        state_labels = [label for label in labels if label.startswith("state:")]
+        labels = [label for label in labels if not label.startswith("state:")]
+        if INTAKE_LABEL not in labels:
+            labels.append(INTAKE_LABEL)
+        repository = f"{self.owner}/{self.name}"
+        for label in state_labels:
+            self.gh(
+                "issue", "edit", number, "--repo", repository,
+                "--remove-label", label, check=False,
+            )
+        if ready and "agent-ready" not in labels:
+            labels.append("agent-ready")
+        elif not ready and "agent-ready" in labels:
+            labels.remove("agent-ready")
+            self.gh(
+                "issue", "edit", number, "--repo", repository,
+                "--remove-label", "agent-ready", check=False,
+            )
+        self.gh(
+            "issue", "edit", number, "--repo", repository,
+            "--body", body,
+            "--add-label", ",".join(
+                label for label in (INTAKE_LABEL, "agent-ready" if ready else "")
+                if label
+            ),
+        )
+        return {**issue, "body": body, "labels": labels}
 
     def _ensure_labels(self):
         for status in STATES:

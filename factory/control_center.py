@@ -81,6 +81,7 @@ ACTION_REGISTRY = frozenset({
     "run", "run-once", "dry-run", "retry", "save-ticket-and-retry",
     "release-claim", "evidence", "start-app",
     "monitor", "publish-monitor", "recover-latest", "reset-run", "reset-all",
+    "listen",
 })
 COMPANION_ACTIONS = frozenset({
     "approve-tests", "request-test-changes", "merge", "retry",
@@ -959,7 +960,7 @@ class ControlCenter:
         operation_phase = {
             "doctor": 0, "configure": 0, "plan": 2, "restart-plan": 2, "revise-product": 2, "revise-stage": 2,
             "approve-charter": 0, "publish-setup": 0, "approve-product": 2, "continue-plan": 2, "publish-plan": 3,
-            "approve-tests": 4, "merge": 4, "run": 4, "run-once": 4, "dry-run": 4,
+            "approve-tests": 4, "merge": 4, "run": 4, "listen": 4, "run-once": 4, "dry-run": 4,
             "retry": 4, "evidence": 5, "reset-run": 4, "reset-all": 0,
             "release-claim": 4,
         }.get(operation.get("action"), phase_index)
@@ -1642,18 +1643,29 @@ class ControlCenter:
             if project and not mock:
                 command += ["--project-number", str(project)]
             return f"Merge exact revision for ticket #{issue}", [command]
-        if action in {"run", "run-once", "dry-run"}:
+        if action in {"run", "listen", "run-once", "dry-run"}:
+            if action == "listen" and mock:
+                raise InputError(
+                    "Repository issue listening requires Live mode and a connected GitHub repository."
+                )
             command = (
                 base + ["run"] + self._mode_flags(payload)
                 + self._autonomous_flags(payload)
             )
-            if action == "run-once":
+            if action == "listen":
+                command.append("--listen")
+            elif action == "run-once":
                 command.append("--once")
             elif action == "dry-run":
                 command.append("--dry-run")
             if payload.get("review_qa_tests"):
                 command.append("--review-qa-tests")
-            return {"run": "Run the factory", "run-once": "Run one scheduling cycle", "dry-run": "Preview execution waves"}[action], [command]
+            return {
+                "run": "Run the factory",
+                "listen": "Listen for repository issues",
+                "run-once": "Run one scheduling cycle",
+                "dry-run": "Preview execution waves",
+            }[action], [command]
         if action == "save-ticket-and-retry":
             if mock:
                 raise InputError("Saving a Ticket correction requires a Live GitHub run.")
@@ -1682,7 +1694,7 @@ class ControlCenter:
                     "recovery before saving."
                 )
             marker_pattern = re.compile(
-                r"<!--\s*factory-(?:plan|governance):.*?-->",
+                r"<!--\s*factory-(?:plan|intake|governance):.*?-->",
                 re.DOTALL,
             )
             expected_markers = marker_pattern.findall(current_body)
@@ -1849,7 +1861,7 @@ class ControlCenter:
             operation_running = self.operation.get("status") in {"running", "stopping"}
             companion = (
                 action in COMPANION_ACTIONS
-                and self.operation.get("action") in {"run", "run-once"}
+                and self.operation.get("action") in {"run", "run-once", "listen"}
                 and self.operation.get("status") == "running"
                 and process_running
             )

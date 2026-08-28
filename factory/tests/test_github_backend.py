@@ -16,6 +16,85 @@ def completed(returncode=0, stdout="", stderr=""):
 
 
 class GitHubReviewTests(unittest.TestCase):
+    def test_repository_issue_listing_is_independent_from_project_membership(self):
+        backend = GitHubBackend(Path.cwd(), project_number=5)
+        backend.owner, backend.name = "attendee", "product"
+        backend.json = mock.Mock(return_value=[{
+            "number": 12,
+            "title": "User request",
+            "body": "Please add this.",
+            "labels": [{"name": "enhancement"}, "customer"],
+        }])
+
+        issues = backend.list_repository_issues()
+
+        self.assertEqual(issues[0]["labels"], ["enhancement", "customer"])
+        backend.json.assert_called_once_with(
+            "issue", "list", "--repo", "attendee/product",
+            "--state", "open", "--limit", 1000,
+            "--json", "number,title,body,state,url,labels,createdAt,updatedAt",
+        )
+
+    def test_repository_issue_admission_is_idempotent_after_remote_mutation(self):
+        backend = GitHubBackend(Path.cwd(), project_number=5)
+        backend.owner, backend.name = "attendee", "product"
+        backend.gh = mock.Mock(return_value=completed())
+        backend.add_issue_to_project = mock.Mock(return_value=True)
+        governance = (
+            "<!-- factory-governance:v1;profile=standard;"
+            f"charter={'a' * 64};merge=human -->"
+        )
+        body = (
+            "## Spec\nAdd a status endpoint.\n\n"
+            "## Acceptance criteria\n- GET /status returns 200.\n\n"
+            "<!-- factory-intake:v1;source=user -->\n"
+            f"{governance}\n"
+        )
+        issue = {
+            "number": 12,
+            "title": "Status endpoint",
+            "body": "Add a status endpoint.",
+            "url": "https://github.test/attendee/product/issues/12",
+            "labels": ["enhancement", "state:backlog"],
+        }
+
+        admitted = backend.admit_repository_issue(issue, body=body, ready=True)
+
+        self.assertEqual(
+            admitted["labels"],
+            ["enhancement", "factory-intake", "agent-ready"],
+        )
+        backend.add_issue_to_project.assert_called_once_with(12, issue["url"])
+        calls = [call.args for call in backend.gh.call_args_list]
+        self.assertTrue(any(args[:2] == ("issue", "comment") for args in calls))
+        self.assertTrue(any(
+            args[:2] == ("issue", "edit")
+            and "--remove-label" in args
+            and "state:backlog" in args
+            for args in calls
+        ))
+        body_edit = next(
+            args for args in calls
+            if args[:2] == ("issue", "edit") and "--body" in args
+        )
+        self.assertEqual(
+            body_edit[body_edit.index("--add-label") + 1],
+            "factory-intake,agent-ready",
+        )
+
+        backend.gh.reset_mock()
+        backend.add_issue_to_project.reset_mock()
+        interrupted = {
+            **issue,
+            "body": body,
+            "labels": admitted["labels"],
+        }
+        backend.admit_repository_issue(interrupted, body=body, ready=True)
+
+        calls = [call.args for call in backend.gh.call_args_list]
+        self.assertFalse(any(args[:2] == ("issue", "comment") for args in calls))
+        backend.add_issue_to_project.assert_called_once_with(12, issue["url"])
+
     def test_project_status_write_recovers_when_github_applies_it_before_a_502(self):
         backend = GitHubBackend(Path.cwd(), project_number=13)
         backend.owner = "attendee"

@@ -20,7 +20,7 @@ workshop. Press `Ctrl+C` to close the server.
 | Connect | Inspect or create the Project Contract and Factory Charter; select role adapters; run setup and preflight | Saves repository behavior, records human-owned policy approval, and checks the target |
 | PRD | Review or edit the requirement; start Product Review | Saves a local PRD and runs the first planning expert |
 | Planning | Read four expert artifacts; approve Product Review, final alignment, and any Charter-selected intermediate gates | Creates PRD-derived rehearsal tickets or GitHub issues |
-| Tickets | Run the scheduler; inspect prompts, logs, diffs, tests, gates, code review, and history | Operates isolated worktrees and shows live state |
+| Tickets | Run the scheduler or start Live repository issue listening; inspect prompts, logs, diffs, tests, gates, code review, and history | Operates isolated worktrees, admits later user-created issues, and shows live state |
 | Supervisor | Inspect worker reports, dispatch instructions, blocks, merge recommendations, and prior decisions | Explains how the next safe Ticket wave and approved revision were coordinated |
 | Evidence | Complete the Factory Canvas; export the packet | Produces a sanitized review bundle |
 | Monitor | Preview read-only health findings; publish only by explicit Live action | Finds stale claims, waits, drift, CI, and advisories without repairing code |
@@ -28,6 +28,10 @@ workshop. Press `Ctrl+C` to close the server.
 Every operation shows the exact equivalent CLI command and streams its output.
 The interface runs one command at a time, so two buttons cannot start competing
 factory processes.
+
+Ticket decisions are companion actions while a scheduler or issue listener is
+running. This allows an attendee to approve tests, merge, retry, or accept and
+edit a proposed Ticket correction without stopping the long-running command.
 
 The primary navigation follows four operator stages: **Setup**, **Plan**,
 **Deliver**, and **Review**. Supervisor activity and repository monitoring are
@@ -170,6 +174,33 @@ approve the exact Charter, and select **Commit and push setup**. This creates a
 minimal default branch containing only governance and `.gitignore`. The PRD,
 planning artifacts, GitHub tickets, and worker changes then create the product;
 the factory implementation remains in the separate control checkout.
+
+### Listen for new repository issues
+
+Repository issue listening is explicitly Live-only. On **Tickets**, open **Run
+options** and choose **Listen for new issues**. The status band reports whether
+the listener is starting, listening, degraded, or stopped, plus its baseline,
+admitted, and ignored counts.
+
+On its first start, the listener records all current open issues as a baseline,
+so it never surprises an attendee by implementing an old backlog. Open a new
+GitHub issue after the status becomes **Listening** and use this body:
+
+```markdown
+## Spec
+Describe the behavior to implement.
+
+## Acceptance criteria
+- Describe an observable result.
+```
+
+The issue is added to the Factory Project and follows the selected profile.
+Factory planning issues, monitor issues, and previously governed intake issues
+are ignored. If the body is incomplete, open the Blocked Ticket Summary. The
+Control Center explains why triage stopped and offers a proposed body; accept or
+edit it, explain why the correction is sufficient, then select **Save ticket
+and retry**. GitHub is updated, the edit is recorded, and the listener re-triages
+the issue without losing the active run.
 
 ### Open an existing local checkout
 

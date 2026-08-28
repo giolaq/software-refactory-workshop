@@ -364,6 +364,45 @@ Inspect the GitHub board, then deliberately start implementation:
 ./factory/factory run
 ```
 
+## Listen for user-created GitHub issues
+
+A Live Factory can remain open and admit new issues created directly in the
+connected GitHub repository:
+
+```sh
+./factory/factory run --listen
+```
+
+The first start records every currently open repository issue as a baseline.
+It does not import that existing backlog. Later open issues are triaged and
+added to the configured Factory Project. Issues created by Factory planning,
+monitoring, or an earlier intake are identified by durable hidden markers and
+are not ingested as new user requests.
+
+An issue is executable when its body contains:
+
+```markdown
+## Spec
+Describe the requested behavior.
+
+## Acceptance criteria
+- State an observable result.
+```
+
+An incomplete issue is still admitted, but it enters **Blocked** with the exact
+triage cause and an editable proposed Ticket body. In the Control Center, open
+the Ticket Summary, accept or edit the proposal, provide the retry reason, and
+choose **Save ticket and retry**. The running listener treats that as a companion
+action, reloads the edited GitHub issue, and re-triages it. Direct GitHub edits
+are also detected on the next poll.
+
+The listener does not bypass delivery controls. Admitted issues use the
+configured implementation adapter and the selected Factory Profile's QA,
+verification, code-review, and merge authority. An unknown `agent:` value falls
+back to the configured implementation adapter and is recorded as an intake
+warning. The listener remains running after all admitted Tickets are Done; stop
+it with the Control Center stop action or `Ctrl+C`.
+
 ## Independent QA acceptance-test phase
 
 Real factory runs use a dedicated QA adapter before the Implementation adapter for
@@ -767,7 +806,7 @@ factory run [--repo PATH] [--profile lean|standard|assured|autonomous-demo]
             [--review-agent NAME] [--allow-autonomous-merge]
             [--review-qa-tests|--no-review-qa-tests] [--scenario tv|recipe-rebrand]
             [--max-parallel N]
-            [--project-number N] [--once] [--dry-run] [--mock]
+            [--project-number N] [--once] [--dry-run] [--listen] [--mock]
 factory plan PRD.md [--output RUN_DIRECTORY] [--default-agent NAME]
                     [--profile lean|standard|assured|autonomous-demo]
                     [--planning-agent claude|codex]

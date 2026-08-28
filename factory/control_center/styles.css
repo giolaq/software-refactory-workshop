@@ -351,6 +351,15 @@ input:focus, select:focus, textarea:focus { border-color: var(--blue); outline: 
 .state-summary span { padding: 2px 6px; border: 1px solid var(--line); border-radius: 4px; background: #fff; white-space: nowrap; font-variant-numeric: tabular-nums; }
 .state-summary span.has-items { border-color: var(--line-strong); color: var(--secondary); }
 .state-summary b { color: var(--ink); }
+.issue-listener-state { display: grid; width: 100%; min-width: 0; margin-bottom: 14px; padding: 14px 16px; grid-template-columns: minmax(0,1fr) auto; align-items: center; gap: 18px; border: 1px solid var(--line); border-left: 4px solid var(--quiet); border-radius: var(--radius-control); background: var(--surface); }
+.issue-listener-state.listening, .issue-listener-state.starting { border-left-color: var(--green); }
+.issue-listener-state.degraded { border-color: #f2b8b5; border-left-color: var(--red); background: #fff8f7; }
+.issue-listener-state h2 { margin: 3px 0 4px; font-size: 16px; }
+.issue-listener-state p { max-width: 760px; margin: 0; color: var(--muted); font-size: 12px; line-height: 1.5; }
+.issue-listener-state dl { display: grid; min-width: 255px; margin: 0; grid-template-columns: repeat(3,minmax(70px,1fr)); }
+.issue-listener-state dl div { padding: 2px 14px; border-left: 1px solid var(--line); }
+.issue-listener-state dt { color: var(--muted); font-size: 9px; font-weight: 800; text-transform: uppercase; }
+.issue-listener-state dd { margin: 3px 0 0; color: var(--ink); font-size: 18px; font-weight: 750; font-variant-numeric: tabular-nums; }
 .ticket-load-state { display: flex; width: 100%; min-width: 0; margin-bottom: 14px; padding: 16px 18px; align-items: center; justify-content: space-between; gap: 18px; border: 1px solid #b8c6dc; border-left: 4px solid var(--primary); border-radius: var(--radius-control); background: #f7f9fc; }
 .ticket-load-state[hidden] { display: none; }
 .ticket-load-state h2 { margin: 3px 0 4px; font-size: 16px; }
@@ -555,6 +564,9 @@ input:focus, select:focus, textarea:focus { border-color: var(--blue); outline: 
   .operation-failure { grid-template-columns: 1fr; }
   .board-toolbar { align-items: flex-start; flex-direction: column; }
   .board-observability { justify-items: start; }
+  .issue-listener-state { grid-template-columns: 1fr; }
+  .issue-listener-state dl { width: 100%; min-width: 0; }
+  .issue-listener-state dl div:first-child { padding-left: 0; border-left: 0; }
   .ticket-load-state { align-items: stretch; flex-direction: column; }
   .ticket-load-state .button { width: 100%; }
   .reset-options { grid-template-columns: 1fr; }
