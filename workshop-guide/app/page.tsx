@@ -5,14 +5,14 @@ import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from
 type Track = "rehearsal" | "live";
 
 const steps = [
-  { id: "setup", label: "Connect a repository", time: "8 min" },
-  { id: "baseline", label: "Run the starter app", time: "5 min" },
-  { id: "prd", label: "Save the PRD", time: "7 min" },
-  { id: "plan", label: "Review the product plan", time: "15 min" },
-  { id: "publish", label: "Publish tickets", time: "18 min" },
-  { id: "qa", label: "Review QA tests", time: "10 min" },
-  { id: "factory", label: "Run tickets", time: "22 min" },
-  { id: "finish", label: "Run the completed app", time: "5 min" },
+  { id: "setup", label: "Finish Setup", time: "8 min" },
+  { id: "baseline", label: "Check the starting app", time: "5 min" },
+  { id: "prd", label: "Write requirements", time: "7 min" },
+  { id: "plan", label: "Approve Product Review", time: "15 min" },
+  { id: "publish", label: "Create tickets", time: "18 min" },
+  { id: "qa", label: "Approve Acceptance Tests", time: "10 min" },
+  { id: "factory", label: "Deliver tickets", time: "22 min" },
+  { id: "finish", label: "Review the app", time: "5 min" },
 ] as const;
 
 function CodeBlock({ children, label = "Terminal" }: { children: string; label?: string }) {
@@ -259,7 +259,7 @@ export default function Home() {
             <span className="eyebrow">Hands-on developer workshop</span>
             <h1>Software (re)-Factory workshop</h1>
             <p className="hero-lede">
-              Use the Control Center or CLI to turn a PRD into tickets, code, tests, and a reviewed change. Each step shows the action, result, and next check.
+              Follow Setup, Plan, Deliver, and Review to turn a PRD into tickets, code, tests, and a reviewed change. The Control Center tells you when to act and why it stopped.
             </p>
             <div className="hero-meta">
               <span><b>Duration:</b> 100 minutes</span>
@@ -269,19 +269,19 @@ export default function Home() {
             <a className="primary-button" href="#prerequisites">Start the workshop</a>
           </div>
           <div className="factory-map" aria-label="Workshop workflow">
-            <div className="map-row"><span className="map-node">Connect</span><i>→</i><span className="map-node node-blue">PRD</span><i>→</i><span className="map-node node-human">Plan</span></div>
+            <div className="map-row"><span className="map-node">1 · Setup</span><i>→</i><span className="map-node node-blue">2 · Plan</span></div>
             <div className="map-down">↓</div>
-            <div className="map-row"><span className="map-node node-purple">Tickets</span><i>→</i><span className="map-node node-blue">Build</span><i>→</i><span className="map-node node-human">Review</span></div>
+            <div className="map-row"><span className="map-node node-purple">3 · Deliver</span><i>→</i><span className="map-node node-human">4 · Review</span></div>
             <div className="map-down">↓</div>
-            <div className="map-row"><span className="map-node node-green">Merge and evidence</span></div>
+            <div className="map-row"><span className="map-node node-green">Running app and evidence</span></div>
           </div>
         </section>
 
         <section id="prerequisites" className="prerequisites-section">
           <div className="section-heading">
             <span className="section-kicker">Before you begin</span>
-            <h2>Check your tools</h2>
-            <p>Install the required tools before the workshop.</p>
+            <h2>Install and sign in</h2>
+            <p>Complete this once before you open the Control Center.</p>
           </div>
           <div className="prerequisites-grid">
             <article>
@@ -299,20 +299,29 @@ export default function Home() {
               <h3>Accounts and access</h3>
               <ul>
                 <li>GitHub CLI with the <code>project</code> scope</li>
-                <li>One personal GitHub product repository</li>
+                <li>One personal GitHub product repository and its full URL</li>
                 <li>Permission to create issues, branches, and Projects</li>
-                <li>A signed-in Claude, Codex, or Cursor CLI</li>
+                <li>One signed-in agent CLI: Claude, Codex, Cursor, or your adapter</li>
                 <li>Network access to GitHub and your model provider</li>
               </ul>
             </article>
           </div>
-          <CodeBlock label="Check versions">{`python3 --version
+          <CodeBlock label="Verify before continuing">{`python3 --version
 node --version
 git --version
-${track === "live" ? "gh --version" : ""}`}</CodeBlock>
+${track === "live" ? `gh --version
+gh auth status
+gh auth refresh -s project
+
+# Run the check for the agent you will select later:
+claude auth status --text
+# or: codex login status` : ""}`}</CodeBlock>
           <Callout type="warning" title="Use your own repository">
             <p>For Live mode, use a personal GitHub repository. Do not use the facilitator&apos;s repository. Rehearsal mode stays on your computer and does not need GitHub or an agent login.</p>
           </Callout>
+          {track === "live" && <Callout type="note" title="Live mode uses two repositories">
+            <p>The <strong>factory checkout</strong> contains this workshop and starts the Control Center. Your separate <strong>product repository</strong> receives the issues, branches, pull requests, and application changes. Keep the two URLs separate.</p>
+          </Callout>}
         </section>
 
         <section id="path" className="path-section">
@@ -338,9 +347,9 @@ ${track === "live" ? "gh --version" : ""}`}</CodeBlock>
           </div>
         </section>
 
-        <StepSection index={1} id="setup" title="Connect a repository" goal="Open the Control Center and pass preflight." complete={completed.includes("setup")} onToggle={() => toggleStep("setup")}>
-          <p>{track === "live" ? "Keep the factory checkout separate from the product repository. The factory uses a managed copy of your product repository." : "Clone a local workshop repository. Rehearsal mode does not use GitHub or a model provider."}</p>
-          <CodeBlock label="Terminal 1 — repository setup">{track === "rehearsal" ? `git clone https://github.com/giolaq/software-refactory-workshop.git software-refactory-rehearsal
+        <StepSection index={1} id="setup" title="Finish Setup" goal="Open the Control Center, connect the correct repository, and pass preflight." complete={completed.includes("setup")} onToggle={() => toggleStep("setup")}>
+          <p>{track === "live" ? "You control the factory from the workshop checkout. The factory makes a separate managed checkout of your product repository." : "Rehearsal uses one disposable local checkout and built-in deterministic agents. It does not need GitHub or an agent login."}</p>
+          <CodeBlock label="Terminal 1 — do this once">{track === "rehearsal" ? `git clone https://github.com/giolaq/software-refactory-workshop.git software-refactory-rehearsal
 cd software-refactory-rehearsal
 ./setup_demo.sh --scenario recipe-rebrand
 git remote remove origin
@@ -353,42 +362,37 @@ cd software-refactory-control
 gh repo create YOUR-REPOSITORY --private
 export CONTROL="$PWD"
 export TARGET="$CONTROL/.factory/repositories/YOUR-NAME/YOUR-REPOSITORY"`}</CodeBlock>
-          {track === "live" && <Callout type="tip" title="Choose what the repository contains">
-            <ul>
-              <li><strong>Guided exercise:</strong> select <strong>Seed the guided Pocket Cinema starter</strong>. The repository receives only the starter app and its factory settings.</li>
-              <li><strong>New product:</strong> leave the option clear. The repository starts with factory settings, and agents create the product code from the tickets.</li>
-              <li><strong>Existing product:</strong> leave the option clear. The factory keeps the existing code.</li>
-            </ul>
-          </Callout>}
-          {track === "live" ? <Callout type="note" title="Using an existing project instead?">
-            <p>Run these commands from the factory checkout. Replace the example path with your product repository.</p>
-            <CodeBlock label="Target another Git checkout">{`./factory/factory init --repo /path/to/your-project
-# Review factory.project.toml and factory.charter.toml
-./factory/factory approve-charter --repo /path/to/your-project --yes
-git -C /path/to/your-project add factory.project.toml factory.charter.toml .gitignore
-git -C /path/to/your-project commit -m "chore: configure software factory"
-git -C /path/to/your-project push origin HEAD
-./factory/factory prepare --repo /path/to/your-project
-./factory/factory control-center --repo /path/to/your-project`}</CodeBlock>
-          </Callout> : null}
-
           <div className="activity-card launch-card">
-            <h3>Open the Control Center</h3>
+            <span className="activity-label">Keep this process running</span>
+            <h3>Start the Control Center</h3>
             <p>Open a second terminal in <code>{track === "live" ? "software-refactory-control" : "software-refactory-rehearsal"}</code>. Run:</p>
             <CodeBlock label="Terminal 2 — keep this running">{`./factory/factory control-center`}</CodeBlock>
             <ol>
               <li>Wait for <code>Factory Control Center: http://127.0.0.1:5050</code>.</li>
               <li>Your browser should open automatically. If it does not, open <a href="http://127.0.0.1:5050">127.0.0.1:5050</a> yourself.</li>
-              {track === "live" ? <li>Open <strong>Connect</strong>, choose <strong>Live</strong>, paste your full repository URL, choose the starting content, and save.</li> : null}
               <li>Leave this terminal running for the workshop. Press <code>Ctrl+C</code> only when you want to stop the Control Center.</li>
             </ol>
           </div>
 
+          <h3>Complete Setup in this order</h3>
+          <ol className="setup-sequence">
+            <li><span>1</span><div><strong>Open Setup → Connection</strong><p>Use the numbered navigation on the left. Do not start in Tickets.</p></div></li>
+            <li><span>2</span><div><strong>Choose the run settings</strong><p>Select <strong>{track === "live" ? "Live" : "Rehearsal"}</strong> and <strong>Standard</strong>. {track === "live" ? <>Choose the preset that matches the CLI you signed in to, then paste the full URL of <em>your product repository</em>.</> : <>Leave the default agent preset; Rehearsal does not call it.</>}</p></div></li>
+            <li><span>3</span><div><strong>Save configuration</strong><p>{track === "live" ? <>For the guided exercise, select <strong>Seed the guided Pocket Cinema starter</strong> before saving. Leave it clear for your own existing product.</> : <>No GitHub URL or Project number is required.</>}</p></div></li>
+            <li><span>4</span><div><strong>Create and approve the repository rules</strong><p>If offered, select <strong>Create contract and Charter</strong>. Read <strong>Review exact policy</strong>, then select <strong>Approve exact Charter</strong>. {track === "live" ? <>Select <strong>Commit and push setup</strong>.</> : <>Do not use Commit and push setup in Rehearsal.</>}</p></div></li>
+            <li><span>5</span><div><strong>Run setup</strong><p>This installs the dependencies declared by the repository, including test tools such as <code>pytest</code>. Preflight checks dependencies; it does not install them.</p></div></li>
+            <li><span>6</span><div><strong>Run preflight</strong><p>Open <strong>Current run → Activity and CLI output</strong>. Continue only when it reports no <code>FAIL</code> results.</p></div></li>
+          </ol>
+
+          <Callout type="warning" title="If preflight fails, do not keep clicking it">
+            <p>Expand <strong>Activity and CLI output</strong>, scroll to the first <code>[FAIL]</code>, fix that item, and run preflight again. A <code>[WARN]</code> for an unused adapter, port 5050, or the optional reviewer identity does not block the workshop. Use the <a href="#preflight-recovery">preflight recovery table</a> below for exact fixes.</p>
+          </Callout>
+
           <WorkshopPaths
-            click={<>Open <strong>Connect</strong>. Choose <strong>{track === "live" ? "Live" : "Rehearsal"}</strong>{track === "live" ? <>, enter the repository URL, choose the agents and starting content, then save</> : null}. Create the Project Contract and Charter when prompted. Review them, approve the Charter, and select <strong>Run preflight</strong>.</>}
-            whyStopped={<>The factory cannot plan work until it knows how to build and test the repository. A person must also approve the rules in the Charter.</>}
-            inspect={<>Check the repository URL, source folders, test folders, required checks, protected paths, and who can merge.</>}
-            continueWhen={<>The Charter is <strong>Approved</strong> and preflight has no failures.</>}
+            click={<>Use <strong>Setup → Connection</strong> and complete the six numbered actions above.</>}
+            whyStopped={<>The factory will not plan until the Project Contract describes how to build and test the repository, a person approves the Charter, dependencies are installed, and preflight passes.</>}
+            inspect={<>Confirm the product repository, default branch, source and test folders, required checks, selected agent preset, and merge authority.</>}
+            continueWhen={<>The Charter is <strong>Approved</strong>, setup completed, and Activity output contains no <code>[FAIL]</code>.</>}
           >{track === "live" ? `# Run from the software-refactory-control directory.
 ./factory/factory checkout https://github.com/YOUR-NAME/YOUR-REPOSITORY \\
   --workspace-root "$CONTROL/.factory/repositories"
@@ -403,29 +407,31 @@ git -C /path/to/your-project push origin HEAD
   --github-repository https://github.com/YOUR-NAME/YOUR-REPOSITORY
 ./factory/factory approve-charter --repo "$TARGET" --yes
 ./factory/factory publish-setup --repo "$TARGET" --yes
+./factory/factory prepare --repo "$TARGET" --yes
 ./factory/factory doctor --repo "$TARGET" --full` : `./factory/factory approve-charter --yes
+./factory/factory prepare --yes
 ./factory/factory doctor`}</WorkshopPaths>
           <WorkshopMedia
             src="/screenshots/control-center-connect.jpg"
-            alt="Control Center Connect screen with agent presets, repository details, and preflight button"
-            label="Connect"
-            caption="Connect the repository, approve its settings, and run preflight."
+            alt="Control Center Setup and Connection screen with essential run settings, repository details, and setup controls"
+            label="Setup → Connection"
+            caption="Choose the run settings, approve the repository rules, run setup, then run preflight."
             width={1440}
             height={980}
           />
-          <Callout type="tip" title="Use the Overview as your guide">
-            <p><strong>Current phase</strong> shows what is running. <strong>Next checkpoint</strong> opens the next action that needs you.</p>
+          <Callout type="tip" title="Use Current run as your guide">
+            <p><strong>Current phase</strong> explains the state. <strong>Next safe action</strong> opens the one action the factory needs from you.</p>
           </Callout>
-          <Checkpoint><a href="http://127.0.0.1:5050">127.0.0.1:5050</a> is open, the repository is connected, and preflight reports no blocking errors.</Checkpoint>
+          <Checkpoint><a href="http://127.0.0.1:5050">127.0.0.1:5050</a> is open, the correct repository is shown, the Charter is approved, and preflight reports no failures.</Checkpoint>
         </StepSection>
 
-        <StepSection index={2} id="baseline" title="Check the starting repository" goal="Confirm what the agents will change." complete={completed.includes("baseline")} onToggle={() => toggleStep("baseline")}>
+        <StepSection index={2} id="baseline" title="Check the starting app" goal="Confirm what the factory will change." complete={completed.includes("baseline")} onToggle={() => toggleStep("baseline")}>
           <p>The guided exercise starts with Pocket Cinema. A new product repository has no app yet.</p>
           <WorkshopPaths
-            click={<>Open <strong>Overview</strong> and check that the factory is at <strong>Define the PRD</strong>.</>}
+            click={<>Open <strong>Current run</strong> and check that <strong>Next safe action</strong> says <strong>Open the PRD</strong>.</>}
             whyStopped={<>No ticket starts before you save and approve a plan. For the guided exercise, the starter app runs as a separate process.</>}
             inspect={<>For the guided exercise, open Pocket Cinema. For a new product, confirm that the repository contains only <code>.gitignore</code> and the two factory settings files.</>}
-            continueWhen={<>The starting repository is correct and the Control Center shows <strong>Define the PRD</strong>.</>}
+            continueWhen={<>The starting repository is correct and the Control Center points to <strong>Plan → Requirements</strong>.</>}
           >{track === "live"
             ? `# Guided exercise:
 "$CONTROL/.factory/venv/bin/python" "$TARGET/demo-app/app.py"
@@ -444,29 +450,29 @@ git -C "$TARGET" ls-tree -r --name-only HEAD`
           <Checkpoint>Pocket Cinema opens, or the new product repository contains only factory settings.</Checkpoint>
         </StepSection>
 
-        <StepSection index={3} id="prd" title="Save the PRD" goal="Confirm what the agents must build." complete={completed.includes("prd")} onToggle={() => toggleStep("prd")}>
+        <StepSection index={3} id="prd" title="Write requirements" goal="Confirm the outcome the planning roles must design." complete={completed.includes("prd")} onToggle={() => toggleStep("prd")}>
           <WorkshopPaths
-            click={<>Open <strong>PRD</strong>. Read the document, edit it if needed, and select <strong>Save PRD</strong>.</>}
-            whyStopped={<>Planning uses the saved PRD. Unsaved edits are not sent to an agent.</>}
+            click={<>Open <strong>Plan → Requirements</strong>. Read the PRD and edit it if needed. The draft saves automatically.</>}
+            whyStopped={<>No planning role runs until you select <strong>Start Product Review</strong>.</>}
             inspect={<>Check the target users, required behavior, limits, and proof of success.</>}
-            continueWhen={<>The PRD is saved and you can describe the requested product change.</>}
+            continueWhen={<>The save indicator is current and you can describe the requested product change.</>}
           >{track === "live"
             ? `open "$CONTROL/recipe-app-prd.md"`
             : `open recipe-app-prd.md`}</WorkshopPaths>
           <WorkshopMedia
             src="/screenshots/control-center-prd.jpg"
-            alt="Control Center PRD editor with Save PRD and Start Product Review buttons"
-            label="PRD"
-            caption="Read the request, make any needed edits, and save it."
+            alt="Control Center Plan and Requirements screen with an auto-saving PRD editor and Start Product Review button"
+            label="Plan → Requirements"
+            caption="Read the request and make any needed edits. The draft saves automatically."
             width={1440}
             height={980}
           />
           <Checkpoint>The PRD is saved and describes the TableStory result.</Checkpoint>
         </StepSection>
 
-        <StepSection index={4} id="plan" title="Review the product plan" goal="Approve the user problem and expected behavior." complete={completed.includes("plan")} onToggle={() => toggleStep("plan")}>
+        <StepSection index={4} id="plan" title="Approve Product Review" goal="Approve the user problem and expected behavior before technical design." complete={completed.includes("plan")} onToggle={() => toggleStep("plan")}>
           <WorkshopPaths
-            click={<>In <strong>PRD</strong>, choose {track === "rehearsal" ? "Rehearsal" : "Live"} and select <strong>Start Product Review</strong>. Open <strong>Planning</strong>, then open <strong>Product Review</strong>.</>}
+            click={<>In <strong>Plan → Requirements</strong>, select <strong>Start Product Review</strong>. Then open <strong>Plan → Review plan</strong> and select <strong>Product Review</strong>.</>}
             whyStopped={<>A person must approve the product plan before technical planning starts.</>}
             inspect={<>Check the users, problem, required behavior, success checks, and any questions. Request a revision when the plan is unclear.</>}
             continueWhen={<>The product plan is clear, testable, and approved.</>}
@@ -483,8 +489,8 @@ export PLAN_ID=<plan-id-from-output>
 ./factory/factory approve-product "$PLAN_ID"`}</WorkshopPaths>
           <WorkshopMedia
             src="/screenshots/control-center-planning.jpg"
-            alt="Control Center Planning screen showing the expert stages and human approval gates"
-            label="Planning"
+            alt="Control Center Plan and Review plan screen showing expert stages and human approval gates"
+            label="Plan → Review plan"
             caption="Open Product Review. Yellow cards need a decision from you."
             width={1440}
             height={980}
@@ -492,9 +498,9 @@ export PLAN_ID=<plan-id-from-output>
           <Checkpoint>Product Review shows <strong>Approved</strong>.</Checkpoint>
         </StepSection>
 
-        <StepSection index={5} id="publish" title="Publish tickets" goal="Review the technical plan and create the work items." complete={completed.includes("publish")} onToggle={() => toggleStep("publish")}>
+        <StepSection index={5} id="publish" title="Create tickets" goal="Review the technical plan and approve the Vertical Slices." complete={completed.includes("publish")} onToggle={() => toggleStep("publish")}>
           <WorkshopPaths
-            click={<>In <strong>Planning</strong>, select <strong>Run remaining experts</strong>. Open each result. Answer any questions, approve alignment, and select <strong>Create tickets</strong>.</>}
+            click={<>In <strong>Plan → Review plan</strong>, select <strong>Run remaining experts</strong>. Open each result, answer blocking questions, complete the shown approvals, then select <strong>Create tickets</strong>.</>}
             whyStopped={<>The factory waits for answers when an expert cannot make a safe assumption. It also waits for your final approval before it creates tickets.</>}
             inspect={<>Check the planned components, code changes, ticket acceptance criteria, order, and dependencies.</>}
             continueWhen={track === "live" ? <>The GitHub Project contains the planned issues.</> : <>The Tickets page contains the planned work.</>}
@@ -511,9 +517,9 @@ export PLAN_ID=<plan-id-from-output>
           <Checkpoint>{track === "live" ? "The GitHub Project shows the new issues." : "The Tickets page shows the planned work."}</Checkpoint>
         </StepSection>
 
-        <StepSection index={6} id="qa" title="Review QA tests" goal="Confirm that the proposed test detects the missing behavior." complete={completed.includes("qa")} onToggle={() => toggleStep("qa")}>
+        <StepSection index={6} id="qa" title="Approve Acceptance Tests" goal="Confirm that the proposed test detects the missing behavior." complete={completed.includes("qa")} onToggle={() => toggleStep("qa")}>
           <WorkshopPaths
-            click={<>Open <strong>Tickets</strong> and select <strong>Run one cycle</strong>. Open ticket <strong>#1</strong>, select <strong>Tests</strong>, and review the proposal. Return to <strong>Summary</strong> to approve it.</>}
+            click={<>Open <strong>Deliver → Tickets</strong>. Open <strong>Run options</strong> and select <strong>Run one cycle</strong>. Open ticket <strong>#1</strong>, select <strong>Tests</strong>, and review the proposal. Return to <strong>Summary</strong> to approve it.</>}
             whyStopped={<>The factory runs the new test before implementation. <strong>RED PROVED</strong> means the test failed because the requested behavior is still missing.</>}
             inspect={<>Check the test file, command, and failure. Do not approve a test that fails because of setup, syntax, or an unrelated error.</>}
             continueWhen={<>The failure proves the behavior is missing and you approve the test.</>}
@@ -531,9 +537,9 @@ export PLAN_ID=<plan-id-from-output>
           <Checkpoint>The ticket shows <strong>RED PROVED</strong> and records your approval.</Checkpoint>
         </StepSection>
 
-        <StepSection index={7} id="factory" title="Run tickets" goal="Run the planned work and handle each human checkpoint." complete={completed.includes("factory")} onToggle={() => toggleStep("factory")}>
+        <StepSection index={7} id="factory" title="Deliver tickets" goal="Run the planned work and handle each human checkpoint." complete={completed.includes("factory")} onToggle={() => toggleStep("factory")}>
           <WorkshopPaths
-            click={<>Open <strong>Tickets</strong> and select <strong>Run factory</strong>. Keep the page open. When <strong>NEEDS YOU</strong> appears, open the linked ticket.</>}
+            click={<>Open <strong>Deliver → Tickets</strong> and select <strong>Run factory</strong>. Keep <strong>Active lanes</strong> selected. When <strong>NEEDS YOU</strong> appears, open the linked ticket.</>}
             whyStopped={<>For each ticket, the factory assigns work, runs tests and required checks, and asks a separate agent to review the change. It stops when a check fails or a person must decide.</>}
             inspect={<>Open the ticket tabs to read the task, live log, changed files, tests, checks, and code review. Before merge, confirm that the approved commit matches the pull request.</>}
             continueWhen={<>Code review approves the commit and you select <strong>Merge exact revision</strong>. The ticket then moves to Done.</>}
@@ -542,11 +548,15 @@ export PLAN_ID=<plan-id-from-output>
           <WorkshopMedia
             src="/screenshots/control-center-tickets.jpg"
             alt="Control Center Tickets board with backlog and QA Review columns"
-            label="Ticket board"
-            caption="Open a ticket to inspect its task, log, files, tests, checks, and review."
+            label="Deliver → Tickets"
+            caption="Active lanes keep the current work readable. Choose All lanes only when you need the full lifecycle."
             width={1440}
             height={980}
           />
+          {track === "live" && <details className="optional-detail">
+            <summary>Optional: admit a new GitHub issue after planning</summary>
+            <p>Open <strong>Run options → Listen for new issues</strong>. The first start records the current backlog without changing it. Create a new issue afterward, then review the proposed acceptance criteria and dependencies in the Control Center before accepting it. The listener never treats old issues as new work.</p>
+          </details>}
           {track === "live" && <WorkshopMedia
             src="/screenshots/github-project-board.jpg"
             alt="Illustrated GitHub Project board showing factory Tickets in lifecycle columns"
@@ -557,14 +567,14 @@ export PLAN_ID=<plan-id-from-output>
           />}
           <WorkshopMedia
             src="/screenshots/control-center-overview.jpg"
-            alt="Control Center Overview showing current phase, next checkpoint, progress, and human decisions"
-            label="Overview"
-            caption="Current phase shows what is running. Next checkpoint opens your next action."
+            alt="Control Center Current run page showing current phase, next safe action, delivery trace, and human decisions"
+            label="Current run"
+            caption="Current phase shows what is happening. Next safe action opens the decision the factory needs."
             width={1440}
             height={980}
           />
-          <div className="activity-card">
-            <h3>What happens to each ticket</h3>
+          <details className="optional-detail">
+            <summary>What happens to each ticket</summary>
             <ol>
               <li>The Supervisor selects a ticket whose dependencies are complete.</li>
               <li>QA adds a test for the requested behavior.</li>
@@ -573,7 +583,7 @@ export PLAN_ID=<plan-id-from-output>
               <li>A separate agent reviews the pull request.</li>
               <li>You decide whether to merge the approved commit.</li>
             </ol>
-          </div>
+          </details>
           <WorkshopMedia
             src="/screenshots/control-center-human-merge.jpg"
             alt="Control Center Ticket summary showing an exact-revision human merge action"
@@ -591,14 +601,22 @@ export PLAN_ID=<plan-id-from-output>
           <Checkpoint>At least one ticket reaches Done after tests, checks, review, and your merge decision.</Checkpoint>
         </StepSection>
 
-        <StepSection index={8} id="finish" title="Run the completed app" goal="Start TableStory and open its supported layouts." complete={completed.includes("finish")} onToggle={() => toggleStep("finish")}>
+        <StepSection index={8} id="finish" title="Review the completed app" goal="Start TableStory and check the integrated result." complete={completed.includes("finish")} onToggle={() => toggleStep("finish")}>
           <WorkshopPaths
-            click={<>Open <strong>Run app</strong> in the Control Center and copy the startup command.</>}
+            click={<>Open <strong>Review → Run app</strong> and select <strong>Start app</strong>, or copy the displayed startup command.</>}
             whyStopped={<>The page becomes available when every ticket is Done.</>}
             inspect={<>Open <code>http://127.0.0.1:5000/</code> for mobile and desktop, or <code>http://127.0.0.1:5000/?mode=tv</code> for television.</>}
             continueWhen={<>TableStory loads in the browser. Keep the terminal running while you use it, then press <code>Ctrl+C</code> to stop the server.</>}
           >{track === "live" ? `cd "$TARGET"
 "$CONTROL/.factory/venv/bin/python" demo-app/app.py` : `.factory/venv/bin/python demo-app/app.py`}</WorkshopPaths>
+          <WorkshopMedia
+            src="/screenshots/control-center-evidence.jpg"
+            alt="Control Center Review and Run app screen with the start command and application URLs"
+            label="Review → Run app"
+            caption="Start the integrated application from the repository used by this run."
+            width={1440}
+            height={980}
+          />
           <Checkpoint>TableStory opens from the repository produced by the factory.</Checkpoint>
         </StepSection>
 
@@ -612,22 +630,62 @@ export PLAN_ID=<plan-id-from-output>
           <div className="section-heading">
             <span className="section-kicker">When something stops</span>
             <h2>Troubleshooting</h2>
-            <p>Start with the symptom you see.</p>
+            <p>Read the exact status before repeating an action.</p>
           </div>
+          <section className="preflight-recovery" id="preflight-recovery" aria-labelledby="preflight-recovery-title">
+            <span className="section-kicker">Setup recovery</span>
+            <h3 id="preflight-recovery-title">Preflight failed: fix the first FAIL</h3>
+            <ol>
+              <li>Open <strong>Current run → Activity and CLI output</strong>.</li>
+              <li>Scroll to the first <code>[FAIL]</code>. Ignore later failures until this one is fixed.</li>
+              <li>Apply the matching fix below. Do not delete work or force-reset a branch.</li>
+              <li>Return to <strong>Setup → Connection</strong> and select <strong>Run preflight</strong> again.</li>
+            </ol>
+            <div className="status-key" aria-label="Preflight status meanings"><span className="status-pass">PASS · ready</span><span className="status-warn">WARN · check whether optional</span><span className="status-fail">FAIL · fix before continuing</span></div>
+            <div className="fix-table" role="table" aria-label="Common preflight failures and fixes">
+              <div className="fix-table-head" role="row"><span role="columnheader">The FAIL says</span><span role="columnheader">Fix it</span></div>
+              <div role="row"><code role="cell">default branch<br />branch synchronization</code><span role="cell">Save any local work first. Then run <code>git fetch origin</code>, <code>git switch main</code>, and <code>git pull --ff-only origin main</code> in the product checkout.</span></div>
+              <div role="row"><code role="cell">codex/claude adapter not found or not signed in</code><span role="cell">In <strong>Setup → Connection</strong>, choose the preset for the CLI you actually installed and save. Sign in with <code>codex login</code> or <code>claude auth login</code>.</span></div>
+              <div role="row"><code role="cell">No module named pytest<br />gate: api-tests</code><span role="cell">Select <strong>Run setup</strong>. It installs the dependencies in the Project Contract. Then rerun preflight.</span></div>
+              <div role="row"><code role="cell">GitHub Projects scope</code><span role="cell">Run <code>gh auth refresh -s project</code>, finish the browser authorization, and rerun preflight.</span></div>
+              <div role="row"><code role="cell">repository target<br />origin remote</code><span role="cell">Paste the full URL of your product repository in <strong>Setup → Connection</strong> and save. Do not paste the workshop repository URL.</span></div>
+              <div role="row"><code role="cell">Project Contract<br />Factory Charter</code><span role="cell">Select <strong>Create contract and Charter</strong>, review the policy, approve it, and—in Live mode—select <strong>Commit and push setup</strong>.</span></div>
+            </div>
+            <p className="warning-note"><strong>Usually safe to ignore:</strong> a warning for port 5050 while the Control Center is open, an unused adapter, or the optional second reviewer identity.</p>
+          </section>
+          <WorkshopMedia
+            src="/screenshots/control-center-preflight-failure.jpg"
+            alt="Control Center Current run page with a failed preflight, recovery explanation, exact command, and CLI output"
+            label="Failed preflight"
+            caption="Open the activity panel, find the first FAIL, fix it, and rerun preflight."
+            width={1440}
+            height={980}
+          />
+          <details className="optional-detail">
+            <summary>Example: wrong branch, wrong agent, and missing pytest</summary>
+            <p>If those three failures appear together, fix them in this order:</p>
+            <ol>
+              <li>Run <code>git status</code>. Commit or stash work you need to keep.</li>
+              <li>Run <code>git fetch origin</code>, <code>git switch main</code>, and <code>git pull --ff-only origin main</code>.</li>
+              <li>If Claude passes but Codex fails, choose <strong>Claude workshop</strong> in <strong>Setup → Connection</strong> and save. Otherwise sign in with <code>codex login</code>.</li>
+              <li>Select <strong>Run setup</strong> to install <code>pytest</code> and the other declared dependencies.</li>
+              <li>Select <strong>Run preflight</strong> again. Continue only when no <code>[FAIL]</code> remains.</li>
+            </ol>
+          </details>
           <div className="accordion-list">
-            <details><summary><code>doctor</code> reports a failure</summary><p>Fix the first <strong>FAIL</strong> result. Then run preflight again.</p></details>
-            <details><summary>The repository is not connected</summary><p>Open <strong>Connect</strong>, choose <strong>Live</strong>, enter the full repository URL, and save. Push the default branch if the repository already contains code. Then run preflight again.</p></details>
-            <details><summary>An agent asks for the wrong credentials</summary><p>Open <strong>Connect</strong> and choose the preset for the agent you use. Save, sign in to that agent&apos;s CLI, and run preflight again.</p></details>
-            <details><summary>A planning expert failed</summary><p>Open <strong>Planning</strong> and select the failed expert. For an invalid result, select <strong>Apply correction and continue</strong>. For a login or rate-limit error, fix access or choose another agent. If the PRD or repository settings changed, select <strong>Restart planning safely</strong>.</p></details>
-            <details><summary>Ticket publication failed</summary><p>Open <strong>Planning</strong> and select <strong>Retry ticket publication</strong>. The retry reuses issues that were already created for this plan. In the CLI, rerun the same <code>factory approve</code> command shown in the error.</p></details>
+            <details><summary>The repository is not connected</summary><p>Open <strong>Setup → Connection</strong>, choose <strong>Live</strong>, enter the full product repository URL, and save. Push its default branch if it already contains code. Then run preflight again.</p></details>
+            <details><summary>An agent asks for the wrong credentials</summary><p>Open <strong>Setup → Connection</strong> and choose the preset for the CLI you use. Save, sign in to that CLI, and run preflight again.</p></details>
+            <details><summary>A planning expert failed</summary><p>Open <strong>Plan → Review plan</strong> and select the failed expert. For an invalid result, select <strong>Apply correction and continue</strong>. For a login or rate-limit error, fix access or choose another agent. If the PRD or repository settings changed, select <strong>Restart planning safely</strong>.</p></details>
+            <details><summary>Ticket publication failed</summary><p>Open <strong>Plan → Review plan</strong> and select <strong>Retry ticket publication</strong>. The retry reuses issues already created for this plan. In the CLI, rerun the same <code>factory approve</code> command shown in the error.</p></details>
             <details><summary>A ticket is blocked</summary><p>Open the ticket history and read the last error. Fix that problem, then select <strong>Retry</strong> or run <code>factory retry ISSUE_NUMBER</code>.</p></details>
             <details><summary>A required check still tests removed behavior</summary><p>Compare the failed test with the ticket. If the ticket intentionally removes that behavior, do not restore it. Select <strong>Retry</strong>. The coding agent can update an existing test when the Charter marks existing tests for review.</p></details>
             <details><summary><code>NEEDS YOU</code> says dispatch is paused</summary><p>Too many decisions are waiting for a person. Open the oldest linked item and complete that decision. New ticket work starts again when the queue has space.</p></details>
             <details><summary>A remote claim belongs to an old run</summary><p>Confirm that the old run has stopped. Open the blocked ticket and select <strong>Release abandoned claim</strong>.</p></details>
             <details><summary>The Control Center reports a dependency cycle</summary><p>Two or more tickets depend on each other. Edit the issue dependencies so one ticket can start, then run the factory again.</p></details>
+            <details><summary>The issue listener does not import an existing issue</summary><p>This is expected. Its first start records the existing backlog and watches only for issues created afterward. Create a new issue, or stop the listener and follow the normal PRD planning path.</p></details>
             <details><summary>Live planning is slow or inconsistent</summary><p>Use Rehearsal mode to learn the steps. Return to Live mode after agent access and the PRD are stable.</p></details>
             <details><summary>A port or worktree is already in use</summary><p>Stop the old process. Use <code>git worktree list</code> to inspect worktrees before removing one.</p></details>
-            <details><summary>I want to repeat the workshop</summary><p>Open <strong>Reset or start again</strong>. Reset ticket work to keep the approved plan, or enter <code>START OVER</code> to clear local planning history. Use a new repository when you also need a new Live GitHub Project.</p></details>
+            <details><summary>I want to repeat the workshop</summary><p>Select <strong>Reset run</strong> in the lower-left navigation. Reset ticket work to keep the approved plan, or enter <code>START OVER</code> to clear local planning history. Use a new repository when you also need a new Live GitHub Project.</p></details>
           </div>
         </section>
 
@@ -637,20 +695,23 @@ export PLAN_ID=<plan-id-from-output>
             <h2>Core commands</h2>
             <p>The commands you are most likely to repeat.</p>
           </div>
-          <div className="reference-table">
-            <div><code>factory control-center</code><span>Open the web interface.</span></div>
-            <div><code>factory doctor --full</code><span>Check tools, access, and repository settings.</span></div>
-            <div><code>factory plan PRD</code><span>Start planning from a PRD.</span></div>
-            <div><code>factory review product PLAN_ID</code><span>Read the product plan.</span></div>
-            <div><code>factory approve-product PLAN_ID</code><span>Approve the product plan.</span></div>
-            <div><code>factory approve PLAN_ID</code><span>Create GitHub issues from the approved plan.</span></div>
-            <div><code>factory run</code><span>Run available tickets.</span></div>
-            <div><code>factory approve-tests ISSUE</code><span>Approve a ticket&apos;s QA test.</span></div>
-            <div><code>factory merge ISSUE</code><span>Merge the reviewed commit.</span></div>
-            <div><code>factory status</code><span>Show ticket status.</span></div>
-            <div><code>factory retry ISSUE</code><span>Retry a blocked ticket.</span></div>
-            <div><code>.factory/venv/bin/python demo-app/app.py</code><span>Start the completed workshop app.</span></div>
-          </div>
+          <details className="optional-detail">
+            <summary>Show the CLI command reference</summary>
+            <div className="reference-table">
+              <div><code>factory control-center</code><span>Open the web interface.</span></div>
+              <div><code>factory doctor --full</code><span>Check tools, access, and repository settings.</span></div>
+              <div><code>factory plan PRD</code><span>Start planning from a PRD.</span></div>
+              <div><code>factory review product PLAN_ID</code><span>Read the product plan.</span></div>
+              <div><code>factory approve-product PLAN_ID</code><span>Approve the product plan.</span></div>
+              <div><code>factory approve PLAN_ID</code><span>Create GitHub issues from the approved plan.</span></div>
+              <div><code>factory run</code><span>Run available tickets.</span></div>
+              <div><code>factory approve-tests ISSUE</code><span>Approve a ticket&apos;s QA test.</span></div>
+              <div><code>factory merge ISSUE</code><span>Merge the reviewed commit.</span></div>
+              <div><code>factory status</code><span>Show ticket status.</span></div>
+              <div><code>factory retry ISSUE</code><span>Retry a blocked ticket.</span></div>
+              <div><code>.factory/venv/bin/python demo-app/app.py</code><span>Start the completed workshop app.</span></div>
+            </div>
+          </details>
           <div className="next-links">
             <a href="https://github.com/giolaq/software-refactory-workshop/blob/main/factory/WORKSHOP_OUTLINE.md"><span>FACILITATOR</span><b>Workshop outline</b><i>→</i></a>
             <a href="https://github.com/giolaq/software-refactory-workshop/blob/main/factory/CONFIGURATION.md"><span>REFERENCE</span><b>Agent configuration</b><i>→</i></a>
@@ -661,12 +722,12 @@ export PLAN_ID=<plan-id-from-output>
       <aside className="right-rail">
         <div className="rail-card"><span className="rail-label">PATH</span><strong>{track === "live" ? "Live" : "Rehearsal"}</strong><button type="button" onClick={() => document.getElementById("path")?.scrollIntoView({ behavior: "smooth" })}>Change path</button></div>
         <div className="rail-card"><span className="rail-label">PROGRESS</span><strong>{completed.length} of {steps.length}</strong><div className="progress-track"><span style={{ width: `${progress}%` }} /></div></div>
-        <div className="rail-help"><span className="rail-help-icon">?</span><strong>Stuck?</strong><p>Read the ticket event history first. It records the reason for every state change.</p><a href="#troubleshooting">Open troubleshooting</a></div>
+        <div className="rail-help"><span className="rail-help-icon">?</span><strong>Stuck?</strong><p>Open Current run. Follow Next safe action, or expand Activity and fix the first FAIL.</p><a href="#troubleshooting">Open troubleshooting</a></div>
       </aside>
 
       <footer>
         <span className="footer-brand"><span className="brand-mark" aria-hidden="true"><i /><i /><i /><i /></span>Software (re)-Factory</span>
-        <span>Connect. Plan. Build. Verify. · workshop-v1.1.2</span>
+        <span>Setup. Plan. Deliver. Review. · workshop-v1.1.3</span>
       </footer>
     </>
   );

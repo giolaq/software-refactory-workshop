@@ -1,6 +1,6 @@
 # Software (re)-Factory
 
-Release: `workshop-v1.1.2`
+Release: `workshop-v1.1.3`
 
 Software (re)-Factory is a legible control layer for running several coding
 agents against a dependency-mapped backlog. GitHub Issues are tickets, Projects
@@ -90,8 +90,9 @@ To use an existing local checkout instead:
 ./factory/factory control-center --repo /path/to/your-project
 ```
 
-On Connect, select **Live**, paste that project's GitHub URL, choose the role
-adapters, save, and run full preflight. In PRD, paste or write the actual
+In **Setup → Connection**, select **Live**, paste that project's GitHub URL,
+choose the role adapters, save, and run full preflight. In **Plan →
+Requirements**, paste or write the actual
 product requirement. The four planning experts use the PRD for scope and the
 Project Contract plus repository inventory for technical context. The approved
 Vertical Slices become GitHub Issues and Project items; no scenario seed is
@@ -113,7 +114,7 @@ Arbitrary PRDs require Live agents. Rehearsal remains deterministic by design
 and therefore supports only its bundled Pocket Cinema scenarios.
 
 For a greenfield product, create and connect an empty GitHub repository but
-leave **Seed the guided Pocket Cinema starter** unchecked. On Connect, create
+leave **Seed the guided Pocket Cinema starter** unchecked. In **Setup → Connection**, create
 and review the detected Project Contract and Charter, approve the exact Charter,
 then select **Commit and push setup**. That initial commit contains only
 `.gitignore`, `factory.project.toml`, and `factory.charter.toml`. Planning turns
@@ -498,7 +499,7 @@ gh repo create YOUR-REPOSITORY --private
 ./factory/factory control-center
 ```
 
-In **Connect**, choose **Live**, paste
+In **Setup → Connection**, choose **Live**, paste
 `https://github.com/YOUR-NAME/YOUR-REPOSITORY`, select the role adapters, and
 check **Seed the guided Pocket Cinema starter** before saving. The Control
 Center verifies that the remote has no branches or tags and creates a fresh

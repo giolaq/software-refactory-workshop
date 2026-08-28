@@ -425,6 +425,31 @@ main {
 details summary { color: var(--blue-dark); font-weight: 650; cursor: pointer; }
 details summary:hover { text-decoration: underline; }
 
+.setup-sequence { display: grid; gap: 10px; margin: 18px 0 26px; padding: 0; list-style: none; }
+.setup-sequence li { display: grid; grid-template-columns: 34px 1fr; gap: 13px; margin: 0; padding: 15px 17px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface-alt); }
+.setup-sequence li > span { display: grid; width: 30px; height: 30px; place-items: center; border-radius: 50%; background: var(--blue-deep); color: #fff; font-size: 12px; font-weight: 800; }
+.setup-sequence strong { display: block; margin: 2px 0 3px; }
+.setup-sequence p { margin: 0; color: var(--muted); font-size: 13px; line-height: 1.5; }
+
+.preflight-recovery { margin: 28px 0 32px; padding: 24px; border: 1px solid #eab7a8; border-top: 4px solid var(--red); border-radius: 6px; background: #fffafa; }
+.preflight-recovery h3 { margin: 6px 0 12px; font-size: 23px; }
+.preflight-recovery > ol { margin: 0 0 20px; padding-left: 22px; }
+.preflight-recovery > ol li { margin: 6px 0; }
+.status-key { display: flex; flex-wrap: wrap; gap: 8px; margin: 16px 0; }
+.status-key span { padding: 5px 9px; border-radius: 999px; font-size: 11px; font-weight: 750; }
+.status-pass { background: var(--green-pale); color: var(--green); }
+.status-warn { background: var(--yellow-pale); color: #8a4b00; }
+.status-fail { background: var(--red-pale); color: var(--red); }
+.fix-table { overflow: hidden; border: 1px solid var(--line); border-radius: 5px; background: #fff; }
+.fix-table > div { display: grid; grid-template-columns: minmax(190px,.65fr) minmax(0,1.35fr); border-top: 1px solid var(--line-soft); }
+.fix-table > div:first-child { border-top: 0; }
+.fix-table > div > * { min-width: 0; padding: 13px 15px; overflow-wrap: anywhere; }
+.fix-table > div > :first-child { border-right: 1px solid var(--line-soft); }
+.fix-table code { color: var(--red); font-size: 12px; font-weight: 650; }
+.fix-table span { color: var(--ink); font-size: 13px; line-height: 1.5; }
+.fix-table-head { background: var(--surface-alt); color: var(--ink); font-size: 11px; font-weight: 800; text-transform: uppercase; }
+.warning-note { margin: 16px 0 0; color: var(--muted); font-size: 13px; }
+
 .workshop-figure { margin: 28px 0 32px; }
 .workshop-screenshot { position: relative; display: block; overflow: hidden; border: 1px solid #b2b7bc; border-radius: 6px; background: var(--surface-alt); box-shadow: 0 4px 14px rgba(22,41,57,.1); }
 .workshop-screenshot img { display: block; width: 100%; height: auto; }
@@ -565,6 +590,9 @@ footer button { border: 0; background: none; color: var(--blue-dark); cursor: po
   .step-number { flex-basis: 36px; width: 36px; height: 36px; }
   .lesson-body { margin-left: 0; }
   .instruction-list > div { grid-template-columns: 86px 1fr; }
+  .fix-table > div { grid-template-columns: 1fr; }
+  .fix-table > div > :first-child { padding-bottom: 4px; border-right: 0; }
+  .fix-table > div > :last-child { padding-top: 4px; }
   .workshop-figure figcaption { grid-template-columns: 1fr; gap: 2px; }
   .workshop-figure-portrait .workshop-screenshot img { max-height: 620px; }
   .lesson-footer { justify-content: stretch; }
