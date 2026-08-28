@@ -1,6 +1,6 @@
 # Facilitator runbook
 
-Release: `workshop-v1.1.2`
+Release: `workshop-v1.1.3`
 
 Use [WORKSHOP_OUTLINE.md](WORKSHOP_OUTLINE.md) for the presentation path and
 [COMPATIBILITY.md](COMPATIBILITY.md) for upgrades and migration behavior. This
@@ -28,9 +28,10 @@ Complete this checklist before attendees arrive:
 - [ ] The workshop repository is clean and synchronized with its default branch.
 - [ ] A disposable local Git checkout exists for a Rehearsal Run.
 - [ ] The deterministic recipe scenario completes successfully.
+- [ ] A colleague has recovered one failed preflight by using the website without verbal help.
 - [ ] The attendee website is open at the prerequisites section.
 - [ ] The frozen source, CLI, website, and Git tag all identify
-      `workshop-v1.1.2`.
+      `workshop-v1.1.3`.
 - [ ] Every attendee will create and own a separate repository. Rehearsal may
       stay local; Live uses GitHub. The facilitator uses a different repository.
 - [ ] Peer-review pairs are assigned without sharing repository state.
@@ -40,7 +41,7 @@ A Live Run also requires:
 - [ ] `gh auth status` succeeds.
 - [ ] GitHub authentication includes the `project` scope.
 - [ ] The repository owner can create issues, Projects, branches, and pull requests.
-- [ ] The repository URL is saved in **Connect** and the repository card says **connected**.
+- [ ] The repository URL is saved in **Setup → Connection** and the repository card says **connected**.
 - [ ] A current Claude or Codex planning CLI is authenticated.
 - [ ] The selected supervision, implementation, QA, and code-review adapters are registered and their
       noninteractive commands have been smoke-tested. Claude is only the worked
@@ -90,7 +91,7 @@ only for an optional adapter that won't be used or for the documented
 single-account review-comment fallback.
 
 If a colleague asks whether the factory only works for Pocket Cinema, show the
-Project Contract card in Connect. The extension path is:
+Project Contract card in **Setup → Connection**. The extension path is:
 
 ```sh
 ./factory/factory init --repo /path/to/existing-project
@@ -127,7 +128,8 @@ Prepare these browser tabs:
 Don't start the application before running the live doctor. An occupied port is
 reported as a warning.
 
-The Control Center is the attendee path. Keep terminal commands below as a
+The Control Center is the attendee path. Its four stages are **Setup**, **Plan**,
+**Deliver**, and **Review**. Keep terminal commands below as a
 facilitator recovery reference and to explain that the UI calls the same
 versioned CLI. Do not tunnel or publicly expose port 5050.
 
@@ -289,6 +291,11 @@ approval needs a distinct reviewer identity supplied through the uncommitted
 | A ticket is blocked | Open Summary and follow its cause-specific recovery. Record what changed and why another attempt can succeed before retrying. The reason is shown in Ticket details and sent to the next Supervisor and agent. Corrected Issues reload from GitHub and discard old-spec evidence; Project Contract repairs reload gates; stale PRs rebuild on a replacement branch; claims and dependency blockers never offer blind retry. |
 | Live merge shows Rehearsal evidence | Do not merge it as Live. In Ticket Summary, either **Finish Rehearsal** or select **Open Reset**, clear only local run state, and rerun the published GitHub ticket. Source files and remote artifacts are preserved. |
 | An attendee reset the wrong scope | Open **Reset**, verify the checkpoint timestamp and plan, then choose **Recover latest state**. With no checkpoint, a connected Live repository reconstructs from GitHub. Do not claim that deleted local receipts were restored. |
+| Preflight reports `default branch` or `branch synchronization` | In the product checkout, save local work, then run `git fetch origin`, `git switch main`, and `git pull --ff-only origin main`. Do not force-reset attendee work. |
+| Preflight reports an unavailable Codex or Claude adapter | Open **Setup → Connection**, select the preset for the CLI the attendee actually installed, save, sign in to that CLI, and rerun preflight. |
+| Preflight reports `No module named pytest` | Select **Run setup** in **Setup → Connection**, then rerun preflight. Explain that preflight checks dependencies; it does not install them. |
+| Preflight reports missing GitHub Projects scope | Run `gh auth refresh -s project`, finish authorization, and rerun preflight. |
+| Branch, Codex, and `pytest` failures appear together | Fix them in order: preserve local work; fetch, switch to `main`, and fast-forward it; select the passing Claude preset or sign in to Codex; select **Run setup**; then rerun preflight. Do not ask the attendee to repeat the same failed check between fixes. |
 | Live restart says the checkout is not on `main` | Run local reset again. A clean checkout preserves divergent local `main` under `recovery/pre-reset-main-*`, then aligns `main` exactly with `origin/main`. A dirty checkout must be committed or stashed by its owner first. |
 | A port is occupied | Stop the old process or use a fresh checkout. |
 | The state is stale | Use **Reset current run** in the Control Center after confirming demo changes can be discarded. |
@@ -327,7 +334,8 @@ The workshop is ready when a colleague can use the website without verbal help
 to:
 
 - select a path and verify its prerequisites;
-- reach every checkpoint using the Control Center, with equivalent commands available;
+- reach every checkpoint using **Setup → Plan → Deliver → Review**, with equivalent commands available;
+- recover a failed preflight by reading the first `[FAIL]`, applying its specific fix, and rerunning the check;
 - find the ticket board, ticket evidence, and troubleshooting section;
 - explain the required Product Review and alignment approvals, any
   Charter-selected intermediate planning approvals, and the Acceptance Test
@@ -373,6 +381,6 @@ The command creates a unique smoke endpoint and Project on every invocation so
 an explicitly disposable repository can be retested without invalidating RED
 proof. It still merges a real change; do not point it at an attendee repository.
 
-After all checks pass, tag `workshop-v1.1.2`, make the repository public, and
+After all checks pass, tag `workshop-v1.1.3`, make the repository public, and
 enable GitHub template mode. Those external owner actions are intentionally not
 automated by the factory.

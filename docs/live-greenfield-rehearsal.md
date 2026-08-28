@@ -93,7 +93,7 @@ Keep the terminal running while using the Control Center.
 
 ## 3. Connect the empty repository
 
-In **Connect**:
+In **Setup → Connection**:
 
 1. Select **Live**.
 2. Enter the full repository URL:
@@ -120,7 +120,7 @@ After connection, the Control Center created this managed checkout:
 
 ## 4. Create the Project Contract and Charter
 
-In **Connect**, select **Create contract and Charter**.
+In **Setup → Connection**, select **Create contract and Charter**.
 
 Because the repository was empty, the generated Project Contract was
 conservative:
@@ -179,7 +179,7 @@ setup commands. This is expected.
 
 ## 6. Run preflight
 
-In **Connect**, select **Run preflight**.
+In **Setup → Connection**, select **Run preflight**.
 
 Result:
 
@@ -204,7 +204,7 @@ Important checks that passed:
 
 ## 7. Save the FocusFlow PRD
 
-Open **PRD** and replace the sample document with:
+Open **Plan → Requirements** and replace the sample document with:
 
 ```markdown
 # FocusFlow
@@ -243,7 +243,8 @@ Build a simple personal task board for people who want to organize daily work.
 - Record successful mobile and desktop checks.
 ```
 
-Select **Save PRD**, then choose **Live adapters**.
+Wait for the saved indicator, then select **Start Product Review**. The agent
+preset and Live mode already come from **Setup → Connection**.
 
 ## 8. Run Product Review
 
@@ -471,13 +472,13 @@ The page also shows:
 ```
 
 It also provides a **Run one cycle** button. Restart the Control Center once to
-load this update, open **Tickets**, and select **Run one cycle**. The factory
+load this update, open **Deliver → Tickets**, and select **Run one cycle**. The factory
 will load the published issues into the local board and begin the first
 independent QA step.
 
 ## 15. Start the factory
 
-Select **Run factory** in the Tickets view.
+Select **Run factory** in **Deliver → Tickets**.
 
 The factory loaded all six published issues into `.factory/state.json` and
 started the first dependency wave. Initial state:

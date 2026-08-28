@@ -17,13 +17,13 @@ workshop. Press `Ctrl+C` to close the server.
 
 | Screen | Attendee action | Factory result |
 | --- | --- | --- |
-| Connect | Inspect or create the Project Contract and Factory Charter; select role adapters; run setup and preflight | Saves repository behavior, records human-owned policy approval, and checks the target |
-| PRD | Review or edit the requirement; start Product Review | Saves a local PRD and runs the first planning expert |
-| Planning | Read four expert artifacts; approve Product Review, final alignment, and any Charter-selected intermediate gates | Creates PRD-derived rehearsal tickets or GitHub issues |
-| Tickets | Run the scheduler or start Live repository issue listening; inspect prompts, logs, diffs, tests, gates, code review, and history | Operates isolated worktrees, admits later user-created issues, and shows live state |
-| Supervisor | Inspect worker reports, dispatch instructions, blocks, merge recommendations, and prior decisions | Explains how the next safe Ticket wave and approved revision were coordinated |
-| Evidence | Complete the Factory Canvas; export the packet | Produces a sanitized review bundle |
-| Monitor | Preview read-only health findings; publish only by explicit Live action | Finds stale claims, waits, drift, CI, and advisories without repairing code |
+| Setup → Connection | Inspect or create the Project Contract and Factory Charter; select role adapters; run setup and preflight | Saves repository behavior, records human-owned policy approval, and checks the target |
+| Plan → Requirements | Review or edit the auto-saved requirement; start Product Review | Saves a local PRD and runs the first planning expert |
+| Plan → Review plan | Read four expert artifacts; approve Product Review, final alignment, and any Charter-selected intermediate gates | Creates PRD-derived rehearsal tickets or GitHub issues |
+| Deliver → Tickets | Run the scheduler or start Live repository issue listening; inspect prompts, logs, diffs, tests, gates, code review, and history | Operates isolated worktrees, admits later user-created issues, and shows live state |
+| More tools → Supervisor activity | Inspect worker reports, dispatch instructions, blocks, merge recommendations, and prior decisions | Explains how the next safe Ticket wave and approved revision were coordinated |
+| Review → Run app | Start the completed application and open its normal or television URL | Runs the integrated product from the repository used by the Factory Run |
+| More tools → Repository monitor | Preview read-only health findings; publish only by explicit Live action | Finds stale claims, waits, drift, CI, and advisories without repairing code |
 
 Every operation shows the exact equivalent CLI command and streams its output.
 The interface runs one command at a time, so two buttons cannot start competing
@@ -151,7 +151,7 @@ is the detailed operator view for the local prompts, worktrees, tests, and logs
 that GitHub does not contain. Live preflight also verifies agent authentication
 and runs the configured gates.
 
-In **Connect**, paste the attendee's GitHub repository URL before saving Live
+In **Setup → Connection**, paste the attendee's GitHub repository URL before saving Live
 configuration. Saving verifies access, clones or reuses that repository under
 the Control Center's ignored `.factory/repositories/` workspace, and switches
 the interface to that checkout. The repository card must show **connected**
@@ -177,8 +177,8 @@ the factory implementation remains in the separate control checkout.
 
 ### Listen for new repository issues
 
-Repository issue listening is explicitly Live-only. On **Tickets**, open **Run
-options** and choose **Listen for new issues**. The status band reports whether
+Repository issue listening is explicitly Live-only. On **Deliver → Tickets**,
+open **Run options** and choose **Listen for new issues**. The status band reports whether
 the listener is starting, listening, degraded, or stopped, plus its baseline,
 admitted, and ignored counts.
 
@@ -279,7 +279,7 @@ Rehearsal, or open **Reset**, clear local run state, and load the published
 Live ticket from GitHub. A Rehearsal candidate never becomes a Live candidate:
 the Live run must create and approve an exact GitHub pull request.
 
-Use **Reset or start again** from the Overview or sidebar:
+Use **Reset run** in the lower-left sidebar:
 
 - **Recover latest state** restores the newest local pre-reset checkpoint.
   The dialog shows its timestamp, ticket count, and plan. If no checkpoint

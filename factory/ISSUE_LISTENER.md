@@ -16,7 +16,7 @@ normal **Setup** checks first:
    ```
 
 2. Open <http://127.0.0.1:5050/>.
-3. On **Setup**, select **Live**.
+3. Open **Setup → Connection** and select **Live**.
 4. Enter the GitHub repository URL and save the configuration.
 5. Select the required Factory Profile and role adapters.
 6. Create or review the Project Contract and Factory Charter.
@@ -30,7 +30,7 @@ requests.
 
 ## Step 1: Start listening
 
-1. Open **Tickets** in the Control Center.
+1. Open **Deliver → Tickets** in the Control Center.
 2. Open **Run options**.
 3. Confirm that **Mode** is **Live**.
 4. Select **Listen for new issues**.
@@ -87,7 +87,7 @@ the configured default implementation adapter.
 
 ## Step 3: Watch admission and triage
 
-Return to **Tickets**. After the next poll:
+Return to **Deliver → Tickets**. After the next poll:
 
 1. The **Admitted** count increases.
 2. Factory adds the issue to its GitHub Project.
@@ -143,7 +143,7 @@ To stop listening, select **Stop operation** in the Control Center.
 
 To resume:
 
-1. Return to **Tickets**.
+1. Return to **Deliver → Tickets**.
 2. Confirm **Live** mode.
 3. Open **Run options**.
 4. Select **Listen for new issues**.
@@ -175,7 +175,7 @@ The same constraints apply from the CLI:
 
 ### Listen for new issues is disabled
 
-Set the Tickets run mode to **Live**. Repository intake is unavailable in
+Set the **Deliver → Tickets** run mode to **Live**. Repository intake is unavailable in
 Rehearsal.
 
 ### A new issue did not appear

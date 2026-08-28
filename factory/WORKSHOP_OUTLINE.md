@@ -1,6 +1,6 @@
 # Software (re)-Factory workshop
 
-Release: `workshop-v1.1.2`
+Release: `workshop-v1.1.3`
 
 Use this outline to present the workshop. The attendee website contains the commands and checkpoints; keep the live explanation focused on why each decision matters.
 
@@ -42,7 +42,7 @@ Everyone needs:
 The live path also requires:
 
 - GitHub CLI authenticated with the `project` scope.
-- A personal GitHub repository URL saved in **Connect**; its `origin` must match.
+- A personal GitHub repository URL saved in **Setup → Connection**; its `origin` must match.
 - Permission to create issues, branches, and Projects.
 - An authenticated Claude, Codex, Cursor, or custom agent CLI.
 - Network access to GitHub and the chosen model provider.
@@ -73,14 +73,14 @@ Run the rehearsal path before facilitating the live path.
 
 | Time | Step | Result |
 |---:|---|---|
-| 0–8 | Set up | Healthy factory and isolated demo repository |
+| 0–8 | Setup | Healthy factory and isolated demo repository |
 | 8–13 | Inspect the app | Shared understanding of the baseline |
-| 13–20 | Read the PRD | Testable product outcome |
-| 20–35 | Review product intent | Human-approved product brief |
-| 35–53 | Create tickets | Approved vertical slices in GitHub or dry-run output |
-| 53–63 | Approve tests | Human-approved QA evidence |
-| 63–85 | Run the factory | At least one completed ticket with traceable evidence |
-| 85–100 | Verify and monitor | Integrated app, Evidence Packet, and read-only Monitor report |
+| 13–20 | Write requirements | Testable product outcome |
+| 20–35 | Approve Product Review | Human-approved product brief |
+| 35–53 | Create tickets | Approved vertical slices in GitHub or Rehearsal |
+| 53–63 | Approve Acceptance Tests | Human-approved QA evidence |
+| 63–85 | Deliver tickets | At least one completed ticket with traceable evidence |
+| 85–100 | Review the app | Integrated app, Evidence Packet, and read-only Monitor report |
 
 ## The workshop story
 
@@ -107,35 +107,84 @@ Repeat the same pattern for every step:
 2. **Do** — run one short activity.
 3. **Check** — show the evidence that permits the next step.
 
-### 1. Set up
+### 1. Setup
 
 **Goal:** Start with a healthy factory and a separate demo repository.
 
-**Do:** Reset Pocket Cinema to the exercise baseline. Then open a second
-terminal tab at the repository root and start the local Control Center:
+**Do:** Reset Pocket Cinema to the exercise baseline:
 
 ```bash
 ./setup_demo.sh --scenario recipe-rebrand
 ```
 
-Keep this second command running for the rest of the workshop:
+Open a second terminal at the repository root. Keep this command running for
+the rest of the workshop:
 
 ```bash
 ./factory/factory control-center
 ```
 
 Wait for `Factory Control Center: http://127.0.0.1:5050`. The browser should
-open automatically; otherwise open that address yourself. In the browser,
-select **Connect**, choose the agent preset, save it, and run preflight. Press
-`Ctrl+C` only when you want to stop the Control Center. In Rehearsal,
-credentials and GitHub writes are not required.
+open automatically; otherwise open that address yourself. Press `Ctrl+C` only
+when you want to stop the Control Center.
+
+Complete the browser setup in this order:
+
+1. Open **Setup → Connection**.
+2. Select **Rehearsal** or **Live**, the **Standard** Factory Profile, and the
+   preset that matches the agent CLI you actually signed in to. Rehearsal does
+   not call that CLI.
+3. For Live, paste the full URL of the attendee's product repository. Select
+   **Seed the guided Pocket Cinema starter** only for the guided exercise. Save
+   the configuration.
+4. If offered, select **Create contract and Charter**. Read **Review exact
+   policy**, select **Approve exact Charter**, and, for Live, select **Commit
+   and push setup**.
+5. Select **Run setup**. This installs the dependencies recorded in the Project
+   Contract. Preflight checks dependencies; it does not install them.
+6. Select **Run preflight**. Open **Current run → Activity and CLI output** and
+   continue only when it reports no `[FAIL]` entries.
+
+In Rehearsal, no GitHub URL, GitHub write, or agent login is required. Do not
+select **Commit and push setup**.
 
 **Check:** <http://127.0.0.1:5050> loads, shows the correct repository, and
-preflight reports no blocking errors.
+preflight reports no failures.
 
-Point out the Overview before continuing: **Current phase** explains what is
-happening, **Next checkpoint** opens the next human action, and the progress row
-separates completed, current, and pending phases.
+Point out **Current run** before continuing: **Current phase** explains what is
+happening, **Next safe action** opens the next human action, and the delivery
+trace separates completed, current, and pending stages.
+
+#### If preflight fails
+
+Do not repeat preflight without changing anything. Expand **Activity and CLI
+output**, scroll to the first `[FAIL]`, apply the matching fix, then run
+preflight again.
+
+| Failure | Meaning | Recovery |
+| --- | --- | --- |
+| `default branch` or `branch synchronization` | The product checkout is not on the remote default revision. | Save local work. Run `git fetch origin`, `git switch main`, and `git pull --ff-only origin main` in the product checkout. Never force-reset attendee work. |
+| `codex adapter` or `claude adapter` | The selected preset does not match an installed, signed-in CLI. | In **Setup → Connection**, choose the preset for the available CLI and save. Run `codex login` or `claude auth login` when required. |
+| `No module named pytest` or another gate dependency | Repository setup has not completed. | Select **Run setup**, then run preflight again. |
+| `GitHub Projects scope` | GitHub CLI cannot manage Projects. | Run `gh auth refresh -s project` and finish browser authorization. |
+| `repository target` or `origin remote` | The saved product URL and checkout do not identify the same repository. | Paste the attendee's full product repository URL in **Setup → Connection** and save. Do not use the facilitator or workshop repository URL. |
+| `Project Contract` or `Factory Charter` | Repository behavior or human-owned policy is missing. | Create the contract and Charter, review the exact policy, approve it, and publish setup in Live mode. |
+
+`[WARN]` is not a failure. Port 5050 while the Control Center is open, an
+unused adapter, and the optional second reviewer identity are expected warnings
+when those capabilities are not part of the selected path.
+
+If an attendee sees the same combination as the sample failure—wrong local
+branch, Codex unavailable while Claude passes, and `No module named pytest`—use
+this exact order:
+
+1. Run `git status`; commit or stash work that must be kept.
+2. Run `git fetch origin`, `git switch main`, and
+   `git pull --ff-only origin main`.
+3. Select **Claude workshop** in **Setup → Connection** and save, or sign in to
+   Codex if Codex is the intended adapter.
+4. Select **Run setup** to install the declared dependencies.
+5. Select **Run preflight** again and continue only when no `[FAIL]` remains.
 
 ### 2. Inspect the app
 
@@ -149,23 +198,23 @@ separates completed, current, and pending phases.
 
 **Check:** Each attendee can name one behavior that must survive the rebrand.
 
-### 3. Read the PRD
+### 3. Write requirements
 
 **Goal:** Express the change as a user outcome, not an implementation request.
 
-**Do:** Open **PRD** in the Control Center. Read the supplied TableStory PRD and
+**Do:** Open **Plan → Requirements**. Read the supplied TableStory PRD and
 identify the user, desired behavior, compatibility constraints, and observable
-success.
+success. The draft saves automatically; no Save button is required.
 
 **Check:** An attendee can explain the change in one sentence without describing code.
 
-### 4. Review product intent
+### 4. Approve Product Review
 
 **Goal:** Approve the problem and desired behavior before technical design.
 
-**Do:** Choose Rehearsal or Live agents and select **Start Product Review**.
-Open **Planning**, read the Product Review artifact, request a focused revision
-when a claim is vague, and approve it when the outcome is testable.
+**Do:** In **Plan → Requirements**, select **Start Product Review**. Open
+**Plan → Review plan**, read the Product Review artifact, request a focused
+revision when a claim is vague, and approve it when the outcome is testable.
 
 **Check:** The product artifact records a human approval.
 
@@ -173,7 +222,7 @@ when a claim is vague, and approve it when the outcome is testable.
 
 **Goal:** Align architecture, program design, and vertical slices before parallel work begins.
 
-**Do:** In **Planning**, select **Run remaining experts** and review four artifacts:
+**Do:** In **Plan → Review plan**, select **Run remaining experts** and review four artifacts:
 
 - Product review: problem, users, behavior, and success.
 - Architecture: components, contracts, data, and constraints.
@@ -182,19 +231,20 @@ when a claim is vague, and approve it when the outcome is testable.
 
 Select **Approve and create tickets** only after the requirements trace through
 all four artifacts. In Live mode, enter a new Project title or use the Project
-number saved on **Connect**.
+number saved in **Setup → Connection**.
 
 The planning adapters create normal workshop tickets from the PRD. Do not seed five tickets; seeding exists only for fixtures and recovery demonstrations.
 
 **Check:** GitHub Projects shows the approved slices as issues. In rehearsal, the dry run prints the issues that would be created.
 
-### 6. Approve tests
+### 6. Approve Acceptance Tests
 
 **Goal:** Define acceptance evidence before implementation.
 
-**Do:** Open **Tickets** and select **Run one cycle**. The QA adapter proposes
-tests for ready tickets before implementation begins. Open one ticket, inspect
-its Tests tab, and approve only assertions that prove user-visible behavior.
+**Do:** Open **Deliver → Tickets**, expand **Run options**, and select **Run one
+cycle**. The QA adapter proposes tests for ready tickets before implementation
+begins. Open one ticket, inspect its Tests tab, and approve only assertions that
+prove user-visible behavior.
 The focused command must fail for the missing behavior at the pre-implementation
 revision. Collection errors, timeouts, skipped tests, or unrelated failures are
 not valid evidence.
@@ -203,14 +253,15 @@ not valid evidence.
 **RED PROVED**. After implementation, the identical command must show
 **GREEN PROVED**.
 
-### 7. Run the factory
+### 7. Deliver tickets
 
 **Goal:** Observe supervised, isolated implementation, verification, review
 feedback, repair, approval, and merge.
 
-**Do:** Select **Run factory**, then open **Supervisor**. Follow one coordination
+**Do:** Select **Run factory**, then open **More tools → Supervisor activity**.
+Follow one coordination
 checkpoint from worker Handoff Receipts to the supervisor's dispatch instruction
-and the orchestrator's validated state change. Return to **Tickets** and follow
+and the orchestrator's validated state change. Return to **Deliver → Tickets** and follow
 the selected Ticket. Show its remote claim, supervisor instruction, exact
 prompt, live log, diff, protected tests, gate output, Code Review role decision,
 Handoff Receipts, and history. In the deterministic run, Ticket #1 receives
@@ -228,7 +279,12 @@ owns the remote claim, this runner must not start a duplicate agent.
 worker evidence → review comment → repair → approval → Supervisor recommendation
 → human merge.
 
-### 8. Verify and monitor
+For the optional issue-listener demonstration, open **Run options → Listen for
+new issues**. Its first start records the existing backlog without importing
+it. Create a new GitHub issue afterward, then review the proposed acceptance
+criteria and dependencies before admitting it.
+
+### 8. Review the app
 
 **Goal:** Check the integrated product, not only individual tickets.
 
@@ -240,9 +296,10 @@ node --test demo-app/static/tests/*.test.js
 .factory/venv/bin/python demo-app/app.py
 ```
 
-Then open **Evidence**, complete the Factory Canvas, and create the packet. Open
-**Monitor** and preview its read-only findings. Monitor can propose follow-up
-work; it cannot repair code or merge in the same run.
+Then open **Review → Run app** to start the integrated product and generate the
+Evidence Packet. Open **More tools → Repository monitor** to preview read-only
+findings. Monitor can propose follow-up work; it cannot repair code or merge in
+the same run.
 
 **Check:** The integrated app works, the Evidence Packet explains the governed
 revision and human decision, and every Monitor finding has an owner.

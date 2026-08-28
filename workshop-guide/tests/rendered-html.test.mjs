@@ -22,10 +22,10 @@ test("server-renders the concise self-guided workshop", async () => {
   const html = await response.text();
   assert.match(html, /<title>Software \(re\)-Factory Workshop<\/title>/i);
   assert.match(html, /Software \(re\)-Factory workshop/);
-  assert.match(html, /Use the Control Center or CLI/);
-  assert.match(html, /Each step shows the action, result, and next check/);
+  assert.match(html, /Follow Setup, Plan, Deliver, and Review/);
+  assert.match(html, /tells you when to act and why it stopped/);
 
-  assert.match(html, /Check your tools/);
+  assert.match(html, /Install and sign in/);
   assert.match(html, /Python 3\.11/);
   assert.match(html, /Node\.js 20/);
   assert.match(html, /One personal GitHub product repository/);
@@ -33,7 +33,7 @@ test("server-renders the concise self-guided workshop", async () => {
   assert.match(html, /Rehearsal/);
   assert.match(html, /Live/);
   assert.match(html, /factory control-center/);
-  assert.match(html, /Open the Control Center/);
+  assert.match(html, /Start the Control Center/);
   assert.match(html, /Project Contract/);
   assert.match(html, /Terminal 2 — keep this running/);
   assert.match(html, /Factory Control Center: http:\/\/127\.0\.0\.1:5050/);
@@ -48,14 +48,14 @@ test("server-renders the concise self-guided workshop", async () => {
   assert.match(html, /Continue when/);
 
   for (const heading of [
-    "Connect a repository",
-    "Check the starting repository",
-    "Save the PRD",
-    "Review the product plan",
-    "Publish tickets",
-    "Review QA tests",
-    "Run tickets",
-    "Run the completed app",
+    "Finish Setup",
+    "Check the starting app",
+    "Write requirements",
+    "Approve Product Review",
+    "Create tickets",
+    "Approve Acceptance Tests",
+    "Deliver tickets",
+    "Review the completed app",
   ]) {
     assert.match(html, new RegExp(heading));
   }
@@ -77,6 +77,14 @@ test("server-renders the concise self-guided workshop", async () => {
   assert.match(html, /The coding agent changes an isolated Git worktree/);
   assert.match(html, /A required check still tests removed behavior/);
   assert.match(html, /Troubleshooting/);
+  assert.match(html, /Preflight failed: fix the first FAIL/);
+  assert.match(html, /Run setup/);
+  assert.match(html, /No module named pytest/);
+  assert.match(html, /git pull --ff-only origin main/);
+  assert.match(html, /Setup → Connection/);
+  assert.match(html, /Plan → Requirements/);
+  assert.match(html, /Deliver → Tickets/);
+  assert.match(html, /Review → Run app/);
 
   assert.match(html, /screenshots\/pocket-cinema-before\.webp/);
   assert.match(html, /screenshots\/control-center-connect\.jpg/);
@@ -86,6 +94,8 @@ test("server-renders the concise self-guided workshop", async () => {
   assert.match(html, /screenshots\/control-center-ticket-tests\.jpg/);
   assert.match(html, /screenshots\/control-center-overview\.jpg/);
   assert.match(html, /screenshots\/control-center-human-merge\.jpg/);
+  assert.match(html, /screenshots\/control-center-evidence\.jpg/);
+  assert.match(html, /screenshots\/control-center-preflight-failure\.jpg/);
 
   assert.doesNotMatch(html, /Start with one responsible delivery loop/);
   assert.doesNotMatch(html, /More agents are a cost/);
@@ -120,11 +130,10 @@ test("attendee page stays within its copy budget", async () => {
   assert.match(source, /screenshots\/github-project-board\.jpg/);
   assert.match(source, /gh repo create YOUR-REPOSITORY --private/);
   assert.match(source, /Seed the guided Pocket Cinema starter/);
-  assert.match(source, /New product:/);
-  assert.match(source, /agents create the product code from the tickets/);
+  assert.match(source, /Leave it clear for your own existing product/);
   assert.match(source, /repository contains only factory settings/);
   assert.match(source, /Retry ticket publication/);
-  assert.match(source, /retry reuses issues that were already created for this plan/);
+  assert.match(source, /retry reuses issues already created for this plan/);
   assert.match(source, /factory bootstrap-workshop --repo/);
   assert.doesNotMatch(source, /git push workshop main factory-baseline/);
   assert.doesNotMatch(source, /--template giolaq\/software-refactory-workshop/);
