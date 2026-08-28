@@ -182,6 +182,9 @@ options** and choose **Listen for new issues**. The status band reports whether
 the listener is starting, listening, degraded, or stopped, plus its baseline,
 admitted, and ignored counts.
 
+For a start-to-finish walkthrough, use the
+[Repository Issue Listener guide](ISSUE_LISTENER.md).
+
 On its first start, the listener records all current open issues as a baseline,
 so it never surprises an attendee by implementing an old backlog. Open a new
 GitHub issue after the status becomes **Listening** and use this body:

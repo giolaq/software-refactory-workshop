@@ -41,6 +41,8 @@ the factory; opening the HTML file directly does not provide live factory data.
   Handoff Receipts become validated supervisor dispatch commands and how a
   separate Code Review role requests repairs or approves an exact candidate
   before the Supervisor recommends that exact revision for a human merge.
+- Follow the [repository issue listener guide](factory/ISSUE_LISTENER.md) to
+  admit and implement new user-created GitHub issues from the Control Center.
 - Read the [simplified Control Center design](factory/CONTROL_CENTER_SIMPLIFIED_DESIGN.md)
   for its navigation, interaction hierarchy, and progressive-disclosure rules.
 - Read the [planning pipeline guide](factory/PLANNING.md) for prompts, artifacts,

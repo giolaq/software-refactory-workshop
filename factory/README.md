@@ -373,6 +373,10 @@ connected GitHub repository:
 ./factory/factory run --listen
 ```
 
+For the complete Control Center workflow, issue template, recovery steps, and
+troubleshooting, follow the
+[Repository Issue Listener guide](ISSUE_LISTENER.md).
+
 The first start records every currently open repository issue as a baseline.
 It does not import that existing backlog. Later open issues are triaged and
 added to the configured Factory Project. Issues created by Factory planning,
