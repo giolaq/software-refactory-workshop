@@ -5,6 +5,20 @@ tied to one coding agent, model, or execution environment. Use a built-in
 adapter, combine different adapters by role, or register a noninteractive
 command that invokes your own agent.
 
+The `bedrock-aws` preset is the hosted counterpart to the local Claude and
+Codex presets. It selects the built-in Amazon Bedrock adapter for planning,
+supervision, QA, implementation, and code review:
+
+```sh
+./factory/factory configure --preset bedrock-aws \
+  --github-repository https://github.com/YOUR-NAME/YOUR-REPOSITORY
+```
+
+Set `AWS_REGION` and `FACTORY_BEDROCK_MODEL_ID` when running the adapter outside
+the provided ECS task. In AWS, the task role supplies credentials; never add
+static AWS keys to `factory.toml`. The complete CloudFormation configuration is
+documented in `deploy/aws/README.md`.
+
 Configuration has five layers:
 
 | File | Commit it? | Use it for |

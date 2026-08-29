@@ -13,6 +13,7 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 import time
 from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
@@ -53,6 +54,15 @@ REVISION_STAGES = {
     "slices": "vertical_slices",
 }
 ID_PATTERN = re.compile(r"[A-Z][A-Z0-9_-]{0,31}")
+SUPPORTED_PLANNING_AGENTS = {"bedrock", "claude", "codex"}
+BEDROCK_ENVIRONMENT = (
+    "AWS_REGION", "AWS_DEFAULT_REGION", "AWS_CONTAINER_CREDENTIALS_RELATIVE_URI",
+    "AWS_CONTAINER_CREDENTIALS_FULL_URI", "AWS_CONTAINER_AUTHORIZATION_TOKEN",
+    "AWS_CONTAINER_AUTHORIZATION_TOKEN_FILE", "AWS_EC2_METADATA_DISABLED",
+    "AWS_CA_BUNDLE", "AWS_PROFILE", "AWS_CONFIG_FILE", "AWS_SHARED_CREDENTIALS_FILE",
+    "AWS_SDK_LOAD_CONFIG", "HTTPS_PROXY", "NO_PROXY", "FACTORY_BEDROCK_MODEL_ID",
+    "FACTORY_BEDROCK_MAX_TURNS",
+)
 
 
 def now() -> str:
@@ -913,6 +923,15 @@ def _run_stage_agent_impl(
             result, structured = _run_claude_agent(command, repo, prompt, log, stage)
             if result.returncode == 0 and structured is not None:
                 write_json(raw, structured)
+        elif planning_agent == "bedrock":
+            command = [sys.executable, agent_bin, "plan", "--schema", str(schema)]
+            result = subprocess.run(
+                command, cwd=repo, input=prompt, text=True, capture_output=True,
+                env=role_environment(*BEDROCK_ENVIRONMENT),
+            )
+            log.write_text(result.stderr)
+            if result.returncode == 0:
+                raw.write_text(result.stdout)
         else:
             raise ValueError(f"unsupported planning adapter: {planning_agent}")
         if planning_agent == "codex":
@@ -1543,8 +1562,8 @@ def continue_plan(
     elif planning_agent == "mock" and not mock:
         raise ValueError("this planning run uses deterministic fixtures; rerun with --mock")
     elif planning_agent_override:
-        if planning_agent_override not in {"claude", "codex"}:
-            raise ValueError("planning retry agent must be claude or codex")
+        if planning_agent_override not in SUPPORTED_PLANNING_AGENTS:
+            raise ValueError("planning retry agent must be bedrock, claude, or codex")
         if planning_agent_override != planning_agent:
             manifest.setdefault("planning_agent_history", []).append({
                 "from": planning_agent,

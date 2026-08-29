@@ -32,6 +32,12 @@ Open <http://127.0.0.1:5050>. The Control Center guides the complete workflow,
 shows the exact CLI command behind every action, and streams its output. Choose
 **Rehearsal** to use deterministic agents without credentials or GitHub writes.
 
+For a persistent single-repository deployment, use the
+[AWS + GitHub CloudFormation edition](../deploy/aws/README.md). It runs the
+authenticated Control Center on ECS Fargate, persists worktrees and state on
+EFS, sends logs to CloudWatch, and adds a native Amazon Bedrock adapter without
+changing the local CLI contract.
+
 The equivalent CLI-only smoke run is:
 
 ```sh

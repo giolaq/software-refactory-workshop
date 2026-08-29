@@ -5,6 +5,7 @@ agent_timeout = 900
 gate_timeout = 300
 
 [agents]
+bedrock = '{python} {factory_dir}/bedrock_adapter.py run --prompt {prompt} --workspace {worktree}'
 claude = 'claude -p "$(cat {prompt})" --permission-mode acceptEdits'
 codex = '{codex} exec --sandbox workspace-write --ephemeral "$(cat {prompt})"'
 cursor = 'cursor-agent -p "$(cat {prompt})"'
@@ -12,6 +13,17 @@ mock = '{python} {factory_dir}/mock_agent.py {ticket} --scenario {scenario} --at
 mock-qa = '{python} {factory_dir}/mock_qa_agent.py {ticket} --scenario {scenario} < {prompt}'
 mock-supervisor = '{python} {factory_dir}/mock_supervisor.py {prompt}'
 mock-review = '{python} {factory_dir}/mock_review_agent.py {ticket} {prompt} --attempt {attempt}'
+
+[agent_capabilities.bedrock]
+protocol_version = 1
+features = ["structured-planning", "native-read-only", "container-execution"]
+execution_environment = "container"
+filesystem_mode = "workspace-write"
+allowed_working_roots = ["worktree"]
+network_expectation = "provider-only"
+environment_allowlist = ["PATH", "HOME", "TMPDIR", "LANG", "AWS_REGION", "AWS_DEFAULT_REGION", "AWS_CONTAINER_CREDENTIALS_RELATIVE_URI", "AWS_CONTAINER_CREDENTIALS_FULL_URI", "AWS_CONTAINER_AUTHORIZATION_TOKEN", "AWS_CONTAINER_AUTHORIZATION_TOKEN_FILE", "AWS_EC2_METADATA_DISABLED", "AWS_CA_BUNDLE", "AWS_PROFILE", "AWS_CONFIG_FILE", "AWS_SHARED_CREDENTIALS_FILE", "AWS_SDK_LOAD_CONFIG", "HTTPS_PROXY", "NO_PROXY", "FACTORY_BEDROCK_MODEL_ID", "FACTORY_BEDROCK_MAX_TURNS"]
+credential_names = []
+read_only_template = '{python} {factory_dir}/bedrock_adapter.py run --prompt {prompt} --workspace {worktree} --read-only'
 
 [agent_capabilities.claude]
 protocol_version = 1

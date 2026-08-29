@@ -17,6 +17,7 @@ import argparse
 import concurrent.futures
 import fnmatch
 import hashlib
+import importlib.util
 import json
 import os
 import re
@@ -108,6 +109,7 @@ from issue_listener import (
 )
 from session_config import (
     FACTORY_PROFILES,
+    PLANNING_AGENTS,
     PRESETS,
     configure_session,
     load_session_config,
@@ -1398,6 +1400,14 @@ def resolve_codex_cli() -> str:
 def resolve_planning_cli(agent: str) -> str:
     if agent == "codex":
         return resolve_codex_cli()
+    if agent == "bedrock":
+        if not (os.environ.get("AWS_REGION") or os.environ.get("AWS_DEFAULT_REGION")):
+            raise RuntimeError("Bedrock planning requires AWS_REGION or AWS_DEFAULT_REGION.")
+        if not os.environ.get("FACTORY_BEDROCK_MODEL_ID"):
+            raise RuntimeError("Bedrock planning requires FACTORY_BEDROCK_MODEL_ID.")
+        if importlib.util.find_spec("boto3") is None:
+            raise RuntimeError("Bedrock planning requires boto3. Install it, then retry.")
+        return str(Path(__file__).with_name("bedrock_adapter.py"))
     if agent != "claude":
         raise ValueError(f"unsupported planning adapter: {agent}")
     binary = shutil.which("claude")
@@ -6497,7 +6507,7 @@ def parser():
     configure.add_argument("--qa-agent", help="registered independent QA adapter name")
     configure.add_argument("--supervisor-agent", help="registered adapter that coordinates ticket dispatch")
     configure.add_argument("--review-agent", help="registered adapter that reviews candidate pull-request diffs")
-    configure.add_argument("--planning-agent", choices=["claude", "codex"])
+    configure.add_argument("--planning-agent", choices=sorted(PLANNING_AGENTS))
     configure.add_argument(
         "--review-qa-tests", action=argparse.BooleanOptionalAction, default=None,
         help="pause for human review after QA writes acceptance tests",
@@ -6632,7 +6642,7 @@ def parser():
     )
     release_check.add_argument(
         "--live-agent",
-        choices=["claude", "codex"],
+        choices=sorted(PLANNING_AGENTS),
         default="claude",
         help="Agent Adapter used for Live planning, QA, implementation, and supervision",
     )
@@ -6742,7 +6752,7 @@ def parser():
     plan.add_argument("prd"); plan.add_argument("--repo", default="."); plan.add_argument("--output")
     plan.add_argument("--profile", choices=sorted(FACTORY_PROFILES))
     plan.add_argument("--default-agent", help="registered adapter written into generated tickets")
-    plan.add_argument("--planning-agent", choices=["claude", "codex"])
+    plan.add_argument("--planning-agent", choices=sorted(PLANNING_AGENTS))
     plan.add_argument("--min-tickets", type=int, default=3); plan.add_argument("--max-tickets", type=int, default=12)
     plan.add_argument("--mock", action="store_true", help="use bundled deterministic planning artifacts")
     plan.add_argument(
@@ -6768,7 +6778,7 @@ def parser():
     continue_p = sub.add_parser("continue-plan", help="run architecture, program design, and vertical-slice experts")
     continue_p.add_argument("plan"); continue_p.add_argument("--repo", default=".")
     continue_p.add_argument(
-        "--planning-agent", choices=["claude", "codex"],
+        "--planning-agent", choices=sorted(PLANNING_AGENTS),
         help="retry blocked planning with a different configured adapter",
     )
     continue_p.add_argument("--mock", action="store_true", help="use bundled deterministic planning artifacts")
@@ -6815,7 +6825,7 @@ def parser():
     doctor.add_argument("--qa-agent", help="registered independent QA adapter name")
     doctor.add_argument("--supervisor-agent", help="registered ticket-supervisor adapter name")
     doctor.add_argument("--review-agent", help="registered pull-request code-review adapter name")
-    doctor.add_argument("--planning-agent", choices=["claude", "codex"])
+    doctor.add_argument("--planning-agent", choices=sorted(PLANNING_AGENTS))
     return p
 
 

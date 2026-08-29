@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import importlib.util
 import json
 import os
 import shutil
@@ -335,6 +336,8 @@ class DiagnosticSuite:
             "claude": self._probe_claude,
             "cursor": self._probe_cursor,
         }
+        if "bedrock" in required_agents:
+            probes["bedrock"] = self._probe_bedrock
         for name, probe in probes.items():
             available, detail = probe()
             required = name in required_agents
@@ -384,6 +387,18 @@ class DiagnosticSuite:
     def _probe_cursor() -> tuple[bool, str]:
         found = shutil.which("cursor-agent")
         return bool(found), found or "not installed"
+
+    @staticmethod
+    def _probe_bedrock() -> tuple[bool, str]:
+        region = os.environ.get("AWS_REGION") or os.environ.get("AWS_DEFAULT_REGION")
+        model = os.environ.get("FACTORY_BEDROCK_MODEL_ID", "").strip()
+        if not region:
+            return False, "set AWS_REGION or AWS_DEFAULT_REGION"
+        if not model:
+            return False, "set FACTORY_BEDROCK_MODEL_ID"
+        if importlib.util.find_spec("boto3") is None:
+            return False, "install boto3"
+        return True, f"{model} in {region}; credentials resolved by the AWS SDK at invocation"
 
     def _collect_execution_boundaries(self, required_agents: set[str | None]) -> None:
         for name in sorted(item for item in required_agents if item):

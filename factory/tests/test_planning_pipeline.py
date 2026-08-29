@@ -374,6 +374,34 @@ class PlanningPipelineTests(unittest.TestCase):
         self.assertEqual(manifest["planning_agent"], "claude")
         self.assertEqual(manifest["stages"]["product_review"]["agent"], "claude")
 
+    def test_bedrock_planner_uses_the_schema_adapter_without_github_credentials(self):
+        product = (FIXTURES / "01-product-review.json").read_text()
+        result = subprocess.CompletedProcess(["python", "bedrock"], 0, product, "Bedrock usage recorded\n")
+        environment = {
+            "AWS_REGION": "eu-west-2",
+            "FACTORY_BEDROCK_MODEL_ID": "test-model",
+            "GH_TOKEN": "must-not-leak",
+        }
+        with (
+            patch.dict("os.environ", environment, clear=True),
+            patch("planning_pipeline.subprocess.run", return_value=result) as invoked,
+        ):
+            run = plan_prd(
+                self.repo, self.prd, None, "bedrock", 3, 12,
+                "bedrock", str(self.repo / "factory/bedrock_adapter.py"), mock=False,
+            )
+
+        bedrock_call = next(call for call in invoked.call_args_list if "plan" in call.args[0])
+        command = bedrock_call.args[0]
+        self.assertIn("plan", command)
+        self.assertIn("--schema", command)
+        passed_environment = bedrock_call.kwargs["env"]
+        self.assertEqual(passed_environment["AWS_REGION"], "eu-west-2")
+        self.assertNotIn("GH_TOKEN", passed_environment)
+        manifest = load_manifest(run)
+        self.assertEqual(manifest["planning_agent"], "bedrock")
+        self.assertEqual(manifest["stages"]["product_review"]["agent"], "bedrock")
+
     def test_planning_schemas_expose_runtime_identifier_rules(self):
         id_pattern = "^[A-Z][A-Z0-9_-]{0,31}$"
         ticket_pattern = "^[A-Z][A-Z0-9_-]{0,15}$"

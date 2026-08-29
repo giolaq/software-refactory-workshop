@@ -190,7 +190,7 @@ function section(body, title) {
 function populateAgentSelects(adapters, config) {
   $$('[data-agent-select]').forEach((select) => {
     const role = select.dataset.agentSelect;
-    const allowed = role === "planning" ? adapters.filter((item) => ["claude", "codex"].includes(item)) : adapters.filter((item) => !item.startsWith("mock"));
+    const allowed = role === "planning" ? adapters.filter((item) => ["bedrock", "claude", "codex"].includes(item)) : adapters.filter((item) => !item.startsWith("mock"));
     const configured = { qa: config.qa_agent, planning: config.planning_agent, supervisor: config.supervisor_agent, review: config.review_agent, implementation: config.agent }[role];
     const previous = select.value || configured || "codex";
     select.innerHTML = allowed.map((item) => `<option value="${esc(item)}">${esc(item[0].toUpperCase() + item.slice(1))}</option>`).join("");
@@ -547,7 +547,7 @@ function renderExpertPanel(item) {
     const validationFailure = item.failure_kind === "validation";
     const currentAgent = app.snapshot?.planning?.planning_agent || "";
     const recovery = app.snapshot?.planning?.recovery || {};
-    const fallbackAgents = recovery.alternative_adapters || (app.snapshot?.adapters || []).filter((agent) => ["claude", "codex"].includes(agent) && agent !== currentAgent);
+    const fallbackAgents = recovery.alternative_adapters || (app.snapshot?.adapters || []).filter((agent) => ["bedrock", "claude", "codex"].includes(agent) && agent !== currentAgent);
     const fallback = fallbackAgents.length ? `<div class="approval-card"><label><b>Use another planning adapter</b><select id="planning-retry-agent">${fallbackAgents.map((agent) => `<option value="${esc(agent)}">${esc(agent[0].toUpperCase() + agent.slice(1))}</option>`).join("")}</select></label><div class="approval-actions"><button class="button button-primary" type="button" id="retry-planning-with-agent">Fix with ${esc((recovery.recommended_adapter || fallbackAgents[0])[0].toUpperCase() + (recovery.recommended_adapter || fallbackAgents[0]).slice(1))}</button></div><p class="field-help">Switch adapter and continue from the approved upstream artifacts. The factory records the adapter change in the planning manifest.</p></div>` : "";
     const suggestedCorrection = `Return a complete corrected ${item.title} artifact that satisfies this validator error: ${item.validation_error || item.error}`;
     const correction = validationFailure ? `<div class="approval-card"><label><b>Correction sent to the expert</b><textarea id="planning-recovery-feedback">${esc(suggestedCorrection)}</textarea></label><div class="approval-actions"><button class="button button-primary" type="button" id="apply-planning-correction">${item.id === "product_review" ? "Apply correction" : "Apply correction and continue"}</button></div><p class="field-help">Edit the instruction if needed. The factory uses the rejected artifact as the revision source, validates the replacement, and resumes only after it passes.</p></div>` : "";

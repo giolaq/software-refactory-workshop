@@ -17,6 +17,12 @@ changing the Product, Ticket, evidence, or human-decision contracts.
 | Outer harness | Agent Roles, Factory Profile, Charter, planning, QA, retries, review, and Handoff Receipts | approved policy and revision-bound evidence | workshop team or delivery owner |
 | Control plane | Orchestrator, Control Center, GitHub Projects, claims, triggers, and Supervisor | lifecycle state, decisions, claims, bounded remote summaries | factory operator |
 
+The AWS deployment replaces compute and authentication without replacing the
+interfaces above. One Fargate task hosts the control plane, EFS persists the
+development workspace, an ALB and Cognito authenticate operators, and the
+`bedrock` Agent Adapter supplies the inner harness. GitHub remains the durable
+human collaboration system. See `deploy/aws/README.md`.
+
 The local provider and Git worktrees isolate changes for coordination. They are
 not a security sandbox. Use a container or hosted isolation provider when
 untrusted code must not share the operator's machine.
@@ -83,6 +89,19 @@ Run the conformance report for every configured adapter:
 See `factory/examples/custom-adapter.toml` and
 `factory/examples/custom_protocol_adapter.py` for a minimal protocol-aware
 adapter.
+
+### Amazon Bedrock adapter
+
+The built-in `bedrock` adapter is the cloud inner harness. It uses Bedrock
+Converse with schema-constrained output for planning and a bounded repository
+tool surface for other roles. The adapter may list, read, search, write, or
+delete within the assigned worktree; it does not expose an arbitrary command
+tool. Approved setup and verification commands remain the outer harness's
+responsibility.
+
+Bedrock receives task-role credentials through the AWS container credential
+provider. The adapter capability declaration does not forward `GH_TOKEN`, so
+model-controlled file operations cannot use the factory's GitHub identity.
 
 ## Development-environment provider
 

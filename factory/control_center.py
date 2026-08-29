@@ -28,6 +28,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path, PurePosixPath
 from urllib.parse import parse_qs, urlparse
 
+from control_center_access import ControlCenterAccessPolicy
+
 from session_config import (
     AGENT_NAME,
     FACTORY_PROFILES,
@@ -67,7 +69,7 @@ from triage import declared_paths
 
 PLAN_ID = re.compile(r"[a-f0-9]{8,64}")
 SCENARIOS = {"recipe-rebrand", "tv"}
-DEFAULT_AGENTS = {"claude", "codex", "cursor", "mock", "mock-qa", "mock-supervisor", "mock-review"}
+DEFAULT_AGENTS = {"bedrock", "claude", "codex", "cursor", "mock", "mock-qa", "mock-supervisor", "mock-review"}
 REVISION_STAGE_ALIASES = {
     "product_review": "product",
     "system_architecture": "architecture",
@@ -152,6 +154,10 @@ class InputError(ValueError):
 
 class ControlCenter:
     def __init__(self, repo: Path):
+        try:
+            self.access_policy = ControlCenterAccessPolicy.from_environment()
+        except ValueError as exc:
+            raise InputError(str(exc)) from exc
         self.control_repo = repo.resolve()
         repository_factory = self.control_repo / "factory" / "factory"
         self.factory = (
@@ -1762,7 +1768,7 @@ class ControlCenter:
             planning = self._string(payload, "planning_agent")
             if planning:
                 if planning not in PLANNING_AGENTS:
-                    raise InputError("Planning must use Claude or Codex.")
+                    raise InputError("Planning must use Bedrock, Claude, or Codex.")
                 command += ["--planning-agent", planning]
             parallel = self._positive_int(payload, "max_parallel")
             project = self._positive_int(payload, "project_number")
@@ -2486,18 +2492,18 @@ class Handler(BaseHTTPRequestHandler):
         return value
 
     def _trusted_request(self):
-        host = self.headers.get("Host", "").split(":", 1)[0].strip("[]").lower()
-        if host not in {"127.0.0.1", "localhost"}:
-            raise InputError("The Control Center accepts requests only from this computer.")
-        origin = self.headers.get("Origin")
-        if origin:
-            origin_host = urlparse(origin).hostname
-            if origin_host not in {"127.0.0.1", "localhost"}:
-                raise InputError("Cross-origin Control Center requests are not allowed.")
+        try:
+            self.server.center.access_policy.validate_request(self.headers)
+        except ValueError as exc:
+            raise InputError(str(exc)) from exc
 
     def do_GET(self):
         parsed = urlparse(self.path)
         try:
+            # The load balancer reaches this endpoint directly.  It contains no
+            # repository data and intentionally sits outside browser auth.
+            if parsed.path == "/healthz":
+                return self._json({"status": "healthy"})
             self._trusted_request()
             if parsed.path == "/api/snapshot":
                 return self._json(self.server.center.snapshot())
@@ -2602,9 +2608,11 @@ class ControlCenterServer(ThreadingHTTPServer):
 
 
 def serve(repo: Path, host="127.0.0.1", port=5050, open_browser=True):
-    if host not in {"127.0.0.1", "localhost"}:
-        raise InputError("The unauthenticated Control Center must bind to localhost.")
     center = ControlCenter(repo)
+    try:
+        center.access_policy.validate_bind_host(host)
+    except ValueError as exc:
+        raise InputError(str(exc)) from exc
     server = ControlCenterServer((host, port), center)
     url = f"http://{host}:{server.server_port}"
     print(f"Factory Control Center: {url}", flush=True)

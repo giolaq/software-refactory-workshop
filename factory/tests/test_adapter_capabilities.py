@@ -16,6 +16,30 @@ from project_contract import ProjectContract
 
 
 class AdapterCapabilityTests(unittest.TestCase):
+    def test_bedrock_boundary_forwards_task_credentials_but_not_github_token(self):
+        capabilities = load_capabilities({
+            "bedrock": {
+                "execution_environment": "container",
+                "environment_allowlist": [
+                    "AWS_REGION", "AWS_CONTAINER_CREDENTIALS_RELATIVE_URI",
+                    "FACTORY_BEDROCK_MODEL_ID",
+                ],
+            },
+        }, {"bedrock": "bedrock {prompt}"})
+        factory = Factory.__new__(Factory)
+        factory.capabilities = capabilities
+        with mock.patch.dict(os.environ, {
+            "AWS_REGION": "eu-west-2",
+            "AWS_CONTAINER_CREDENTIALS_RELATIVE_URI": "/v2/credentials/id",
+            "FACTORY_BEDROCK_MODEL_ID": "model",
+            "GH_TOKEN": "must-not-leak",
+        }, clear=True):
+            environment = factory.adapter_environment("bedrock")
+
+        self.assertEqual(environment["AWS_REGION"], "eu-west-2")
+        self.assertIn("AWS_CONTAINER_CREDENTIALS_RELATIVE_URI", environment)
+        self.assertNotIn("GH_TOKEN", environment)
+
     def test_role_environment_omits_unrelated_credentials(self):
         capabilities = load_capabilities({
             "worker": {

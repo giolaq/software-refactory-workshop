@@ -33,6 +33,15 @@ Start the local Control Center with:
 Then use <http://127.0.0.1:5050/>. Keep that process running while operating
 the factory; opening the HTML file directly does not provide live factory data.
 
+To run the same single-repository factory with an authenticated Control Center,
+durable worktrees, CloudWatch logs, and a native Amazon Bedrock adapter, follow
+the [AWS + GitHub deployment guide](deploy/aws/README.md). The CloudFormation
+edition keeps GitHub as the Issue, Project, pull-request, and merge system of
+record; it does not change the local workshop path.
+
+Use the [step-by-step AWS installation guide](deploy/aws/INSTALL.md) when
+setting up the cloud edition for the first time.
+
 - Start the self-guided experience with the [workshop website](workshop-guide/README.md).
 - Use the [factory quickstart](factory/README.md) for the operator reference.
 - Use the [configuration guide](factory/CONFIGURATION.md) to select Claude,

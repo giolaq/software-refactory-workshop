@@ -479,8 +479,8 @@ def run_live_github_smoke(repo: Path, confirmed: bool, agent: str = "claude") ->
     """Exercise live adapter delivery and deterministic review rework in a disposable repo."""
     if not confirmed:
         raise ValueError("live smoke requires --confirm-disposable-repo")
-    if agent not in {"claude", "codex"}:
-        raise ValueError("live smoke agent must be claude or codex")
+    if agent not in {"bedrock", "claude", "codex"}:
+        raise ValueError("live smoke agent must be bedrock, claude, or codex")
     if not shutil.which("gh"):
         raise RuntimeError("GitHub CLI is required for the live smoke test")
 

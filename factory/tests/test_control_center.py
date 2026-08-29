@@ -2124,6 +2124,16 @@ class ControlCenterTests(unittest.TestCase):
         self.assertIn('$("#continue-plan").hidden = !planning.can_continue', javascript)
         self.assertIn("grid-template-columns: repeat(4,1fr)", styles)
 
+    def test_cloud_control_center_exposes_bedrock_preset_and_planning_adapter(self):
+        frontend = Path(__file__).parents[1] / "control_center"
+        source = (frontend / "index.html").read_text()
+        javascript = (frontend / "app.js").read_text()
+
+        self.assertIn('value="bedrock-aws">Amazon Bedrock on AWS', source)
+        self.assertIn('Bedrock, Claude, Codex, Cursor, or custom', source)
+        self.assertIn('["bedrock", "claude", "codex"].includes(item)', javascript)
+        self.assertIn('["bedrock", "claude", "codex"].includes(agent)', javascript)
+
     def test_factory_progress_pulses_only_the_current_running_phase(self):
         frontend = Path(__file__).parents[1] / "control_center"
         source = (frontend / "index.html").read_text()
