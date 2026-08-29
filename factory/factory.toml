@@ -8,12 +8,14 @@ gate_timeout = 300
 claude = 'claude -p "$(cat {prompt})" --permission-mode acceptEdits'
 codex = '{codex} exec --sandbox workspace-write --ephemeral "$(cat {prompt})"'
 cursor = 'cursor-agent -p "$(cat {prompt})"'
-mock = '{python} {factory_dir}/mock_agent.py {ticket} --scenario {scenario} --attempt {attempt}'
-mock-qa = '{python} {factory_dir}/mock_qa_agent.py {ticket} --scenario {scenario}'
+mock = '{python} {factory_dir}/mock_agent.py {ticket} --scenario {scenario} --attempt {attempt} < {prompt}'
+mock-qa = '{python} {factory_dir}/mock_qa_agent.py {ticket} --scenario {scenario} < {prompt}'
 mock-supervisor = '{python} {factory_dir}/mock_supervisor.py {prompt}'
 mock-review = '{python} {factory_dir}/mock_review_agent.py {ticket} {prompt} --attempt {attempt}'
 
 [agent_capabilities.claude]
+protocol_version = 1
+features = ["structured-planning", "native-read-only", "subagents"]
 execution_environment = "local"
 filesystem_mode = "workspace-write"
 allowed_working_roots = ["worktree"]
@@ -23,6 +25,8 @@ credential_names = []
 read_only_template = 'claude -p "$(cat {prompt})" --permission-mode plan'
 
 [agent_capabilities.codex]
+protocol_version = 1
+features = ["structured-planning", "native-read-only", "subagents"]
 execution_environment = "local"
 filesystem_mode = "workspace-write"
 allowed_working_roots = ["worktree"]
@@ -32,6 +36,8 @@ credential_names = []
 read_only_template = '{codex} exec --sandbox read-only --ephemeral "$(cat {prompt})"'
 
 [agent_capabilities.cursor]
+protocol_version = 1
+features = []
 execution_environment = "local"
 filesystem_mode = "workspace-write"
 allowed_working_roots = ["worktree"]
@@ -40,6 +46,8 @@ environment_allowlist = ["PATH", "HOME", "TMPDIR", "LANG", "TERM"]
 credential_names = []
 
 [agent_capabilities.mock]
+protocol_version = 1
+features = []
 execution_environment = "local"
 filesystem_mode = "workspace-write"
 allowed_working_roots = ["worktree"]
@@ -49,6 +57,8 @@ credential_names = []
 read_only_template = '{python} {factory_dir}/mock_agent.py {ticket} --scenario {scenario} --attempt {attempt}'
 
 [agent_capabilities."mock-qa"]
+protocol_version = 1
+features = []
 execution_environment = "local"
 filesystem_mode = "workspace-write"
 allowed_working_roots = ["worktree"]
@@ -57,6 +67,8 @@ environment_allowlist = ["PATH", "HOME", "TMPDIR", "LANG"]
 credential_names = []
 
 [agent_capabilities."mock-supervisor"]
+protocol_version = 1
+features = ["native-read-only"]
 execution_environment = "local"
 filesystem_mode = "read-only"
 allowed_working_roots = ["repository"]
@@ -65,6 +77,8 @@ environment_allowlist = ["PATH", "HOME", "TMPDIR", "LANG"]
 credential_names = []
 
 [agent_capabilities."mock-review"]
+protocol_version = 1
+features = ["native-read-only"]
 execution_environment = "local"
 filesystem_mode = "read-only"
 allowed_working_roots = ["worktree"]

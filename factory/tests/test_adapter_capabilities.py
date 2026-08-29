@@ -64,6 +64,23 @@ class AdapterCapabilityTests(unittest.TestCase):
         }, {"worker": "worker {prompt}"})["worker"]
         self.assertTrue(capability.supports_read_only)
 
+    def test_protocol_features_are_versioned_and_queryable(self):
+        capability = load_capabilities({
+            "worker": {
+                "protocol_version": 1,
+                "features": ["progress-events", "usage-telemetry", "browser"],
+            },
+        }, {"worker": "worker --assignment {assignment} --prompt {prompt}"})["worker"]
+
+        self.assertEqual(capability.protocol_version, 1)
+        self.assertTrue(capability.supports("progress-events"))
+        self.assertFalse(capability.supports("session-resume"))
+
+        with self.assertRaisesRegex(ValueError, "features"):
+            load_capabilities({
+                "worker": {"features": ["hidden-reasoning"]},
+            }, {"worker": "worker {prompt}"})
+
 
 if __name__ == "__main__":
     unittest.main()

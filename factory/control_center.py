@@ -51,10 +51,14 @@ from planning_presentation import (
     planning_recovery,
 )
 from project_contract import CONTRACT_PATH, ProjectContract, ProjectContractError
+from environment_provider import EnvironmentProviderError, LocalEnvironmentProvider
+from merge_steward import MergeSteward
+from workspace_contract import WorkspaceContract, WorkspaceContractError
 from orchestrator import (
     current_runtime_is_latest,
     factory_execution_mode,
     latest_recovery_checkpoint,
+    load_config,
     ticket_diff_budget,
     ticket_recovery,
 )
@@ -74,18 +78,45 @@ MAX_BODY = 256_000
 MAX_ARTIFACT = 512_000
 MAX_PLANNING_FEEDBACK = 12_000
 ACTION_REGISTRY = frozenset({
-    "doctor", "init-project", "approve-charter", "publish-setup", "prepare-project",
+    "doctor", "init-project", "approve-charter", "publish-setup",
     "configure", "plan", "restart-plan", "revise-product", "revise-stage",
     "approve-product", "approve-stage", "continue-plan", "publish-plan",
     "approve-tests", "request-test-changes", "merge",
     "run", "run-once", "dry-run", "retry", "save-ticket-and-retry",
     "release-claim", "evidence", "start-app",
     "monitor", "publish-monitor", "recover-latest", "reset-run", "reset-all",
-    "listen",
+    "listen", "environment-provision", "environment-prepare",
+    "environment-health", "environment-reset",
+    "improve-report", "workspace-check",
+    "approve-intake",
+    "steward-sync",
 })
+ACTION_BUILDERS = {
+    **dict.fromkeys({
+        "doctor", "init-project", "approve-charter", "publish-setup",
+        "start-app", "environment-provision", "environment-prepare",
+        "environment-health", "environment-reset", "improve-report",
+        "workspace-check", "approve-intake", "steward-sync",
+    }, "_build_setup_command"),
+    "configure": "_build_configure_command",
+    **dict.fromkeys({
+        "plan", "restart-plan", "revise-product", "revise-stage",
+        "approve-product", "approve-stage", "continue-plan", "publish-plan",
+    }, "_build_planning_command"),
+    **dict.fromkeys({
+        "approve-tests", "request-test-changes", "merge", "run", "listen",
+        "run-once", "dry-run",
+    }, "_build_delivery_command"),
+    "save-ticket-and-retry": "_build_ticket_correction_command",
+    "retry": "_build_retry_command",
+    **dict.fromkeys({
+        "release-claim", "evidence", "monitor", "publish-monitor",
+        "recover-latest", "reset-run", "reset-all",
+    }, "_build_operations_command"),
+}
 COMPANION_ACTIONS = frozenset({
     "approve-tests", "request-test-changes", "merge", "retry",
-    "save-ticket-and-retry",
+    "save-ticket-and-retry", "approve-intake", "steward-sync",
 })
 
 
@@ -201,6 +232,95 @@ class ControlCenter:
             except (OSError, tomllib.TOMLDecodeError):
                 pass
         return sorted(names)
+
+    def adapter_details(self) -> dict:
+        """Expose honest Adapter Protocol declarations without running a model."""
+        try:
+            config = load_config(self.repo)
+        except (OSError, ValueError, ProjectContractError):
+            return {}
+        return {
+            name: capability.as_dict()
+            for name, capability in sorted(config["agent_capabilities"].items())
+        }
+
+    def environment_snapshot(self) -> dict:
+        """Return provider-owned environment state without repairing drift."""
+        try:
+            return LocalEnvironmentProvider(self.repo).snapshot()
+        except (OSError, ValueError, ProjectContractError, EnvironmentProviderError) as exc:
+            return {
+                "schema_version": 1,
+                "provider": "local",
+                "status": "not-configured",
+                "actions": [],
+                "error": str(exc),
+            }
+
+    def workspace_snapshot(self) -> dict:
+        try:
+            return WorkspaceContract.load(self.repo).check()
+        except (OSError, ValueError, WorkspaceContractError) as exc:
+            return {
+                "schema_version": 1,
+                "status": "blocked",
+                "configured": False,
+                "checks": [],
+                "recovery_action": str(exc),
+                "may_dispatch": False,
+            }
+
+    def improvements_snapshot(self) -> dict:
+        report = read_json(self.repo / ".factory/improvements/report.json", {})
+        if not report:
+            return {
+                "schema_version": 1,
+                "status": "not-generated",
+                "suggestions": [],
+                "observation_count": 0,
+            }
+        return {**report, "status": "review-required" if report.get("suggestions") else "current"}
+
+    def triggers_snapshot(self) -> dict:
+        records = []
+        for path in sorted((self.repo / ".factory/triggers").glob("*.json")):
+            value = read_json(path, {})
+            if value:
+                records.append({
+                    key: value.get(key)
+                    for key in ("trigger_id", "source", "event_id", "status", "received_at")
+                })
+        return {"proposal_count": len(records), "latest": records[-10:]}
+
+    @staticmethod
+    def merge_steward_snapshot(ticket: dict) -> dict:
+        if ticket.get("status") != "In Review":
+            return {"state": "not-applicable", "merge_authority": "human", "may_merge": False}
+        head = str(ticket.get("pr_head") or ticket.get("approved_head") or "")
+        review = ticket.get("code_review") or {}
+        result = review.get("result") if isinstance(review.get("result"), dict) else {}
+        return MergeSteward().assess({
+            "candidate_head": head,
+            "reviewed_head": str(ticket.get("approved_head") or review.get("candidate_sha") or ""),
+            "candidate_base": ticket.get("base_sha", ""),
+            "default_branch_head": ticket.get("base_sha", ""),
+            "required_gates": [
+                {
+                    "name": gate.get("name", "gate"),
+                    "status": "passed" if gate.get("classification") == "PASS" else "failed",
+                    "revision": head,
+                }
+                for gate in ticket.get("gate_results", []) if gate.get("required", True)
+            ],
+            "review_decision": (
+                "approved" if str(result.get("decision") or "").upper() == "APPROVE" else "changes-requested"
+            ),
+            "unresolved_comments": result.get("comments", []),
+            "protected_paths_changed": bool(ticket.get("protected_paths_changed")),
+            "acceptance_evidence_sha256": ticket.get("qa_commit", ""),
+            "reviewed_acceptance_evidence_sha256": ticket.get("qa_commit", ""),
+            "branch_protection": ticket.get("branch_protection", "passed"),
+        })
 
     def repo_info(self) -> dict:
         raw_remote = run_text(["git", "remote", "get-url", "origin"], self.repo)
@@ -733,15 +853,226 @@ class ControlCenter:
             ),
             lines[-1] if lines else "",
         )
+        layer = "Control plane"
+        recovery_prefix = "Repair the Control Center or GitHub connection."
+        if action.startswith("environment-") or any(
+            marker in lowered for marker in (
+                "required tool", "no module named", "port ", "project contract",
+                "dependency", "command not found",
+            )
+        ):
+            layer = "Development environment"
+            recovery_prefix = "Correct the Project Contract, tool, dependency, service, or port check."
+        elif any(marker in lowered for marker in (
+            "adapter not found", "not signed in", "auth login", "claude", "codex", "cursor",
+        )):
+            layer = "Inner harness"
+            recovery_prefix = "Install or sign in to the selected Agent Adapter, then run its preflight again."
+        elif any(marker in lowered for marker in ("factory charter", "policy", "governance")):
+            layer = "Outer harness"
+            recovery_prefix = "Review and approve the versioned policy contract before dispatch."
         suffix = f" Last output: {diagnostic[:300]}" if diagnostic else ""
         subject = "Application startup" if action == "start-app" else "The operation"
         return {
-            "cause": f"{subject} exited with code {exit_code if exit_code is not None else 'unknown'}.{suffix}",
+            "cause": (
+                f"{layer} failure. {subject} exited with code "
+                f"{exit_code if exit_code is not None else 'unknown'}.{suffix}"
+            ),
             "recovery": (
-                "Use the displayed command and Activity and CLI output to correct the "
-                "first reported error, then repeat this action."
+                f"{recovery_prefix} Use the displayed command and Activity and CLI output "
+                "to correct the first reported error, then repeat this action."
             ),
         }
+
+    @staticmethod
+    def _journey_guidance(
+        phase_index: int, headline: str, detail: str, next_label: str,
+        next_detail: str, next_view: str, *, state: str = "ready",
+        ticket: int | None = None,
+    ) -> dict:
+        return {
+            "phase_index": phase_index,
+            "state": state,
+            "headline": headline,
+            "detail": detail,
+            "next_label": next_label,
+            "next_detail": next_detail,
+            "next_view": next_view,
+            "ticket": ticket,
+        }
+
+    def _resolve_journey_stage(
+        self, *, connected: bool, project_ready: bool, charter_ready: bool,
+        setup_published: bool, environment_ready: bool, environment: dict | None,
+        prd_ready: bool, planning: dict, tickets_approved: bool,
+        tickets: list[dict], delivery_done: bool, planning_journey: dict,
+        supervisor: dict | None,
+    ) -> dict:
+        """Resolve the first applicable journey state in priority order."""
+        guidance = self._journey_guidance
+        if not connected:
+            return guidance(
+                0, "Connect this repository",
+                "Choose the adapter for each role, then run preflight before planning.",
+                "Open Connect", "Save a preset and fix any blocking preflight result.",
+                "connect",
+            )
+        if not project_ready:
+            return guidance(
+                0, "Define how this repository is built and verified",
+                "Create and review the Project Contract before any planning expert reads the repository.",
+                "Create Project Contract",
+                "Open Connect and create the detected contract and Charter draft.",
+                "connect", state="attention",
+            )
+        if not charter_ready:
+            return guidance(
+                0, "The Factory Charter needs your approval",
+                "Review merge authority, gates, limits, protected paths, and stop conditions before adapters can run.",
+                "Review Factory Charter",
+                "Open Connect, inspect the Charter policy, and approve its exact hash.",
+                "connect", state="attention",
+            )
+        if not setup_published:
+            return guidance(
+                0, "Publish the approved repository setup",
+                "Commit and push only the Project Contract, Factory Charter, and runtime ignore before planning begins.",
+                "Publish repository setup",
+                "Open Connect and publish the reviewed governance files to the default branch.",
+                "connect", state="attention",
+            )
+        if not environment_ready:
+            environment_status = (environment or {}).get("status", "not-provisioned")
+            detail = (
+                "Provision the named repository revision, approve the Project Contract setup, "
+                "then check tools, roots, ports, and gates."
+                if environment_status != "blocked" else
+                "The development environment is blocked. Fix its first failed check before "
+                "retrying an Agent Adapter."
+            )
+            return guidance(
+                0, "Prove the development environment contract", detail,
+                "Open environment setup",
+                "Use Provision, Prepare, and Check health in Connect.",
+                "connect", state="attention",
+            )
+        if not prd_ready:
+            return guidance(
+                1, "Define the product outcome",
+                "Review or replace the sample PRD before any planning adapter runs.",
+                "Open the PRD", "Confirm the user, behavior, constraints, and evidence.",
+                "prd",
+            )
+        if not planning.get("plan_id"):
+            return guidance(
+                2, "The PRD is ready for Product Review",
+                "The first expert will turn the requirement into a testable product contract.",
+                "Start Product Review",
+                "Choose Rehearsal or Live adapters on the PRD screen.", "prd",
+            )
+        if not tickets_approved:
+            next_step = planning_journey["next"]
+            return guidance(
+                planning_journey["phase_index"], planning_journey["headline"],
+                planning_journey["detail"], next_step["label"], next_step["detail"],
+                next_step["view"], state=planning_journey["state"],
+            )
+        if not tickets:
+            return guidance(
+                4, "Approved tickets are ready to load",
+                "The plan is approved. Start the factory to load the PRD-derived tickets and begin independent QA.",
+                "Open Tickets", "Run one cycle to pause after the first QA proposal.",
+                "tickets",
+            )
+        if (supervisor or {}).get("status") == "running":
+            return guidance(
+                4, "The supervisor is coordinating the next dispatch wave",
+                "It is reading worker Handoff Receipts and dependency-ready Tickets before issuing validated instructions.",
+                "Inspect supervisor",
+                "Review its input, dispatch commands, and coordination history.",
+                "supervisor", state="running",
+            )
+        qa_review = next((ticket for ticket in tickets if ticket.get("status") == "QA Review"), None)
+        if qa_review:
+            number = qa_review.get("number")
+            return guidance(
+                4, f"Acceptance tests need approval for #{number}",
+                "Implementation is paused. Inspect the Tests tab and approve only evidence that proves the ticket behavior.",
+                f"Review ticket #{number}",
+                "Open the ticket and inspect its protected tests.",
+                "tickets", state="attention", ticket=number,
+            )
+        blocked = next((ticket for ticket in tickets if ticket.get("status") == "Blocked"), None)
+        if blocked:
+            number = blocked.get("number")
+            failure = str(blocked.get("failure") or "").strip()
+            detail = failure.splitlines()[-1][:420] if failure else "Read the ticket history and final log to find the recorded cause."
+            recovery = blocked.get("recovery") or {}
+            return guidance(
+                4, f"Ticket #{number} is blocked", detail,
+                f"Resolve blocker #{number}",
+                recovery.get("summary") or "Review the recorded cause and available recovery action.",
+                "tickets", state="blocked", ticket=number,
+            )
+        active = next(
+            (ticket for ticket in tickets if ticket.get("status") in {"In Progress", "Verifying"}),
+            None,
+        )
+        if active:
+            number = active.get("number")
+            labels = {
+                "qa": "Independent QA is writing acceptance tests",
+                "implementation": "The Implementation adapter is changing the code",
+                "verifying": "Quality gates are checking the change",
+                "cleanup": "The cleanup adapter is checking the change",
+                "architecture_conformance": "Architecture conformance is being checked",
+                "hardening": "The hardening adapter is checking the change",
+                "final_verifier": "The final verifier is checking the change",
+                "code-review": "The Code Review adapter is inspecting the candidate diff",
+            }
+            phase = active.get("phase", "implementation")
+            return guidance(
+                4, f"{labels.get(phase, 'An adapter is running')} for #{number}",
+                f"{active.get('title', 'Ticket')} · attempt {active.get('attempt') or active.get('qa_attempt') or 1}.",
+                f"Inspect ticket #{number}",
+                "Follow its prompt, live log, diff, tests, code review, and history.",
+                "tickets", state="running", ticket=number,
+            )
+        in_review = next((ticket for ticket in tickets if ticket.get("status") == "In Review"), None)
+        if in_review:
+            number = in_review.get("number")
+            human_merge = in_review.get("merge_authority", "human") == "human"
+            return guidance(
+                4,
+                f"Your exact-revision merge decision is required for #{number}"
+                if human_merge else f"Autonomous Demo merge for #{number} is synchronizing",
+                "Verification and code review passed. Inspect the approved head and evidence, then decide whether to merge it."
+                if human_merge else "The explicitly delegated demo path is synchronizing its Supervisor-authorized merge.",
+                f"Review ticket #{number}",
+                "Open its exact head, review decision, gates, and merge action.",
+                "tickets", state="attention" if human_merge else "running", ticket=number,
+            )
+        ready = [ticket for ticket in tickets if ticket.get("status") == "Ready"]
+        if ready:
+            return guidance(
+                4, f"{len(ready)} ticket{'s are' if len(ready) != 1 else ' is'} ready",
+                "Dependencies are satisfied. The next run will dispatch QA and implementation in isolated worktrees.",
+                "Run the factory", "Open Tickets and start the available work.",
+                "tickets",
+            )
+        if delivery_done:
+            return guidance(
+                5, "The application is ready",
+                "All Tickets are Done. Start the application and open the supported layouts.",
+                "Run the app", "Use the startup command and URLs on the final page.",
+                "evidence", state="complete",
+            )
+        return guidance(
+            4, "No ticket can start",
+            "Inspect dependencies and ticket history. A cycle or unmet dependency may be preventing progress.",
+            "Inspect Tickets", "Find the first dependency that cannot be satisfied.",
+            "tickets", state="attention",
+        )
 
     def journey(
         self,
@@ -754,6 +1085,7 @@ class ControlCenter:
         supervisor: dict | None = None,
         project: dict | None = None,
         charter: dict | None = None,
+        environment: dict | None = None,
     ) -> dict:
         tickets = factory.get("tickets", [])
         approvals = planning.get("approvals", {})
@@ -774,6 +1106,12 @@ class ControlCenter:
             or bool(planning)
             or bool(tickets)
         )
+        environment_ready = (
+            environment is None
+            or environment.get("status") == "healthy"
+            or bool(planning)
+            or bool(tickets)
+        )
         prd_ready = bool(prd.get("saved")) or bool(planning)
         plan_complete = planning.get("status") in {"awaiting_alignment_approval", "alignment_approved", "published"}
         tickets_approved = (
@@ -785,7 +1123,7 @@ class ControlCenter:
         )
         delivery_done = bool(tickets) and all(ticket.get("status") == "Done" for ticket in tickets)
         completed = [
-            connected and project_ready and charter_ready and setup_published,
+            connected and project_ready and charter_ready and setup_published and environment_ready,
             prd_ready,
             plan_complete,
             tickets_approved,
@@ -793,21 +1131,6 @@ class ControlCenter:
             delivery_done,
         ]
 
-        phase_index = next((index for index, done in enumerate(completed) if not done), len(phase_specs) - 1)
-        state = "ready"
-        headline = "Connect this repository"
-        detail = "Choose the adapter for each role, then run preflight before planning."
-        next_label = "Open Connect"
-        next_detail = "Save a preset and fix any blocking preflight result."
-        next_view = "connect"
-        ticket_number = None
-
-        active = next((ticket for ticket in tickets if ticket.get("status") in {"In Progress", "Verifying"}), None)
-        qa_review = next((ticket for ticket in tickets if ticket.get("status") == "QA Review"), None)
-        blocked = next((ticket for ticket in tickets if ticket.get("status") == "Blocked"), None)
-        in_review = next((ticket for ticket in tickets if ticket.get("status") == "In Review"), None)
-        ready = [ticket for ticket in tickets if ticket.get("status") == "Ready"]
-        supervising = (supervisor or {}).get("status") == "running"
         presentation = planning.get("presentation") or planning_presentation(
             planning,
             current_adapter=(
@@ -817,127 +1140,38 @@ class ControlCenter:
             ),
             adapters=self.adapters(),
         )
+        resolved = self._resolve_journey_stage(
+            connected=connected,
+            project_ready=project_ready,
+            charter_ready=charter_ready,
+            setup_published=setup_published,
+            environment_ready=environment_ready,
+            environment=environment,
+            prd_ready=prd_ready,
+            planning=planning,
+            tickets_approved=tickets_approved,
+            tickets=tickets,
+            delivery_done=delivery_done,
+            planning_journey=presentation["journey"],
+            supervisor=supervisor,
+        )
+        phase_index = resolved["phase_index"]
+        state = resolved["state"]
+        headline = resolved["headline"]
+        detail = resolved["detail"]
+        next_label = resolved["next_label"]
+        next_detail = resolved["next_detail"]
+        next_view = resolved["next_view"]
+        ticket_number = resolved["ticket"]
         planning_journey = presentation["journey"]
-
-        if not connected:
-            pass
-        elif not project_ready:
-            phase_index = 0
-            state = "attention"
-            headline = "Define how this repository is built and verified"
-            detail = "Create and review the Project Contract before any planning expert reads the repository."
-            next_label, next_detail, next_view = "Create Project Contract", "Open Connect and create the detected contract and Charter draft.", "connect"
-        elif not charter_ready:
-            phase_index = 0
-            state = "attention"
-            headline = "The Factory Charter needs your approval"
-            detail = "Review merge authority, gates, limits, protected paths, and stop conditions before adapters can run."
-            next_label, next_detail, next_view = "Review Factory Charter", "Open Connect, inspect the Charter policy, and approve its exact hash.", "connect"
-        elif not setup_published:
-            phase_index = 0
-            state = "attention"
-            headline = "Publish the approved repository setup"
-            detail = "Commit and push only the Project Contract, Factory Charter, and runtime ignore before planning begins."
-            next_label, next_detail, next_view = "Publish repository setup", "Open Connect and publish the reviewed governance files to the default branch.", "connect"
-        elif not prd_ready:
-            phase_index = 1
-            headline = "Define the product outcome"
-            detail = "Review or replace the sample PRD before any planning adapter runs."
-            next_label, next_detail, next_view = "Open the PRD", "Confirm the user, behavior, constraints, and evidence.", "prd"
-        elif not planning.get("plan_id"):
-            phase_index = 2
-            headline = "The PRD is ready for Product Review"
-            detail = "The first expert will turn the requirement into a testable product contract."
-            next_label, next_detail, next_view = "Start Product Review", "Choose Rehearsal or Live adapters on the PRD screen.", "prd"
-        elif not tickets_approved:
-            phase_index = planning_journey["phase_index"]
-            state = planning_journey["state"]
-            headline = planning_journey["headline"]
-            detail = planning_journey["detail"]
-            next_label = planning_journey["next"]["label"]
-            next_detail = planning_journey["next"]["detail"]
-            next_view = planning_journey["next"]["view"]
-        elif not tickets:
-            phase_index = 4
-            headline = "Approved tickets are ready to load"
-            detail = "The plan is approved. Start the factory to load the PRD-derived tickets and begin independent QA."
-            next_label, next_detail, next_view = "Open Tickets", "Run one cycle to pause after the first QA proposal.", "tickets"
-        elif supervising:
-            phase_index = 4
-            state = "running"
-            headline = "The supervisor is coordinating the next dispatch wave"
-            detail = "It is reading worker Handoff Receipts and dependency-ready Tickets before issuing validated instructions."
-            next_label, next_detail, next_view = "Inspect supervisor", "Review its input, dispatch commands, and coordination history.", "supervisor"
-        elif qa_review:
-            phase_index = 4
-            state = "attention"
-            ticket_number = qa_review.get("number")
-            headline = f"Acceptance tests need approval for #{ticket_number}"
-            detail = "Implementation is paused. Inspect the Tests tab and approve only evidence that proves the ticket behavior."
-            next_label, next_detail, next_view = f"Review ticket #{ticket_number}", "Open the ticket and inspect its protected tests.", "tickets"
-        elif blocked:
-            phase_index = 4
-            state = "blocked"
-            ticket_number = blocked.get("number")
-            headline = f"Ticket #{ticket_number} is blocked"
-            failure = str(blocked.get("failure") or "").strip()
-            detail = (failure.splitlines()[-1][:420] if failure else "Read the ticket history and final log to find the recorded cause.")
-            recovery = blocked.get("recovery") or {}
-            next_detail = (
-                recovery.get("summary")
-                or "Review the recorded cause and available recovery action."
-            )
-            next_label, next_view = f"Resolve blocker #{ticket_number}", "tickets"
-        elif active:
-            phase_index = 4
-            state = "running"
-            ticket_number = active.get("number")
-            ticket_phase = active.get("phase", "implementation")
-            labels = {
-                "qa": "Independent QA is writing acceptance tests",
-                "implementation": "The Implementation adapter is changing the code",
-                "verifying": "Quality gates are checking the change",
-                "cleanup": "The cleanup adapter is checking the change",
-                "architecture_conformance": "Architecture conformance is being checked",
-                "hardening": "The hardening adapter is checking the change",
-                "final_verifier": "The final verifier is checking the change",
-                "code-review": "The Code Review adapter is inspecting the candidate diff",
-            }
-            headline = f"{labels.get(ticket_phase, 'An adapter is running')} for #{ticket_number}"
-            detail = f"{active.get('title', 'Ticket')} · attempt {active.get('attempt') or active.get('qa_attempt') or 1}."
-            next_label, next_detail, next_view = f"Inspect ticket #{ticket_number}", "Follow its prompt, live log, diff, tests, code review, and history.", "tickets"
-        elif in_review:
-            phase_index = 4
-            human_merge = in_review.get("merge_authority", "human") == "human"
-            state = "attention" if human_merge else "running"
-            ticket_number = in_review.get("number")
-            headline = (
-                f"Your exact-revision merge decision is required for #{ticket_number}"
-                if human_merge else f"Autonomous Demo merge for #{ticket_number} is synchronizing"
-            )
-            detail = (
-                "Verification and code review passed. Inspect the approved head and evidence, then decide whether to merge it."
-                if human_merge else "The explicitly delegated demo path is synchronizing its Supervisor-authorized merge."
-            )
-            next_label, next_detail, next_view = f"Review ticket #{ticket_number}", "Open its exact head, review decision, gates, and merge action.", "tickets"
-        elif ready:
-            phase_index = 4
-            headline = f"{len(ready)} ticket{'s are' if len(ready) != 1 else ' is'} ready"
-            detail = "Dependencies are satisfied. The next run will dispatch QA and implementation in isolated worktrees."
-            next_label, next_detail, next_view = "Run the factory", "Open Tickets and start the available work.", "tickets"
-        elif delivery_done:
-            phase_index = 5
-            state = "complete"
-            headline = "The application is ready"
-            detail = "All Tickets are Done. Start the application and open the supported layouts."
-            next_label, next_detail, next_view = "Run the app", "Use the startup command and URLs on the final page.", "evidence"
-        else:
-            phase_index = 4
-            state = "attention"
-            headline = "No ticket can start"
-            detail = "Inspect dependencies and ticket history. A cycle or unmet dependency may be preventing progress."
-            next_label, next_detail, next_view = "Inspect Tickets", "Find the first dependency that cannot be satisfied.", "tickets"
-
+        qa_review = next((ticket for ticket in tickets if ticket.get("status") == "QA Review"), None)
+        blocked = next((ticket for ticket in tickets if ticket.get("status") == "Blocked"), None)
+        in_review = next((ticket for ticket in tickets if ticket.get("status") == "In Review"), None)
+        active = next(
+            (ticket for ticket in tickets if ticket.get("status") in {"In Progress", "Verifying"}),
+            None,
+        )
+        supervising = (supervisor or {}).get("status") == "running"
         attention = factory.get("human_attention", {})
         if attention.get("dispatch_paused"):
             phase_index = 4
@@ -1170,6 +1404,7 @@ class ControlCenter:
         }
         project = self.project_contract()
         charter = self.factory_charter()
+        environment = self.environment_snapshot()
         if charter.get("approved"):
             try:
                 approved_charter = FactoryCharter.load(
@@ -1184,6 +1419,8 @@ class ControlCenter:
                         ticket["next_human_action"] = ticket["recovery"]["action"]
             except FactoryCharterError:
                 pass
+        for ticket in factory.get("tickets", []):
+            ticket["merge_steward"] = self.merge_steward_snapshot(ticket)
         factory["human_attention"] = human_attention_snapshot(
             self.repo,
             factory.get("tickets", []),
@@ -1204,6 +1441,11 @@ class ControlCenter:
             "project": project,
             "charter": charter,
             "adapters": self.adapters(),
+            "adapter_details": self.adapter_details(),
+            "environment": environment,
+            "workspace": self.workspace_snapshot(),
+            "improvements": self.improvements_snapshot(),
+            "triggers": self.triggers_snapshot(),
             "planning": planning,
             "factory": factory,
             "supervisor": supervisor,
@@ -1216,7 +1458,7 @@ class ControlCenter:
             "decisions": decisions,
             "journey": self.journey(
                 planning, factory, operation, prd, evidence, config, supervisor,
-                project, charter,
+                project, charter, environment,
             ),
         }
 
@@ -1361,10 +1603,17 @@ class ControlCenter:
     def build_commands(self, action: str, payload: dict) -> tuple[str, list[list[str]]]:
         if action not in ACTION_REGISTRY:
             raise InputError("This control-center action is not registered.")
-        base = [str(self.factory)]
+        builder_name = ACTION_BUILDERS.get(action)
+        if not builder_name:
+            raise InputError("This control-center action is not available.")
         self._pending_activation = None
+        return getattr(self, builder_name)(action, payload)
+
+    def _build_setup_command(
+        self, action: str, payload: dict,
+    ) -> tuple[str, list[list[str]]]:
+        base = [str(self.factory)]
         mode = payload.get("mode", "rehearsal")
-        mock = mode != "live"
         if action == "doctor":
             return "Check readiness", [base + ["doctor"] + (["--full"] if payload.get("full") else [])]
         if action == "init-project":
@@ -1387,9 +1636,51 @@ class ControlCenter:
             return "Publish repository setup", [
                 base + ["publish-setup", "--repo", str(self.repo), "--yes"],
             ]
-        if action == "prepare-project":
+        if action.startswith("environment-"):
             ProjectContract.load(self.repo, require=True)
-            return "Prepare project", [base + ["prepare", "--repo", str(self.repo), "--yes"]]
+            environment_action = action.removeprefix("environment-")
+            titles = {
+                "provision": "Provision development environment",
+                "prepare": "Prepare development environment",
+                "health": "Check development environment",
+                "reset": "Reset provider-owned environment state",
+            }
+            command = base + ["environment", environment_action, "--repo", str(self.repo)]
+            if environment_action == "prepare":
+                command.append("--yes")
+            if environment_action == "health":
+                command.append("--gates")
+            return titles[environment_action], [command]
+        if action == "improve-report":
+            return "Generate reviewed improvement report", [
+                base + ["improve", "report", "--repo", str(self.repo), "--json"],
+            ]
+        if action == "workspace-check":
+            return "Check repository workspace", [
+                base + ["workspace-check", "--repo", str(self.repo), "--json"],
+            ]
+        if action == "approve-intake":
+            if mode != "live":
+                raise InputError("Evidence-backed intake approval requires Live mode.")
+            issue = self._positive_int(payload, "issue", required=True)
+            case_id = self._string(payload, "case_id", required=True, max_length=80)
+            reason = self._string(payload, "reason", required=True, max_length=300)
+            if len(reason) < 12:
+                raise InputError("Explain why the intake evidence is sufficient.")
+            return "Approve evidence-backed intake", [
+                base + [
+                    "approve-intake", str(issue), "--repo", str(self.repo),
+                    "--case", case_id, "--reason", reason, "--yes",
+                ],
+            ]
+        if action == "steward-sync":
+            issue = self._positive_int(payload, "issue", required=True)
+            return "Synchronize candidate for re-verification", [
+                base + [
+                    "steward", str(issue), "--repo", str(self.repo),
+                    "--synchronize", "--yes", "--json",
+                ],
+            ]
         if action == "start-app":
             application = self._application_entrypoint()
             if application is None:
@@ -1401,6 +1692,13 @@ class ControlCenter:
                 *application.get("prepare_argv", []),
                 application["argv"],
             ]
+        raise InputError("This setup action is not available.")
+
+    def _build_configure_command(
+        self, action: str, payload: dict,
+    ) -> tuple[str, list[list[str]]]:
+        base = [str(self.factory)]
+        mode = payload.get("mode", "rehearsal")
         if action == "configure":
             command = base + ["configure"]
             commands = []
@@ -1477,6 +1775,13 @@ class ControlCenter:
             if len(command) == 2:
                 raise InputError("Choose a preset or at least one configuration value.")
             return "Save factory configuration", commands + [command]
+        raise InputError("This configuration action is not available.")
+
+    def _build_planning_command(
+        self, action: str, payload: dict,
+    ) -> tuple[str, list[list[str]]]:
+        base = [str(self.factory)]
+        mock = payload.get("mode", "rehearsal") != "live"
         if action == "plan":
             if not self.prd_path.is_file():
                 raise InputError("Save the PRD before starting Product Review.")
@@ -1597,6 +1902,14 @@ class ControlCenter:
             elif title:
                 command += ["--new-project-title", title]
             return "Publish tickets to GitHub", [command]
+        raise InputError("This planning action is not available.")
+
+    def _build_delivery_command(
+        self, action: str, payload: dict,
+    ) -> tuple[str, list[list[str]]]:
+        base = [str(self.factory)]
+        mode = payload.get("mode", "rehearsal")
+        mock = mode != "live"
         if action == "approve-tests":
             issue = self._positive_int(payload, "issue", required=True)
             self._ticket_action_context(issue, mode)
@@ -1666,6 +1979,14 @@ class ControlCenter:
                 "run-once": "Run one scheduling cycle",
                 "dry-run": "Preview execution waves",
             }[action], [command]
+        raise InputError("This delivery action is not available.")
+
+    def _build_ticket_correction_command(
+        self, action: str, payload: dict,
+    ) -> tuple[str, list[list[str]]]:
+        base = [str(self.factory)]
+        mode = payload.get("mode", "rehearsal")
+        mock = mode != "live"
         if action == "save-ticket-and-retry":
             if mock:
                 raise InputError("Saving a Ticket correction requires a Live GitHub run.")
@@ -1752,6 +2073,14 @@ class ControlCenter:
                 save_command,
                 retry_commands[0],
             ]
+        raise InputError("This ticket correction action is not available.")
+
+    def _build_retry_command(
+        self, action: str, payload: dict,
+    ) -> tuple[str, list[list[str]]]:
+        base = [str(self.factory)]
+        mode = payload.get("mode", "rehearsal")
+        mock = mode != "live"
         if action == "retry":
             issue = self._positive_int(payload, "issue", required=True)
             ticket = self._ticket_action_context(issue, mode)
@@ -1789,6 +2118,14 @@ class ControlCenter:
                 command.append("--reset-qa")
             command.append("--yes")
             return f"Retry ticket #{issue}", [command]
+        raise InputError("This retry action is not available.")
+
+    def _build_operations_command(
+        self, action: str, payload: dict,
+    ) -> tuple[str, list[list[str]]]:
+        base = [str(self.factory)]
+        mode = payload.get("mode", "rehearsal")
+        mock = mode != "live"
         if action == "release-claim":
             if mock:
                 raise InputError("Rehearsal Tickets do not use remote claims.")
@@ -1848,7 +2185,7 @@ class ControlCenter:
                 return title, [command]
             title = "Reset local Live Run state" if mode == "live" else "Reset ticket execution"
             return title, [command]
-        raise InputError("This control-center action is not available.")
+        raise InputError("This operations action is not available.")
 
     def start(self, action: str, payload: dict) -> dict:
         title, commands = self.build_commands(action, payload)

@@ -55,6 +55,19 @@ and humans.]
 
 [Describe isolation, credentials, tools, capacity, and provider constraints.]
 
+## Layer choices
+
+Choose what to own, buy, or bring existing. Name the stable boundary and the
+evidence that makes failures diagnosable.
+
+| Layer | Own, buy, or bring existing? | Required interface | Required evidence | Failure owner |
+| --- | --- | --- | --- | --- |
+| Compute |  |  |  |  |
+| Development environment |  |  |  |  |
+| Inner harness |  |  |  |  |
+| Outer harness |  |  |  |  |
+| Control plane |  |  |  |  |
+
 ## Required evidence
 
 [List the artifacts and verification required before completion.]

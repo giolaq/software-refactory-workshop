@@ -1,18 +1,20 @@
 # Software (re)-Factory workshop
 
-Release: `workshop-v1.1.3`
+Release: `workshop-v1.2.0`
 
 Use this outline to present the workshop. The attendee website contains the commands and checkpoints; keep the live explanation focused on why each decision matters.
 
 ## Outcome
 
-In 100 minutes, each attendee turns a PRD into approved Tickets, runs coding
+In three hours, each attendee turns a PRD into approved Tickets, runs coding
 agents in isolated Git worktrees, reviews causal QA evidence, makes an
 exact-revision merge decision, and previews post-delivery health.
 
 Attendees should leave able to:
 
 - Explain what an AI software factory adds around coding agents.
+- Locate compute, development environment, inner harness, outer harness, and
+  control-plane responsibilities.
 - Plan product intent, architecture, program design, and vertical slices before implementation.
 - Use GitHub Projects as the shared view of work.
 - Explain how a Supervisor role coordinates a safe dispatch wave from worker Handoff Receipts.
@@ -73,14 +75,16 @@ Run the rehearsal path before facilitating the live path.
 
 | Time | Step | Result |
 |---:|---|---|
-| 0–8 | Setup | Healthy factory and isolated demo repository |
-| 8–13 | Inspect the app | Shared understanding of the baseline |
-| 13–20 | Write requirements | Testable product outcome |
-| 20–35 | Approve Product Review | Human-approved product brief |
-| 35–53 | Create tickets | Approved vertical slices in GitHub or Rehearsal |
-| 53–63 | Approve Acceptance Tests | Human-approved QA evidence |
-| 63–85 | Deliver tickets | At least one completed ticket with traceable evidence |
-| 85–100 | Review the app | Integrated app, Evidence Packet, and read-only Monitor report |
+| 0–25 | Welcome and factory model | Five layers, human judgment, and peer-review agreement |
+| 25–50 | Setup | Healthy factory and isolated demo repository |
+| 50–65 | Inspect the app and write requirements | Shared baseline and testable product outcome |
+| 65–82 | Approve Product Review | Human-approved product brief |
+| 82–95 | Review technical planning | Architecture, Program Design, and traceable Vertical Slices |
+| 95–105 | Break | Keep Control Centers and healthy agent sessions running |
+| 105–120 | Create tickets | Approved vertical slices in GitHub or Rehearsal |
+| 120–138 | Approve Acceptance Tests | Human-approved causal RED evidence |
+| 138–168 | Deliver and review tickets | Supervised implementation, gates, code review, rework, and human merge |
+| 168–180 | Review the app and close | Integrated app, Evidence Packet, Monitor, and Factory Canvas decision |
 
 ## The workshop story
 
@@ -100,6 +104,20 @@ answer to a visible failure:
 
 More agents and more checks consume time and human attention. They are useful
 only when they make ownership, evidence, recovery, or a decision clearer.
+
+Show the replaceable layers before operating them:
+
+```text
+Compute → Development environment → Inner harness → Outer harness → Control plane
+laptop   Project Contract/provider   Claude/Codex     roles/QA/review   Control Center/GitHub
+```
+
+Generation is fast; review capacity, product judgment, and accountability are
+scarce. Compare one role using two adapters and point to a real declared
+capability difference in **Setup → Connection**. Explain that a prototype may
+be disposable, while a Vertical Slice is bounded, tested, reviewed, and meant
+to merge. Close the session by recording what each attendee will own, buy, or
+bring existing at each layer.
 
 Repeat the same pattern for every step:
 
@@ -140,9 +158,12 @@ Complete the browser setup in this order:
 4. If offered, select **Create contract and Charter**. Read **Review exact
    policy**, select **Approve exact Charter**, and, for Live, select **Commit
    and push setup**.
-5. Select **Run setup**. This installs the dependencies recorded in the Project
-   Contract. Preflight checks dependencies; it does not install them.
-6. Select **Run preflight**. Open **Current run → Activity and CLI output** and
+5. In **Development environment**, select **Provision** to bind the checkout,
+   revision, and Project Contract hash.
+6. Select **Prepare** and confirm the reviewed setup commands. This installs
+   declared dependencies with the operator's local permissions.
+7. Select **Check health** to prove tools, roots, ports, and gates.
+8. Select **Run preflight**. Open **Current run → Activity and CLI output** and
    continue only when it reports no `[FAIL]` entries.
 
 In Rehearsal, no GitHub URL, GitHub write, or agent login is required. Do not
@@ -165,7 +186,7 @@ preflight again.
 | --- | --- | --- |
 | `default branch` or `branch synchronization` | The product checkout is not on the remote default revision. | Save local work. Run `git fetch origin`, `git switch main`, and `git pull --ff-only origin main` in the product checkout. Never force-reset attendee work. |
 | `codex adapter` or `claude adapter` | The selected preset does not match an installed, signed-in CLI. | In **Setup → Connection**, choose the preset for the available CLI and save. Run `codex login` or `claude auth login` when required. |
-| `No module named pytest` or another gate dependency | Repository setup has not completed. | Select **Run setup**, then run preflight again. |
+| `No module named pytest` or another gate dependency | Development-environment preparation has not completed. | Select **Prepare**, then **Check health** and run preflight again. |
 | `GitHub Projects scope` | GitHub CLI cannot manage Projects. | Run `gh auth refresh -s project` and finish browser authorization. |
 | `repository target` or `origin remote` | The saved product URL and checkout do not identify the same repository. | Paste the attendee's full product repository URL in **Setup → Connection** and save. Do not use the facilitator or workshop repository URL. |
 | `Project Contract` or `Factory Charter` | Repository behavior or human-owned policy is missing. | Create the contract and Charter, review the exact policy, approve it, and publish setup in Live mode. |
@@ -183,7 +204,7 @@ this exact order:
    `git pull --ff-only origin main`.
 3. Select **Claude workshop** in **Setup → Connection** and save, or sign in to
    Codex if Codex is the intended adapter.
-4. Select **Run setup** to install the declared dependencies.
+4. Select **Prepare** to install the declared dependencies, then **Check health**.
 5. Select **Run preflight** again and continue only when no `[FAIL]` remains.
 
 ### 2. Inspect the app
@@ -327,6 +348,7 @@ Recommend a proportional workflow:
 
 Keep detailed setup and recovery material out of the spoken path:
 
+- [Three-hour workshop plan](WORKSHOP_PLAN_3_HOURS.md)
 - [Facilitator runbook](FACILITATOR.md)
 - [Control Center](CONTROL_CENTER.md)
 - [Agent configuration](CONFIGURATION.md)

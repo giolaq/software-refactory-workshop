@@ -357,6 +357,43 @@ class ControlCenterTests(unittest.TestCase):
             self.assertIn("publish-setup", publish_commands[0])
             self.assertIn("--yes", publish_commands[0])
 
+    def test_environment_lifecycle_is_visible_and_allowlisted(self):
+        with tempfile.TemporaryDirectory() as directory:
+            repo = self.make_repo(directory)
+            subprocess.run(["git", "init", "-q", "-b", "main"], cwd=repo, check=True)
+            subprocess.run(["git", "config", "user.email", "factory@example.com"], cwd=repo, check=True)
+            subprocess.run(["git", "config", "user.name", "Factory Test"], cwd=repo, check=True)
+            project = ProjectContract.detect(repo)
+            project.write()
+            subprocess.run(["git", "add", "."], cwd=repo, check=True)
+            subprocess.run(["git", "commit", "-qm", "baseline"], cwd=repo, check=True)
+            center = ControlCenter(repo)
+
+            snapshot = center.snapshot()
+            self.assertEqual(snapshot["environment"]["provider"], "local")
+            self.assertEqual(snapshot["environment"]["status"], "not-provisioned")
+            self.assertEqual(snapshot["workspace"]["status"], "ready")
+            self.assertIn("suggestions", snapshot["improvements"])
+            self.assertEqual(snapshot["triggers"]["proposal_count"], 0)
+            self.assertIn("codex", snapshot["adapter_details"])
+            self.assertEqual(
+                snapshot["adapter_details"]["codex"]["protocol_version"], 1,
+            )
+
+            title, commands = center.build_commands("environment-provision", {})
+            self.assertEqual(title, "Provision development environment")
+            self.assertEqual(commands[0][1:3], ["environment", "provision"])
+            title, commands = center.build_commands("environment-prepare", {})
+            self.assertIn("--yes", commands[0])
+            title, commands = center.build_commands("environment-health", {})
+            self.assertIn("--gates", commands[0])
+            title, commands = center.build_commands("environment-reset", {})
+            self.assertEqual(title, "Reset provider-owned environment state")
+            title, commands = center.build_commands("improve-report", {})
+            self.assertEqual(commands[0][1:3], ["improve", "report"])
+            title, commands = center.build_commands("workspace-check", {})
+            self.assertEqual(commands[0][1], "workspace-check")
+
     def test_monitor_actions_are_registered_and_publication_is_live_only(self):
         with tempfile.TemporaryDirectory() as temp:
             center = ControlCenter(self.make_repo(temp))
@@ -369,6 +406,37 @@ class ControlCenterTests(unittest.TestCase):
             title, commands = center.build_commands("publish-monitor", {"mode": "live"})
             self.assertEqual(title, "Publish monitor findings")
             self.assertIn("--publish", commands[0])
+
+    def test_human_can_approve_a_ready_intake_case_from_the_control_center(self):
+        with tempfile.TemporaryDirectory() as directory:
+            center = ControlCenter(self.make_repo(directory))
+            title, commands = center.build_commands("approve-intake", {
+                "mode": "live",
+                "issue": 12,
+                "case_id": "case-12",
+                "reason": "Reviewed the causal reproduction evidence.",
+            })
+            self.assertEqual(title, "Approve evidence-backed intake")
+            self.assertIn("approve-intake", commands[0])
+            self.assertIn("--yes", commands[0])
+            self.assertIn("case-12", commands[0])
+            with self.assertRaisesRegex(InputError, "Live mode"):
+                center.build_commands("approve-intake", {
+                    "mode": "rehearsal", "issue": 12,
+                    "case_id": "case-12", "reason": "Enough reviewed evidence.",
+                })
+
+    def test_merge_steward_sync_is_explicit_and_never_invokes_merge(self):
+        with tempfile.TemporaryDirectory() as directory:
+            center = ControlCenter(self.make_repo(directory))
+            title, commands = center.build_commands("steward-sync", {
+                "issue": 7,
+            })
+            self.assertEqual(title, "Synchronize candidate for re-verification")
+            self.assertIn("steward", commands[0])
+            self.assertIn("--synchronize", commands[0])
+            self.assertIn("--yes", commands[0])
+            self.assertNotIn("merge", commands[0])
 
     def test_configuration_is_allowlisted_and_never_uses_a_shell_command(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -2042,6 +2110,9 @@ class ControlCenterTests(unittest.TestCase):
         self.assertIn('href="./styles.css"', source)
         self.assertIn('src="./app.js"', source)
         self.assertIn("Advanced role settings", source)
+        self.assertNotIn("Run setup", source)
+        self.assertNotIn('data-action="prepare-project"', source)
+        self.assertIn('environment.status !== "healthy"', javascript)
         self.assertIn("Your draft saves automatically", source)
         self.assertNotIn('id="global-next"', source)
         self.assertNotIn('id="open-reset-overview"', source)

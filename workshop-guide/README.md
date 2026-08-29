@@ -1,13 +1,14 @@
 # Software (re)-Factory workshop guide
 
-Release: `workshop-v1.1.3`
+Release: `workshop-v1.2.0`
 
 The attendee-facing, self-guided website for the Software (re)-Factory
 workshop. It follows the Control Center's **Setup → Plan → Deliver → Review**
 workflow and one PRD from intent to verified delivery. The main path contains only the decisions,
 Control Center actions, and evidence attendees need. Equivalent CLI commands
-are shown beside every Control Center step. Optional adapter configuration and
-recovery guidance remain in the reference sections.
+are available beside every Control Center step. The guide introduces the five
+replaceable factory layers, makes development-environment setup explicit, and
+keeps production-only interfaces in optional reference sections.
 
 The guide supports deterministic rehearsal and live GitHub paths. Claude is
 the worked example, but attendees can use Codex, Cursor, or a custom CLI.

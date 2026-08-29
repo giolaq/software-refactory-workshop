@@ -9,6 +9,9 @@ turn a local coding CLI into a security sandbox.
 - Each Ticket uses a separate Git worktree and a deterministic remote claim.
 - Adapter processes receive only their declared environment allowlist and
   credential names.
+- Adapter Protocol records reject malformed lifecycle transitions and private
+  reasoning fields. Compatibility commands remain process-level integrations;
+  their declared capabilities must match what the wrapper really enforces.
 - Planning and supported review adapters run with read-only CLI settings.
   Every read-only role also has its Git head and worktree status checked.
 - The human-owned Factory Charter separates paths agents must never modify
@@ -18,13 +21,16 @@ turn a local coding CLI into a security sandbox.
 - Standard and Assured stop at a human exact-revision merge decision.
 - A `requires_human_approval` path stops at that human decision even in an
   explicitly opted-in Autonomous Demo run.
+- Raw feedback, triggers, compounding reports, and the merge steward can only
+  propose a next action. They cannot dispatch, weaken the Charter, waive gates,
+  resolve semantic conflicts, or merge.
 
 ## Trusted boundary
 
 Project Contract setup commands, verification gates, and adapter templates are
-trusted repository configuration. Review them before running `factory prepare`
-or a Live Run. They can execute shell commands with the operator's local user
-permissions.
+trusted repository configuration. Review them before running `factory
+environment prepare` or a Live Run. They can execute shell commands with the
+operator's local user permissions.
 
 Git worktrees isolate Git state. They do not isolate processes, the network,
 CPU or memory, credentials stored in a user's home directory, or the host file
@@ -34,6 +40,12 @@ credential names, and `local`, `container`, or `hosted` execution environment.
 The `container` and `hosted` values are interfaces for adapters that enforce
 those boundaries; selecting the value does not make the built-in local command
 containerized.
+
+The local development-environment provider records and checks the existing
+checkout. It does not create a VM, container, short-lived identity, or network
+policy. `prepare` and gates still execute trusted repository commands with the
+operator's permissions. `reset` and `destroy` clear only provider-owned local
+state and previews; they do not roll back source or delete GitHub evidence.
 
 ## Identity and service limits
 
@@ -47,6 +59,13 @@ containerized.
   provider cost and may stop a run from the Control Center.
 - Hidden chain-of-thought is neither requested nor exported. The UI shows tool
   progress, bounded output, decisions, and evidence that the adapter exposes.
+- Trigger authentication belongs to the calling integration. The factory
+  validates and deduplicates the bounded event, but does not make an
+  unauthenticated public webhook endpoint safe.
+- `factory.workspace.toml` coordinates named local checkouts and revisions. It
+  is not a distributed transaction, release manager, or service provisioner.
+- Usage and cost remain `unavailable` unless an adapter supplies trustworthy
+  provider values; the factory does not estimate them.
 
 ## Recommended production additions
 

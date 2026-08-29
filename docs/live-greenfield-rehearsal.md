@@ -174,8 +174,8 @@ factory.charter.toml
 No factory implementation, workshop documentation, starter application, or
 product code was added.
 
-The **Run setup** button remained disabled because the empty repository had no
-setup commands. This is expected.
+The environment reached **Healthy** without a Prepare action because the empty
+repository had no setup commands. This is expected.
 
 ## 6. Run preflight
 

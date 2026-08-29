@@ -24,6 +24,16 @@ test("server-renders the concise self-guided workshop", async () => {
   assert.match(html, /Software \(re\)-Factory workshop/);
   assert.match(html, /Follow Setup, Plan, Deliver, and Review/);
   assert.match(html, /tells you when to act and why it stopped/);
+  assert.match(html, /A coding agent makes a change\. A software factory makes delivery repeatable/);
+  for (const layer of ["Compute", "Development environment", "Inner harness", "Outer harness", "Control plane"]) {
+    assert.match(html, new RegExp(layer));
+  }
+  assert.match(html, /Review capacity is the limit/);
+  assert.match(html, /Selected adapter capabilities/);
+  assert.match(html, /Protocol v1/);
+  assert.match(html, /Unavailable stays unavailable/);
+  assert.match(html, /prototype/i);
+  assert.match(html, /Vertical Slice/);
 
   assert.match(html, /Install and sign in/);
   assert.match(html, /Python 3\.11/);
@@ -78,16 +88,21 @@ test("server-renders the concise self-guided workshop", async () => {
   assert.match(html, /A required check still tests removed behavior/);
   assert.match(html, /Troubleshooting/);
   assert.match(html, /Preflight failed: fix the first FAIL/);
-  assert.match(html, /Run setup/);
+  assert.match(html, /Provision/);
+  assert.match(html, /Prepare/);
+  assert.match(html, /Check health/);
   assert.match(html, /No module named pytest/);
   assert.match(html, /git pull --ff-only origin main/);
   assert.match(html, /Setup → Connection/);
   assert.match(html, /Plan → Requirements/);
   assert.match(html, /Deliver → Tickets/);
   assert.match(html, /Review → Run app/);
+  assert.match(html, /Factory interfaces/);
+  assert.match(html, /Own, buy, or bring existing/);
 
   assert.match(html, /screenshots\/pocket-cinema-before\.webp/);
   assert.match(html, /screenshots\/control-center-connect\.jpg/);
+  assert.match(html, /screenshots\/control-center-environment\.jpg/);
   assert.match(html, /screenshots\/control-center-prd\.jpg/);
   assert.match(html, /screenshots\/control-center-planning\.jpg/);
   assert.match(html, /screenshots\/control-center-tickets\.jpg/);
@@ -98,7 +113,7 @@ test("server-renders the concise self-guided workshop", async () => {
   assert.match(html, /screenshots\/control-center-preflight-failure\.jpg/);
 
   assert.doesNotMatch(html, /Start with one responsible delivery loop/);
-  assert.doesNotMatch(html, /More agents are a cost/);
+  assert.match(html, /More agents are a cost/);
   assert.doesNotMatch(html, /The supervisor coordinates work\. It does not own delivery/);
   assert.doesNotMatch(html, /The Code Review role closes the feedback loop/);
   assert.doesNotMatch(html, /Turn product intent into contracts and small vertical slices/);
@@ -124,6 +139,9 @@ test("attendee page stays within its copy budget", async () => {
   const words = visible.trim().split(/\s+/).filter(Boolean).length;
   assert.ok(words < 2400, `attendee page renders ${words} visible words; expected fewer than 2400`);
   assert.match(source, /factory doctor --repo "\$TARGET" --full/);
+  assert.match(source, /factory environment provision --repo "\$TARGET"/);
+  assert.match(source, /factory environment prepare --repo "\$TARGET" --yes/);
+  assert.match(source, /factory environment health --repo "\$TARGET" --gates/);
   assert.match(source, /factory run --repo "\$TARGET"/);
   assert.match(source, /approve-tests ISSUE_NUMBER --repo "\$TARGET"/);
   assert.match(source, /gh project view <project-number>/);

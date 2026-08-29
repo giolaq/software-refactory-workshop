@@ -1,6 +1,6 @@
 # Software (re)-Factory
 
-Release: `workshop-v1.1.3`
+Release: `workshop-v1.2.0`
 
 Software (re)-Factory is a legible control layer for running several coding
 agents against a dependency-mapped backlog. GitHub Issues are tickets, Projects
@@ -13,6 +13,11 @@ deliberately blocked requirement.
 Those deterministic scenarios are a workshop pack, not a product constraint.
 A Live Run accepts any PRD and any Git repository through a committed Project
 Contract.
+
+The implementation is organized as five replaceable layers: compute,
+development environment, inner harness, outer harness, and control plane. Read
+[INTERFACES.md](INTERFACES.md) before adding an Agent Adapter, environment
+provider, intake source, trigger, or workspace integration.
 
 ## One-minute rehearsal quickstart
 
@@ -86,12 +91,13 @@ To use an existing local checkout instead:
 # Review factory.project.toml and factory.charter.toml.
 ./factory/factory approve-charter --repo /path/to/your-project
 ./factory/factory publish-setup --repo /path/to/your-project
-./factory/factory prepare --repo /path/to/your-project
 ./factory/factory control-center --repo /path/to/your-project
 ```
 
 In **Setup → Connection**, select **Live**, paste that project's GitHub URL,
-choose the role adapters, save, and run full preflight. In **Plan →
+choose the role adapters, and save. In the **Development environment** card,
+select **Provision**, review and run **Prepare**, then select **Check health**.
+Run full preflight only after the environment is healthy. In **Plan →
 Requirements**, paste or write the actual
 product requirement. The four planning experts use the PRD for scope and the
 Project Contract plus repository inventory for technical context. The approved
@@ -102,13 +108,26 @@ involved.
 Contract plus a conservative Factory Charter draft. Review and approve the
 exact Charter hash before publishing setup. `publish-setup` commits and pushes
 only `.gitignore`, `factory.project.toml`, and `factory.charter.toml`, and refuses
-unrelated changes. Review the Project Contract before `factory prepare`: that explicit command
-runs only the setup commands recorded in the contract. The same contract
+unrelated changes. Review the Project Contract before `factory environment
+prepare`: that explicit command runs only the setup commands recorded in the
+contract. The same contract
 defines source and test roots, ticket-numbered QA filenames, tools, ports,
 ordered gates, protected paths, default branch, and an optional
 repository-specific reset adapter. Planning records its hash and must be
 repeated if the contract changes. Review and commit any setup-generated lockfile
 change before Live preflight; the default-branch checkout must be clean.
+
+The CLI equivalent makes the environment lifecycle explicit:
+
+```sh
+./factory/factory environment provision --repo /path/to/your-project
+./factory/factory environment prepare --repo /path/to/your-project --yes
+./factory/factory environment health --repo /path/to/your-project --gates
+./factory/factory doctor --repo /path/to/your-project --full
+```
+
+`environment reset` clears only provider-owned state and a provider-owned
+preview. It preserves source, Issues, Projects, pull requests, and evidence.
 
 Arbitrary PRDs require Live agents. Rehearsal remains deterministic by design
 and therefore supports only its bundled Pocket Cinema scenarios.
@@ -188,7 +207,10 @@ section hashes are recorded in plans and receipts.
 The ticket backend is isolated in `github_backend.py`; adapter commands and gates
 are all in `factory.toml`. You can keep the workflow and swap the CLI, model
 wrapper, execution environment, test suite, or lint policy. See
-`CONFIGURATION.md` for the complete project configuration contract.
+`CONFIGURATION.md` for the complete project configuration contract. Adapter
+Protocol v1 normalizes assignments, progress, results, cancellation, timeouts,
+and trustworthy usage while keeping provider-specific capabilities visible.
+Run `./factory/factory adapter-check` before selecting a custom adapter.
 
 ## Preflight every live session
 
@@ -804,7 +826,12 @@ factory configure [--preset claude-workshop|codex-workshop]
 factory control-center [--port N] [--no-open]
 factory bootstrap-workshop --repo PATH --source WORKSHOP_CHECKOUT
 factory init [--repo PATH] [--name NAME] [--force]
-factory prepare [--repo PATH] [--yes]
+factory environment provision [--repo PATH]
+factory environment prepare [--repo PATH] [--yes]
+factory environment health [--repo PATH] [--gates]
+factory environment preview [--repo PATH]
+factory environment reset [--repo PATH] [--yes]
+factory environment destroy [--repo PATH] [--yes]
 factory seed [recipe-rebrand|tv] [--github-repo OWNER/REPOSITORY] [--agent NAME]
 factory run [--repo PATH] [--profile lean|standard|assured|autonomous-demo]
             [--agent NAME] [--qa-agent NAME] [--supervisor-agent NAME]

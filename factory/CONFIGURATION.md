@@ -5,7 +5,7 @@ tied to one coding agent, model, or execution environment. Use a built-in
 adapter, combine different adapters by role, or register a noninteractive
 command that invokes your own agent.
 
-Configuration has four layers:
+Configuration has five layers:
 
 | File | Commit it? | Use it for |
 | --- | --- | --- |
@@ -13,6 +13,7 @@ Configuration has four layers:
 | `factory.project.toml` | Yes, in the target repository | Source and test roots, tools, reviewed setup commands, verification gates, protected paths, default branch, and optional reset adapter. |
 | `factory/factory.toml` | Yes, with the factory | Agent commands, role defaults, retries, and timeouts. |
 | `.factory/local.toml` | No | Each attendee's GitHub repository URL, Factory Profile, selected Agent Adapters, GitHub Project number, QA-review choice, and parallelism. |
+| `factory.workspace.toml` | Yes, when needed | Optional related repositories, exact revisions, read/write ownership, Ticket target, shared services, dependencies, and combined verification. Omit it for the normal single-repository path. |
 
 Command-line options select adapters and operational settings for one command;
 they cannot override an approved Factory Charter. A ticket body can
@@ -64,6 +65,18 @@ populated project, leave that option unchecked and initialize its Project
 Contract as described below. Run
 `./factory/factory doctor --full` before planning; it verifies that the saved
 target, `origin`, and local default branch agree.
+
+Provision the development environment before full preflight:
+
+```sh
+./factory/factory environment provision --repo /path/to/your-project
+./factory/factory environment prepare --repo /path/to/your-project --yes
+./factory/factory environment health --repo /path/to/your-project --gates
+```
+
+Each operation is bound to the current repository revision and Project Contract
+hash. `prepare` remains an explicit human-approved step because the declared
+setup commands run with the operator's local permissions.
 
 For a greenfield product, connect an empty repository with the option unchecked.
 Create and review its generic Project Contract and Charter, publish that minimal
@@ -151,7 +164,9 @@ Setup commands are never run by `init`. Read the file, then opt in explicitly:
 ```sh
 git -C /path/to/your-project add factory.project.toml factory.charter.toml .gitignore
 git -C /path/to/your-project commit -m "chore: configure software factory"
-./factory/factory prepare --repo /path/to/your-project
+./factory/factory environment provision --repo /path/to/your-project
+./factory/factory environment prepare --repo /path/to/your-project --yes
+./factory/factory environment health --repo /path/to/your-project --gates
 ./factory/factory control-center --repo /path/to/your-project
 ```
 
@@ -306,6 +321,13 @@ table. For example:
 [agents]
 my-agent = './tools/run-my-agent.sh {prompt}'
 
+[agent_capabilities.my-agent]
+protocol_version = 1
+features = ["progress-events", "usage-telemetry"]
+execution_environment = "local"
+filesystem_mode = "workspace-write"
+allowed_roots = ["worktree"]
+
 [supervisor]
 agent = "my-agent"
 
@@ -339,11 +361,38 @@ Command templates can use these placeholders:
 | `{scenario}` | Selected deterministic rehearsal scenario. |
 | `{attempt}` | Current bounded implementation attempt. |
 | `{factory_dir}` | Absolute path to the factory's bundled adapter scripts. |
+| `{assignment}` | Adapter Protocol v1 JSON assignment. Required by a protocol-aware command template. |
 
 The factory shell-quotes placeholder values before inserting them. If the
 agent requires stronger isolation than a Git worktree, make the adapter invoke
 your container or remote execution wrapper and map the worktree into that
 environment.
+
+### Adapter Protocol v1
+
+A compatibility command may continue to read `{prompt}` and return its process
+exit status. A protocol-aware adapter includes `{assignment}` in its template,
+emits bounded lines beginning with `FACTORY_EVENT `, and ends with exactly one
+`FACTORY_RESULT ` JSON object. The result names the outcome, output revisions,
+artifacts, verification claims, unresolved risks, and only trustworthy
+provider-reported usage. Private reasoning is not a protocol field.
+
+Capability declarations are honest negotiation, not authority. The Control
+Center shows structured planning, read-only execution, streamed progress,
+session resume, subagents, browser verification, execution environment, and
+telemetry as available or unavailable. A role that requires an unavailable
+feature fails before dispatch.
+
+Validate every configured adapter:
+
+```sh
+./factory/factory adapter-check
+```
+
+The minimal worked example is in `factory/examples/custom-adapter.toml` and
+`factory/examples/custom_protocol_adapter.py`. Normalized assignment, event,
+and result records stay local under `.factory/`; provider-native console output
+may remain in the bounded local log but is not copied to remote summaries.
 
 Assured cleanup, architecture-conformance, hardening, and final-verifier
 assignments end with a structured output contract. The Agent Adapter must
@@ -403,6 +452,46 @@ Production execution also needs untrusted-code sandboxing, credential
 isolation, spend and concurrency limits, audit retention, idempotent recovery,
 branch protection, supply-chain controls, observability, and organization
 policy enforcement.
+
+## Configure optional production interfaces
+
+Use `factory.workspace.toml` only when one delivery requires related
+repositories. Every entry names an exact revision, whether it is readable or
+writable, and its local path. The contract also names the repository that owns
+Tickets and pull requests, cross-repository dependencies, shared services, and
+combined verification. Check it before implementation:
+
+```sh
+./factory/factory workspace-check --repo /path/to/your-project
+```
+
+Schedule, webhook, issue, CLI, and Control Center integrations use the same
+trigger proposal contract. Authenticate before calling the factory, supply a
+stable event ID, and pass a bounded JSON payload:
+
+```sh
+./factory/factory trigger webhook EVENT_ID event.json --authenticated \
+  --repo /path/to/your-project
+```
+
+The calling integration authenticates the source before setting
+`--authenticated`. Payloads are bounded and reject credential-like fields.
+Identical retries are idempotent. Reusing an ID with another payload fails. A
+trigger can only propose evidence-backed intake; it cannot bypass planning,
+Charter, QA, review, or merge policy.
+
+After several runs, generate a reviewed compounding report:
+
+```sh
+./factory/factory improve report --repo /path/to/your-project
+```
+
+The report deduplicates retained planning corrections, Ticket retries,
+verifier rejections, false-green tests, diff-budget exceptions, review
+findings, and Monitor findings. Suggestions need repeated observations or one
+explicit high-severity failure
+and include an expected effect, regression risk, and verification plan. They
+cannot edit or approve the Factory Charter or delivery configuration.
 
 If you already have a GitHub Project, save its number locally:
 

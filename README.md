@@ -1,6 +1,6 @@
 # Software (re)-Factory Workshop
 
-Release: `workshop-v1.1.3`
+Release: `workshop-v1.2.0`
 
 This repository contains the reference factory orchestrator and the Pocket
 Cinema refactoring workpiece. A four-expert planning pipeline turns each PRD
@@ -11,17 +11,18 @@ Pocket Cinema is the deterministic workshop pack. In Live mode, the same
 factory can target a separate existing Git repository and any PRD after
 `factory init --repo /path/to/project` creates its reviewable Project Contract.
 
-## v1.1.3 highlights
+## v1.2.0 highlights
 
-- The Control Center now presents one four-stage operator workflow: **Setup**,
-  **Plan**, **Deliver**, and **Review**.
-- The current state and next safe action lead every run. Empty decision queues
-  disappear, PRD drafts save automatically, and Planning shows only the action
-  that is currently available.
-- Supervisor activity, repository monitoring, advanced role configuration,
-  run options, diagnostics, and CLI output remain available through progressive
-  disclosure instead of competing with the primary workflow.
-- Control Center assets work with relative paths for reliable local previews.
+- Adapter Protocol v1 adds versioned assignments, normalized progress and
+  results, capability negotiation, and a custom-adapter conformance report.
+- The local environment provider makes setup reproducible through provision,
+  prepare, health, preview, reset, and destroy evidence.
+- Raw feedback and external triggers enter non-dispatching, evidence-backed
+  intake. Repeated run evidence produces human-reviewed improvement proposals.
+- The merge steward can synchronize and re-verify an approved candidate but
+  cannot resolve semantic conflicts or merge it.
+- The Control Center and workshop now teach the five replaceable factory layers
+  while keeping the core Setup, Plan, Deliver, and Review path concise.
 
 Start the local Control Center with:
 
@@ -43,10 +44,13 @@ the factory; opening the HTML file directly does not provide live factory data.
   before the Supervisor recommends that exact revision for a human merge.
 - Follow the [repository issue listener guide](factory/ISSUE_LISTENER.md) to
   admit and implement new user-created GitHub issues from the Control Center.
+- Read the [Factory interface guide](factory/INTERFACES.md) for the five-layer
+  model, Adapter Protocol v1, environment lifecycle, governed intake,
+  compounding reports, merge steward, triggers, and workspace contract.
 - Read the [simplified Control Center design](factory/CONTROL_CENTER_SIMPLIFIED_DESIGN.md)
   for its navigation, interaction hierarchy, and progressive-disclosure rules.
 - Read the [planning pipeline guide](factory/PLANNING.md) for prompts, artifacts,
   approvals, traceability, and stale-plan behavior.
 - Compare the executable [Factory Profiles and role topology](factory/README.md#choose-a-factory-profile).
-- Use the [facilitator runbook](factory/FACILITATOR.md) for the 100-minute
+- Use the [facilitator runbook](factory/FACILITATOR.md) for the three-hour
   schedule, live fallback, and release checklist.

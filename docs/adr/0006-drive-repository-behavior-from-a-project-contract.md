@@ -26,9 +26,10 @@ Each target repository owns one committed `factory.project.toml`. The
 
 `factory init --repo PATH` detects conservative defaults for common Python,
 Node.js, Go, and Rust repositories. It writes configuration but never runs setup.
-`factory prepare --repo PATH` displays the committed setup commands and requires
-explicit approval before executing them. Unknown stacks receive `git diff
---check` as a reviewable integrity gate.
+The environment provider's `prepare` action displays the committed setup
+commands and requires explicit approval before executing them. The legacy
+`factory prepare --repo PATH` command remains a compatibility alias. Unknown
+stacks receive `git diff --check` as a reviewable integrity gate.
 
 Planning, QA, implementation, code review, doctor, gates, Control Center, and
 reset consume the same contract. Planning records a hash of the contract and
