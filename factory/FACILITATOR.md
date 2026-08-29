@@ -2,7 +2,8 @@
 
 Release: `workshop-v1.2.0`
 
-Use [WORKSHOP_OUTLINE.md](WORKSHOP_OUTLINE.md) for the presentation path and
+Use [WORKSHOP_NARRATIVE.md](WORKSHOP_NARRATIVE.md) for the spoken story,
+[WORKSHOP_OUTLINE.md](WORKSHOP_OUTLINE.md) for the presentation path, and
 [COMPATIBILITY.md](COMPATIBILITY.md) for upgrades and migration behavior. This
 runbook is the detailed preparation, release, and recovery reference; do not
 read it as the attendee script.

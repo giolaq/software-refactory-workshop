@@ -8,6 +8,8 @@ Format: individual repository, paired review, facilitator-led checkpoints
 Use this document to run the session. The attendee website supplies the exact
 clicks and commands. This plan tells the facilitator what to explain, what the
 attendees must do, what evidence to inspect, and when to move on.
+Use [WORKSHOP_NARRATIVE.md](WORKSHOP_NARRATIVE.md) for the spoken story and
+transitions that connect these timed activities.
 
 ## Workshop outcome
 
