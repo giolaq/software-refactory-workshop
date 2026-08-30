@@ -289,7 +289,7 @@ repository revision and Project Contract hash.
 ## Milestone 3 — Add evidence-backed production intake
 
 **Goal:** turn raw feedback into a reproducible, governed Ticket before an
-implementation agent receives it.
+the Implementation Role receives it.
 
 ### Intake funnel
 

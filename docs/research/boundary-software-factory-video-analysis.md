@@ -108,7 +108,7 @@ These metrics should propose changes to prompts, skills, contracts, or profiles.
 
 ### 4. Optimize for high automation, not zero humans
 
-The speakers call full automation a common mistake and prefer a system that automates roughly 95% while escalating cases that require judgment or external knowledge ([32:29](https://www.youtube.com/watch?v=tGbjIvvYuHE&t=1949s)). Their review loop lets CodeRabbit and an implementation agent iterate up to three times, then escalates. A human still approves and clicks merge; an agent only babysits synchronization and CI after that approval ([25:00](https://www.youtube.com/watch?v=tGbjIvvYuHE&t=1500s), [25:23](https://www.youtube.com/watch?v=tGbjIvvYuHE&t=1523s)).
+The speakers call full automation a common mistake and prefer a system that automates roughly 95% while escalating cases that require judgment or external knowledge ([32:29](https://www.youtube.com/watch?v=tGbjIvvYuHE&t=1949s)). Their review loop lets CodeRabbit and the implementation worker iterate up to three times, then escalates. A human still approves and clicks merge; an agent only babysits synchronization and CI after that approval ([25:00](https://www.youtube.com/watch?v=tGbjIvvYuHE&t=1500s), [25:23](https://www.youtube.com/watch?v=tGbjIvvYuHE&t=1523s)).
 
 This strongly validates our current Standard path:
 

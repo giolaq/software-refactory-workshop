@@ -251,7 +251,7 @@ layer. The Factory Charter and Agent Roles belong to the outer harness. The
 Control Center is not the coding agent; it is the control plane.
 
 Open **Setup → Connection → Selected harness capabilities**. Assign the same
-Implementation Agent Role first to Claude and then to Codex (or the two
+Implementation Role first to Claude and then to Codex (or the two
 adapters available in the room). Point to one real declared difference such as
 native read-only execution, streamed tool progress, session resume, subagents,
 browser verification, execution environment, or usage telemetry. An

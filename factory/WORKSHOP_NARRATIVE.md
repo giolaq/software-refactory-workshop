@@ -429,7 +429,7 @@ Use a dependency cycle to make the point:
 
 Say:
 
-> We now have approved intent and bounded work. Before an implementation agent
+> We now have approved intent and bounded work. Before the Implementation Role
 > changes code, we need evidence that can detect the missing behavior.
 
 ---
@@ -633,7 +633,7 @@ Then ask them to choose what to own, buy, or bring existing at each layer.
 Do not end by recommending the complete workshop topology. End with
 proportionality:
 
-> Start with one bounded demand, one implementation agent, one independent
+> Start with one bounded demand, one Implementation Role, one independent
 > success check, one pull request, and one human merge. Add planning stages,
 > supervision, stronger isolation, or deeper gates only when they address a
 > failure mode you can name.
