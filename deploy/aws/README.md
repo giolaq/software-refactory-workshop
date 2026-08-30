@@ -9,6 +9,11 @@ For a copy-and-follow installation from an empty terminal to the first Live
 run, use [INSTALL.md](INSTALL.md). This document is the architecture, security,
 and operations reference.
 
+After the first installation, use [AUTODEPLOY.md](AUTODEPLOY.md) to connect the
+`codex/feat-aws-github-cloud` branch to AWS with short-lived GitHub OIDC
+credentials. Every push then rebuilds and updates the same CloudFormation
+stacks through the same `deploy.sh` interface.
+
 This is a single-tenant team deployment. It is suitable for a workshop,
 internal evaluation, or a small trusted engineering team. It is not a
 multi-tenant service and does not treat arbitrary repository code as trusted.
@@ -254,18 +259,50 @@ Important limits:
   subnets, VPC endpoints, WAF, centralized audit logging, and organization
   controls for a production deployment.
 
-## Update and remove
+## Update, pause, and remove
 
 Run `deploy.sh` again to publish a new immutable image and update the service.
 CloudFormation reports an empty change set as success.
 
-To remove the runtime while retaining the EFS workspace:
+For branch-driven updates, configure the exact-branch GitHub Actions path in
+[AUTODEPLOY.md](AUTODEPLOY.md). Do not store long-lived AWS access keys in
+GitHub.
+
+Check the current cost state:
 
 ```bash
-aws cloudformation delete-stack --region "$AWS_REGION" --stack-name "$FACTORY_STACK"
-aws cloudformation wait stack-delete-complete --region "$AWS_REGION" --stack-name "$FACTORY_STACK"
+deploy/aws/factory-cloud status
 ```
 
-The retained EFS file system continues to incur cost. After backup and explicit
-review, delete it separately. Delete the registry stack only if its retained
-images are no longer needed.
+Pause Fargate compute without losing the workspace:
+
+```bash
+deploy/aws/factory-cloud pause
+deploy/aws/factory-cloud resume
+```
+
+Pause scales the service to zero. It stops the Fargate task charge, but the
+ALB, public IPv4 addresses, EFS, Route 53, Secrets Manager, and stored logs or
+images can still incur charges. A later automatic deployment can restore the
+template's desired count of one.
+
+Remove the runtime while retaining the EFS workspace and reusable deployment
+setup:
+
+```bash
+deploy/aws/factory-cloud destroy
+```
+
+For a permanent teardown after the workshop, first stop active deployment
+jobs, then run:
+
+```bash
+deploy/aws/factory-cloud destroy --all
+```
+
+The full path requires a separate exact confirmation. It disables automatic
+deployment when GitHub CLI can identify the source repository, then deletes
+the runtime, EFS recovery points and workspace, ECR images, runtime secret,
+certificate, hosted zone, and OIDC bootstrap stack. It cannot remove the four
+delegation records from a parent DNS provider such as Cloudflare; remove those
+records manually when the command reports completion.

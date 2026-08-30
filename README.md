@@ -42,6 +42,12 @@ record; it does not change the local workshop path.
 Use the [step-by-step AWS installation guide](deploy/aws/INSTALL.md) when
 setting up the cloud edition for the first time.
 
+Use the [AWS automatic deployment guide](deploy/aws/AUTODEPLOY.md) to rebuild
+and update the cloud Factory on every push to the AWS feature branch. GitHub
+uses a short-lived, exact-branch OIDC session instead of stored AWS keys.
+The cloud guide also provides guarded `status`, `pause`, `resume`, and teardown
+commands so workshop infrastructure does not need to run continuously.
+
 - Start the self-guided experience with the [workshop website](workshop-guide/README.md).
 - Use the [factory quickstart](factory/README.md) for the operator reference.
 - Use the [configuration guide](factory/CONFIGURATION.md) to select Claude,

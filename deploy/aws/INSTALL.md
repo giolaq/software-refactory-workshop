@@ -306,7 +306,12 @@ COGNITO_DOMAIN_PREFIX=software-refactory-your-team
 
 FACTORY_GIT_USER_NAME="Software Re-Factory"
 FACTORY_GIT_USER_EMAIL=factory@example.com
+FACTORY_TASK_CPU=1024
+FACTORY_TASK_MEMORY=2048
 ```
+
+The final two values select the smaller 1 vCPU and 2 GB workshop capacity.
+Omit them to use the template's 2 vCPU and 4 GB defaults.
 
 The file must not contain the GitHub token itself.
 
@@ -552,27 +557,50 @@ bash deploy/aws/deploy.sh
 The script pushes a new immutable image and updates the ECS task definition.
 EFS preserves the repository checkout, worktrees, factory state, and logs.
 
-## Remove the deployment
+To rebuild and deploy automatically whenever
+`codex/feat-aws-github-cloud` changes, complete the one-time
+[GitHub OIDC automatic deployment guide](AUTODEPLOY.md). It uses the same
+`deploy.sh` interface and does not store AWS access keys in GitHub.
 
-Delete the main stack:
+## Pause or remove the deployment
 
-```bash
-aws cloudformation delete-stack --stack-name "$FACTORY_STACK"
-aws cloudformation wait stack-delete-complete --stack-name "$FACTORY_STACK"
-```
-
-The EFS file system is deliberately retained. Find its ID in the old stack
-outputs or the EFS console. Back it up, then delete it explicitly when you are
-certain its checkout, worktrees, evidence, and logs are no longer needed.
-
-Delete the registry stack when its images are no longer needed:
+Pause the compute task when you want to resume with the same URL and workspace:
 
 ```bash
-aws cloudformation delete-stack --stack-name "$FACTORY_REGISTRY_STACK"
+deploy/aws/factory-cloud pause
 ```
 
-Finally, delete the GitHub secrets from Secrets Manager if this factory will
-not be recreated.
+Resume it later:
+
+```bash
+deploy/aws/factory-cloud resume
+```
+
+Pause removes the Fargate compute charge. The load balancer, public IPv4
+addresses, EFS, hosted zone, secret, logs, and images remain available and can
+still incur charges.
+
+Remove the runtime but retain its EFS workspace and reusable AWS setup:
+
+```bash
+deploy/aws/factory-cloud destroy
+```
+
+The command displays the retained EFS ID. This is a cold stop, not a zero-cost
+teardown, and restoring that retained file system requires an explicit recovery
+or import step.
+
+Permanently delete the Factory's AWS resources after the workshop:
+
+```bash
+deploy/aws/factory-cloud destroy --all
+```
+
+Read the warning and type the exact domain confirmation. This removes the
+workspace and backups, images, GitHub token secret, certificate, hosted zone,
+and automatic-deployment roles as well as the runtime. Stop active GitHub
+deployment jobs first. If the subdomain was delegated from Cloudflare or
+another DNS provider, remove its parent-zone `NS` records afterward.
 
 ## Installation is complete when
 

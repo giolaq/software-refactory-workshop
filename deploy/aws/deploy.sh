@@ -22,8 +22,15 @@ aws_args=(--region "${AWS_REGION}")
 if [[ -n "${AWS_PROFILE:-}" ]]; then
     aws_args+=(--profile "${AWS_PROFILE}")
 fi
+cloudformation_deploy() {
+    local deploy_args=(cloudformation deploy "$@")
+    if [[ -n "${AWS_CLOUDFORMATION_ROLE_ARN:-}" ]]; then
+        deploy_args+=(--role-arn "${AWS_CLOUDFORMATION_ROLE_ARN}")
+    fi
+    aws "${aws_args[@]}" "${deploy_args[@]}"
+}
 
-aws "${aws_args[@]}" cloudformation deploy \
+cloudformation_deploy \
     --stack-name "${registry_stack}" \
     --template-file "${deployment_dir}/registry.yaml" \
     --no-fail-on-empty-changeset
@@ -39,6 +46,7 @@ image_uri="${repository_uri}:${image_tag}"
 aws "${aws_args[@]}" ecr get-login-password \
     | docker login --username AWS --password-stdin "${registry_host}"
 docker build --platform linux/amd64 \
+    --provenance=false \
     --file "${deployment_dir}/Dockerfile" \
     --tag "${image_uri}" \
     "${repository_root}"
@@ -60,8 +68,14 @@ parameters=(
 if [[ -n "${REVIEWER_TOKEN_SECRET_ARN:-}" ]]; then
     parameters+=("ReviewerTokenSecretArn=${REVIEWER_TOKEN_SECRET_ARN}")
 fi
+if [[ -n "${FACTORY_TASK_CPU:-}" ]]; then
+    parameters+=("TaskCpu=${FACTORY_TASK_CPU}")
+fi
+if [[ -n "${FACTORY_TASK_MEMORY:-}" ]]; then
+    parameters+=("TaskMemory=${FACTORY_TASK_MEMORY}")
+fi
 
-aws "${aws_args[@]}" cloudformation deploy \
+cloudformation_deploy \
     --stack-name "${factory_stack}" \
     --template-file "${deployment_dir}/factory.yaml" \
     --capabilities CAPABILITY_IAM \

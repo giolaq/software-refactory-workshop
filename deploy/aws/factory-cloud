@@ -1,0 +1,313 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+deployment_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+config_file="${FACTORY_AWS_CONFIG:-${deployment_dir}/config.env}"
+
+usage() {
+    cat <<'EOF'
+Usage: deploy/aws/factory-cloud <command>
+
+Commands:
+  status          Show the CloudFormation and ECS runtime state.
+  pause           Scale the Factory task to zero. The ALB and storage remain.
+  resume          Restore the Factory task to one and wait until it is stable.
+  destroy         Delete the runtime stack, retaining the EFS workspace.
+  destroy --all   Permanently remove the runtime, retained data, and AWS setup.
+  help            Show this help.
+
+The script loads deploy/aws/config.env by default. Set FACTORY_AWS_CONFIG to
+use another file. Destructive commands require an exact typed confirmation.
+EOF
+}
+
+command="${1:-help}"
+if [[ "${command}" == "help" || "${command}" == "--help" || "${command}" == "-h" ]]; then
+    usage
+    exit 0
+fi
+shift
+
+if [[ -f "${config_file}" ]]; then
+    set -a
+    # shellcheck source=/dev/null
+    source "${config_file}"
+    set +a
+fi
+
+if [[ -z "${AWS_REGION:-}" ]]; then
+    echo "AWS_REGION is required. Configure ${config_file} first." >&2
+    exit 2
+fi
+if ! command -v aws >/dev/null 2>&1; then
+    echo "aws is required." >&2
+    exit 2
+fi
+
+factory_stack="${FACTORY_STACK:-software-refactory}"
+registry_stack="${FACTORY_REGISTRY_STACK:-software-refactory-registry}"
+bootstrap_stack="${AUTO_DEPLOY_BOOTSTRAP_STACK:-software-refactory-github-deploy}"
+factory_domain="${FACTORY_DOMAIN_NAME:-unknown-domain}"
+aws_args=(--region "${AWS_REGION}")
+if [[ -n "${AWS_PROFILE:-}" ]]; then
+    aws_args+=(--profile "${AWS_PROFILE}")
+fi
+
+stack_exists() {
+    aws "${aws_args[@]}" cloudformation describe-stacks \
+        --stack-name "$1" >/dev/null 2>&1
+}
+
+stack_output() {
+    local key="$1"
+    aws "${aws_args[@]}" cloudformation describe-stacks \
+        --stack-name "${factory_stack}" \
+        --query "Stacks[0].Outputs[?OutputKey==\`${key}\`].OutputValue" \
+        --output text
+}
+
+require_runtime() {
+    if ! stack_exists "${factory_stack}"; then
+        echo "Factory stack ${factory_stack} is not deployed." >&2
+        exit 3
+    fi
+}
+
+runtime_coordinates() {
+    cluster_name="$(stack_output ClusterName)"
+    service_name="$(stack_output ServiceName)"
+}
+
+confirm_exactly() {
+    local expected="$1"
+    local prompt="$2"
+    local answer=""
+
+    echo "${prompt}" >&2
+    if [[ ! -t 0 ]]; then
+        echo "Interactive confirmation is required." >&2
+        exit 4
+    fi
+    read -r -p "Type '${expected}' to continue: " answer
+    if [[ "${answer}" != "${expected}" ]]; then
+        echo "Confirmation did not match. Nothing was deleted." >&2
+        exit 4
+    fi
+}
+
+show_status() {
+    if ! stack_exists "${factory_stack}"; then
+        echo "Factory: not deployed"
+        return
+    fi
+
+    runtime_coordinates
+    local stack_status
+    local service_state
+    stack_status="$(aws "${aws_args[@]}" cloudformation describe-stacks \
+        --stack-name "${factory_stack}" --query 'Stacks[0].StackStatus' --output text)"
+    service_state="$(aws "${aws_args[@]}" ecs describe-services \
+        --cluster "${cluster_name}" --services "${service_name}" \
+        --query 'services[0].[desiredCount,runningCount,pendingCount]' --output text)"
+
+    echo "Factory stack: ${stack_status}"
+    echo "ECS desired/running/pending: ${service_state}"
+    echo "Control Center: $(stack_output ControlCenterUrl)"
+}
+
+pause_runtime() {
+    require_runtime
+    runtime_coordinates
+    aws "${aws_args[@]}" ecs update-service \
+        --cluster "${cluster_name}" --service "${service_name}" \
+        --desired-count 0 --query 'service.[desiredCount,runningCount]' --output text
+    aws "${aws_args[@]}" ecs wait services-stable \
+        --cluster "${cluster_name}" --services "${service_name}"
+    echo "Factory paused. Fargate compute is stopped; ALB, EFS, Route 53, and secrets remain billable."
+}
+
+resume_runtime() {
+    require_runtime
+    runtime_coordinates
+    aws "${aws_args[@]}" ecs update-service \
+        --cluster "${cluster_name}" --service "${service_name}" \
+        --desired-count 1 --query 'service.[desiredCount,runningCount]' --output text
+    aws "${aws_args[@]}" ecs wait services-stable \
+        --cluster "${cluster_name}" --services "${service_name}"
+    echo "Factory running at $(stack_output ControlCenterUrl)"
+}
+
+delete_stack_if_present() {
+    local name="$1"
+    if stack_exists "${name}"; then
+        echo "Deleting CloudFormation stack ${name}..."
+        aws "${aws_args[@]}" cloudformation delete-stack --stack-name "${name}"
+        aws "${aws_args[@]}" cloudformation wait stack-delete-complete --stack-name "${name}"
+    fi
+}
+
+matching_file_systems() {
+    aws "${aws_args[@]}" efs describe-file-systems \
+        --query "FileSystems[?Name==\`${factory_stack}-workspace\`].FileSystemId" \
+        --output text
+}
+
+delete_efs_and_backups() {
+    local account_id="$1"
+    local file_system_id
+    local resource_arn
+    local vault_name
+    local recovery_point_arn
+
+    for file_system_id in $(matching_file_systems); do
+        resource_arn="arn:aws:elasticfilesystem:${AWS_REGION}:${account_id}:file-system/${file_system_id}"
+        while IFS=$'\t' read -r vault_name recovery_point_arn; do
+            if [[ -n "${vault_name}" && -n "${recovery_point_arn}" ]]; then
+                echo "Deleting EFS recovery point ${recovery_point_arn}..."
+                aws "${aws_args[@]}" backup delete-recovery-point \
+                    --backup-vault-name "${vault_name}" \
+                    --recovery-point-arn "${recovery_point_arn}"
+            fi
+        done < <(aws "${aws_args[@]}" backup list-recovery-points-by-resource \
+            --resource-arn "${resource_arn}" \
+            --query 'RecoveryPoints[].[BackupVaultName,RecoveryPointArn]' --output text)
+        echo "Deleting retained EFS workspace ${file_system_id}..."
+        aws "${aws_args[@]}" efs delete-file-system --file-system-id "${file_system_id}"
+    done
+}
+
+clear_and_delete_hosted_zone() {
+    local hosted_zone_id="${ROUTE53_HOSTED_ZONE_ID:-}"
+    local temporary_dir
+    local records_file
+    local changes_file
+    local change_count
+    local change_id
+
+    if [[ -z "${hosted_zone_id}" ]]; then
+        return
+    fi
+    if ! aws "${aws_args[@]}" route53 get-hosted-zone \
+        --id "${hosted_zone_id}" >/dev/null 2>&1; then
+        return
+    fi
+    if ! command -v jq >/dev/null 2>&1; then
+        echo "jq is required to remove the Route 53 hosted zone." >&2
+        exit 2
+    fi
+
+    temporary_dir="$(mktemp -d)"
+    records_file="${temporary_dir}/records.json"
+    changes_file="${temporary_dir}/changes.json"
+
+    aws "${aws_args[@]}" route53 list-resource-record-sets \
+        --hosted-zone-id "${hosted_zone_id}" > "${records_file}"
+    jq '{Changes: [.ResourceRecordSets[] | select(.Type != "NS" and .Type != "SOA") | {Action:"DELETE",ResourceRecordSet:.}]}' \
+        "${records_file}" > "${changes_file}"
+    change_count="$(jq '.Changes | length' "${changes_file}")"
+    if [[ "${change_count}" -gt 0 ]]; then
+        change_id="$(aws "${aws_args[@]}" route53 change-resource-record-sets \
+            --hosted-zone-id "${hosted_zone_id}" \
+            --change-batch "file://${changes_file}" \
+            --query 'ChangeInfo.Id' --output text)"
+        aws "${aws_args[@]}" route53 wait resource-record-sets-changed \
+            --id "${change_id}"
+    fi
+    aws "${aws_args[@]}" route53 delete-hosted-zone --id "${hosted_zone_id}" >/dev/null
+    rm -rf -- "${temporary_dir}"
+    echo "Deleted Route 53 hosted zone ${hosted_zone_id}. Remove the factory NS records from the parent DNS zone."
+}
+
+disable_autodeploy() {
+    local source_repository="${AUTO_DEPLOY_SOURCE_REPOSITORY:-}"
+    if [[ -z "${source_repository}" ]] && command -v gh >/dev/null 2>&1; then
+        source_repository="$(gh repo view --json nameWithOwner --jq .nameWithOwner 2>/dev/null || true)"
+    fi
+    if [[ -n "${source_repository}" ]] && command -v gh >/dev/null 2>&1; then
+        gh workflow disable deploy-aws-factory.yml --repo "${source_repository}" 2>/dev/null || \
+            echo "WARNING: Disable Deploy Factory to AWS manually in ${source_repository}." >&2
+    else
+        echo "WARNING: Disable Deploy Factory to AWS manually before pushing again." >&2
+    fi
+}
+
+destroy_runtime() {
+    local remove_all="false"
+    local retained_file_systems=""
+
+    if [[ "${1:-}" == "--all" ]]; then
+        remove_all="true"
+        shift
+    fi
+    if [[ "$#" -ne 0 ]]; then
+        usage >&2
+        exit 2
+    fi
+
+    if [[ "${remove_all}" == "true" ]]; then
+        confirm_exactly "delete ${factory_domain}" \
+            "This permanently deletes the Factory runtime, workspace, backups, images, token secret, certificate, and hosted zone."
+        disable_autodeploy
+    else
+        confirm_exactly "delete ${factory_stack}" \
+            "This deletes the runtime but retains EFS data and the deployment setup, which can still incur small charges."
+    fi
+
+    if stack_exists "${factory_stack}"; then
+        retained_file_systems="$(stack_output FileSystemId)"
+    else
+        retained_file_systems="$(matching_file_systems)"
+    fi
+    delete_stack_if_present "${factory_stack}"
+
+    if [[ "${remove_all}" != "true" ]]; then
+        echo "Runtime removed. Retained EFS workspace: ${retained_file_systems:-none found}"
+        echo "The registry, secret, certificate, hosted zone, and retained storage remain."
+        return
+    fi
+
+    local account_id
+    account_id="$(aws "${aws_args[@]}" sts get-caller-identity --query Account --output text)"
+    delete_efs_and_backups "${account_id}"
+    delete_stack_if_present "${registry_stack}"
+    if [[ -n "${GITHUB_TOKEN_SECRET_ARN:-}" ]]; then
+        if aws "${aws_args[@]}" secretsmanager describe-secret \
+            --secret-id "${GITHUB_TOKEN_SECRET_ARN}" >/dev/null 2>&1; then
+            aws "${aws_args[@]}" secretsmanager delete-secret \
+                --secret-id "${GITHUB_TOKEN_SECRET_ARN}" \
+                --force-delete-without-recovery >/dev/null
+        fi
+    fi
+    if [[ -n "${ACM_CERTIFICATE_ARN:-}" ]]; then
+        if aws "${aws_args[@]}" acm describe-certificate \
+            --certificate-arn "${ACM_CERTIFICATE_ARN}" >/dev/null 2>&1; then
+            aws "${aws_args[@]}" acm delete-certificate \
+                --certificate-arn "${ACM_CERTIFICATE_ARN}" >/dev/null
+        fi
+    fi
+    clear_and_delete_hosted_zone
+    delete_stack_if_present "${bootstrap_stack}"
+    echo "Full AWS teardown complete. IAM Identity Center remains available and has no Factory runtime workload."
+}
+
+case "${command}" in
+    status)
+        [[ "$#" -eq 0 ]] || { usage >&2; exit 2; }
+        show_status
+        ;;
+    pause)
+        [[ "$#" -eq 0 ]] || { usage >&2; exit 2; }
+        pause_runtime
+        ;;
+    resume)
+        [[ "$#" -eq 0 ]] || { usage >&2; exit 2; }
+        resume_runtime
+        ;;
+    destroy)
+        destroy_runtime "$@"
+        ;;
+    *)
+        usage >&2
+        exit 2
+        ;;
+esac
