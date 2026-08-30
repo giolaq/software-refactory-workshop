@@ -11,6 +11,18 @@ from session_config import configure_session, load_session_config, remember_proj
 
 
 class SessionConfigTests(unittest.TestCase):
+    def test_bedrock_aws_preset_selects_one_cloud_adapter_for_all_roles(self):
+        with tempfile.TemporaryDirectory() as directory:
+            repo = Path(directory)
+            _, value = configure_session(repo, "bedrock-aws", 9)
+
+        self.assertEqual(value["planning_agent"], "bedrock")
+        self.assertEqual(value["agent"], "bedrock")
+        self.assertEqual(value["qa_agent"], "bedrock")
+        self.assertEqual(value["supervisor_agent"], "bedrock")
+        self.assertEqual(value["review_agent"], "bedrock")
+        self.assertEqual(value["project_number"], 9)
+
     def test_claude_preset_is_saved_outside_tracked_configuration(self):
         with tempfile.TemporaryDirectory() as directory:
             repo = Path(directory)
@@ -96,6 +108,12 @@ class SessionConfigTests(unittest.TestCase):
         self.assertEqual(args.review_agent, "review-wrapper")
         self.assertEqual(args.planning_agent, "codex")
         self.assertEqual(args.github_repository, "https://github.com/attendee/workshop")
+
+    def test_parser_accepts_bedrock_for_structured_planning(self):
+        self.assertEqual(
+            parser().parse_args(["plan", "PRD.md", "--planning-agent", "bedrock"]).planning_agent,
+            "bedrock",
+        )
 
     def test_github_repository_is_saved_as_a_canonical_url(self):
         with tempfile.TemporaryDirectory() as directory:

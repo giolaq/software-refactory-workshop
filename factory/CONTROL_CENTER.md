@@ -17,13 +17,14 @@ workshop. Press `Ctrl+C` to close the server.
 
 | Screen | Attendee action | Factory result |
 | --- | --- | --- |
-| Setup → Connection | Inspect or create the Project Contract and Factory Charter; select role adapters; run setup and preflight | Saves repository behavior, records human-owned policy approval, and checks the target |
+| Setup → Connection | Inspect or create the Project Contract and Factory Charter; select role adapters; provision, prepare, and check the development environment; run preflight | Binds setup to a revision and contract hash, records human-owned policy approval, and checks the target |
 | Plan → Requirements | Review or edit the auto-saved requirement; start Product Review | Saves a local PRD and runs the first planning expert |
 | Plan → Review plan | Read four expert artifacts; approve Product Review, final alignment, and any Charter-selected intermediate gates | Creates PRD-derived rehearsal tickets or GitHub issues |
 | Deliver → Tickets | Run the scheduler or start Live repository issue listening; inspect prompts, logs, diffs, tests, gates, code review, and history | Operates isolated worktrees, admits later user-created issues, and shows live state |
 | More tools → Supervisor activity | Inspect worker reports, dispatch instructions, blocks, merge recommendations, and prior decisions | Explains how the next safe Ticket wave and approved revision were coordinated |
 | Review → Run app | Start the completed application and open its normal or television URL | Runs the integrated product from the repository used by the Factory Run |
 | More tools → Repository monitor | Preview read-only health findings; publish only by explicit Live action | Finds stale claims, waits, drift, CI, and advisories without repairing code |
+| More tools → Factory interfaces | Check workspace revisions, inspect trigger proposals, and generate a reviewed improvement report | Makes optional production seams visible without changing the beginner workflow |
 
 Every operation shows the exact equivalent CLI command and streams its output.
 The interface runs one command at a time, so two buttons cannot start competing
@@ -38,6 +39,32 @@ The primary navigation follows four operator stages: **Setup**, **Plan**,
 available under **More tools**. Advanced role configuration, run options,
 diagnostics, and CLI output stay collapsed until needed so the next safe action
 remains visually dominant.
+
+Setup begins with the five-layer strip: **Compute → Development environment →
+Inner harness → Outer harness → Control plane**. The selected Agent Adapter card
+shows its Adapter Protocol version and declared features. An unavailable
+feature remains visibly unavailable; choosing another adapter does not change
+the role's policy or authority.
+
+Setup has three attendee decisions:
+
+1. **Connect** — select the GitHub repository, run mode, Factory Profile, and
+   agent preset, then select **Save and connect**.
+2. **Create contract** — let the factory detect source folders, tests, gates,
+   and a conservative operating policy.
+3. **Review and approve** — inspect the repository model and operating policy,
+   then select **Approve contract and continue** once.
+
+The final approval runs the mechanical work in order: publish the contract in
+Live mode, provision the checkout, run only declared setup commands, check
+health and gates, and run preflight. **Activity and CLI output** names every
+substep and stops at the first error. Fix that error and select **Retry automatic
+setup**; completed governance work is safe to repeat.
+
+The granular `publish-setup`, `environment`, and `doctor` commands remain
+available to operators for diagnosis, but they are not separate attendee
+phases. Provider reset preserves source and GitHub evidence and remains
+separate from **Reset run**, which controls planning and Ticket history.
 
 If a planning expert cannot make a product or technical decision safely, its
 card shows each blocking question with an answer field. Answer every question
@@ -93,6 +120,37 @@ Supervisor recommendation. In Lean, Standard, and Assured, a person must inspect
 that exact revision and choose whether to merge it. The Code Review role does
 not edit or merge.
 
+The Ticket Summary also shows the **Non-authoritative merge steward**. It
+distinguishes **ready for human merge**, **steward updating**, and **human
+decision required**. When the default branch moved, select **Synchronize and
+re-verify** only after reading the confirmation. A changed candidate revokes
+gates and Code Review, then returns through verification. Semantic conflicts,
+protected-path changes, changed Acceptance Tests, branch-protection failures,
+and unresolved comments always stop for a person. The steward never selects
+the merge action.
+
+## Inspect optional factory interfaces
+
+Open **More tools → Factory interfaces** after a run when you need production
+integration evidence:
+
+- **Workspace contract** checks every configured repository and revision,
+  names the Ticket and pull-request target, and blocks missing services or
+  drift before implementation with a named recovery owner. Without
+  `factory.workspace.toml`, it reports the normal single-repository default.
+- **Authenticated triggers** lists deduplicated schedule, webhook, issue, CLI,
+  and Control Center proposals. Authentication happens at the integration
+  boundary; every accepted event still enters governed intake and cannot
+  dispatch directly.
+- **Reviewed compounding** generates suggestions from repeated bounded
+  observations already retained by planning, Tickets, code review, and the
+  Monitor. Each suggestion names evidence, effect, regression risk, and a
+  verification plan; regenerating the report deduplicates evidence references.
+  It cannot modify the Factory Charter or delivery configuration.
+
+These tools are optional in the workshop. Their purpose is to make a future
+integration replaceable, not to require hosted infrastructure for a local run.
+
 ## Inspect the Supervisor role
 
 Standard and Assured Factory Profiles use a supervisor before each dispatch
@@ -127,7 +185,7 @@ The first panel is the operating summary:
   ticket and role doing the work—for example independent QA, implementation,
   verification gates, code review, or merge synchronization.
 - **Next checkpoint** names the next action or inspection point and opens the relevant screen.
-- **Workshop progress** separates completed, current, and pending phases.
+- **Factory progress** separates completed, current, and pending phases.
 - **Waiting for you** lists approvals and blockers that pause automation.
 - **Operation** shows the exact command and its live output. It explains a
   failure until the next command runs.
@@ -169,11 +227,12 @@ unchecked for an existing project; the factory never replaces repository
 contents.
 
 For a greenfield product, also leave the option unchecked. After the empty
-repository activates, create and review its Project Contract and Charter,
-approve the exact Charter, and select **Commit and push setup**. This creates a
-minimal default branch containing only governance and `.gitignore`. The PRD,
-planning artifacts, GitHub tickets, and worker changes then create the product;
-the factory implementation remains in the separate control checkout.
+repository activates, select **Create contract**, review its repository model
+and operating policy, then select **Approve contract and continue**. The
+automatic setup creates a minimal default branch containing only governance and
+`.gitignore`, prepares the environment, and runs preflight. The PRD, planning
+artifacts, GitHub tickets, and worker changes then create the product; the
+factory implementation remains in the separate control checkout.
 
 ### Listen for new repository issues
 
@@ -189,21 +248,15 @@ On its first start, the listener records all current open issues as a baseline,
 so it never surprises an attendee by implementing an old backlog. Open a new
 GitHub issue after the status becomes **Listening** and use this body:
 
-```markdown
-## Spec
-Describe the behavior to implement.
-
-## Acceptance criteria
-- Describe an observable result.
-```
-
-The issue is added to the Factory Project and follows the selected profile.
-Factory planning issues, monitor issues, and previously governed intake issues
-are ignored. If the body is incomplete, open the Blocked Ticket Summary. The
-Control Center explains why triage stopped and offers a proposed body; accept or
-edit it, explain why the correction is sufficient, then select **Save ticket
-and retry**. GitHub is updated, the edit is recorded, and the listener re-triages
-the issue without losing the active run.
+Raw feedback becomes an evidence-backed proposal. A feature is
+`READY_TO_PLAN`; a bug is `READY_TO_IMPLEMENT` only when the affected and latest
+revisions, environment, focused causal reproduction, acceptance criteria, and
+file ownership are present. Collection, setup, and unrelated failures do not
+count as reproduction. Open the Ticket Summary to review the classification and
+missing evidence. A proposal cannot dispatch work. A person must record why a
+reproducible bug is sufficient before **Approve intake for triage** becomes the
+normal delivery path. Factory planning, monitor, and prior intake Issues are
+ignored to prevent recursion. See [ISSUE_LISTENER.md](ISSUE_LISTENER.md).
 
 ### Open an existing local checkout
 
@@ -214,15 +267,13 @@ instead, pass it when starting the Control Center:
 ./factory/factory control-center --repo /path/to/your-project
 ```
 
-The Project Contract card shows detected source roots, test roots, and gates.
-Select **Create contract and Charter**, review `factory.project.toml` and the
-exact `factory.charter.toml` policy, then select **Approve exact Charter**.
-**Commit and push setup** publishes only those two governance files and
-`.gitignore`; it refuses unrelated working-tree changes. Then select **Run
-setup** only if its commands are correct; review and commit any intentional
-lockfile change. Full
-preflight verifies the committed contract, tools, GitHub target, default branch,
-agent authentication, and gates before a Live run.
+Use the same three steps: **Save and connect**, **Create contract**, then
+**Approve contract and continue**. “Repository contract” is the single review
+concept in the UI. Its technical model is stored in `factory.project.toml`; its
+human-owned operating policy is stored in `factory.charter.toml`. The approval
+publishes only those governance files and `.gitignore`, provisions and prepares
+the declared environment, and runs full preflight. Unrelated working-tree
+changes still make publication stop safely.
 
 The PRD editor accepts any product requirement. Live planning combines its
 scope with this contract and a bounded repository inventory. Rehearsal planning

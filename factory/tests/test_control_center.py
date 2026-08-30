@@ -46,6 +46,16 @@ class ControlCenterTests(unittest.TestCase):
         self.assertEqual(args.port, 5050)
         self.assertTrue(args.no_open)
 
+    def test_parser_exposes_single_repository_contract_approval(self):
+        args = parser().parse_args([
+            "approve-contract", "--repo", "/tmp/product", "--live", "--yes",
+        ])
+
+        self.assertEqual(args.command, "approve-contract")
+        self.assertEqual(args.repo, "/tmp/product")
+        self.assertTrue(args.live)
+        self.assertTrue(args.yes)
+
     def test_parser_exposes_live_repository_issue_listener(self):
         args = parser().parse_args([
             "run", "--repo", "/tmp/workshop", "--listen",
@@ -330,9 +340,13 @@ class ControlCenterTests(unittest.TestCase):
             self.assertEqual(snapshot["project"]["source_roots"], ["src"])
             self.assertFalse(snapshot["project"]["configured"])
 
-    def test_charter_is_a_visible_explicit_human_gate_before_planning(self):
+    def test_repository_contract_is_one_visible_human_gate_before_planning(self):
         with tempfile.TemporaryDirectory() as directory:
             center = ControlCenter(self.make_repo(directory))
+            (center.repo / ".factory").mkdir(exist_ok=True)
+            (center.repo / ".factory/local.toml").write_text(
+                'preset = "codex-workshop"\nprofile = "standard"\n'
+            )
             project = ProjectContract.detect(center.repo)
             project.write()
             FactoryCharter.draft(center.repo, project).write()
@@ -342,7 +356,7 @@ class ControlCenterTests(unittest.TestCase):
 
             self.assertTrue(draft["charter"]["configured"])
             self.assertFalse(draft["charter"]["approved"])
-            self.assertEqual(draft["journey"]["next"]["label"], "Review Factory Charter")
+            self.assertEqual(draft["journey"]["next"]["label"], "Review and approve")
             self.assertEqual(title, "Approve Factory Charter")
             self.assertIn("approve-charter", commands[0])
             self.assertIn("--yes", commands[0])
@@ -357,6 +371,95 @@ class ControlCenterTests(unittest.TestCase):
             self.assertIn("publish-setup", publish_commands[0])
             self.assertIn("--yes", publish_commands[0])
 
+    def test_contract_approval_runs_the_hidden_setup_sequence(self):
+        with tempfile.TemporaryDirectory() as directory:
+            center = ControlCenter(self.make_repo(directory))
+            (center.repo / ".factory").mkdir(exist_ok=True)
+            (center.repo / ".factory/local.toml").write_text(
+                'preset = "codex-workshop"\n'
+                'profile = "standard"\n'
+                'github_repository = "https://github.com/example/product"\n'
+            )
+            project = ProjectContract.detect(center.repo)
+            project.write()
+            FactoryCharter.draft(center.repo, project).write()
+
+            title, commands = center.build_commands(
+                "approve-contract", {"mode": "live"},
+            )
+
+            self.assertEqual(title, "Approve and prepare repository")
+            self.assertEqual(commands[0][1], "approve-contract")
+            self.assertIn("--yes", commands[0])
+            self.assertIn("--live", commands[0])
+
+    def test_failed_automatic_preflight_keeps_setup_as_the_next_safe_action(self):
+        with tempfile.TemporaryDirectory() as directory:
+            center = ControlCenter(self.make_repo(directory))
+            (center.repo / ".factory").mkdir(exist_ok=True)
+            (center.repo / ".factory/local.toml").write_text(
+                'preset = "codex-workshop"\nprofile = "standard"\n'
+            )
+            project = ProjectContract.detect(center.repo)
+            project.write()
+            FactoryCharter.draft(center.repo, project).write()
+            FactoryCharter.load(center.repo).approve()
+            environment = center.repo / ".factory/environment"
+            environment.mkdir(parents=True)
+            (environment / "state.json").write_text(json.dumps({
+                "provider": "local",
+                "status": "healthy",
+                "checks": [],
+            }))
+            center.operation = {
+                "action": "approve-contract",
+                "status": "failed",
+                "exit_code": 1,
+            }
+
+            snapshot = center.snapshot()
+
+            self.assertEqual(snapshot["journey"]["next"]["label"], "Fix and retry setup")
+            self.assertEqual(snapshot["journey"]["next"]["view"], "connect")
+            self.assertNotEqual(snapshot["journey"]["next"]["label"], "Open the PRD")
+
+    def test_environment_lifecycle_is_visible_and_allowlisted(self):
+        with tempfile.TemporaryDirectory() as directory:
+            repo = self.make_repo(directory)
+            subprocess.run(["git", "init", "-q", "-b", "main"], cwd=repo, check=True)
+            subprocess.run(["git", "config", "user.email", "factory@example.com"], cwd=repo, check=True)
+            subprocess.run(["git", "config", "user.name", "Factory Test"], cwd=repo, check=True)
+            project = ProjectContract.detect(repo)
+            project.write()
+            subprocess.run(["git", "add", "."], cwd=repo, check=True)
+            subprocess.run(["git", "commit", "-qm", "baseline"], cwd=repo, check=True)
+            center = ControlCenter(repo)
+
+            snapshot = center.snapshot()
+            self.assertEqual(snapshot["environment"]["provider"], "local")
+            self.assertEqual(snapshot["environment"]["status"], "not-provisioned")
+            self.assertEqual(snapshot["workspace"]["status"], "ready")
+            self.assertIn("suggestions", snapshot["improvements"])
+            self.assertEqual(snapshot["triggers"]["proposal_count"], 0)
+            self.assertIn("codex", snapshot["adapter_details"])
+            self.assertEqual(
+                snapshot["adapter_details"]["codex"]["protocol_version"], 1,
+            )
+
+            title, commands = center.build_commands("environment-provision", {})
+            self.assertEqual(title, "Provision development environment")
+            self.assertEqual(commands[0][1:3], ["environment", "provision"])
+            title, commands = center.build_commands("environment-prepare", {})
+            self.assertIn("--yes", commands[0])
+            title, commands = center.build_commands("environment-health", {})
+            self.assertIn("--gates", commands[0])
+            title, commands = center.build_commands("environment-reset", {})
+            self.assertEqual(title, "Reset provider-owned environment state")
+            title, commands = center.build_commands("improve-report", {})
+            self.assertEqual(commands[0][1:3], ["improve", "report"])
+            title, commands = center.build_commands("workspace-check", {})
+            self.assertEqual(commands[0][1], "workspace-check")
+
     def test_monitor_actions_are_registered_and_publication_is_live_only(self):
         with tempfile.TemporaryDirectory() as temp:
             center = ControlCenter(self.make_repo(temp))
@@ -369,6 +472,37 @@ class ControlCenterTests(unittest.TestCase):
             title, commands = center.build_commands("publish-monitor", {"mode": "live"})
             self.assertEqual(title, "Publish monitor findings")
             self.assertIn("--publish", commands[0])
+
+    def test_human_can_approve_a_ready_intake_case_from_the_control_center(self):
+        with tempfile.TemporaryDirectory() as directory:
+            center = ControlCenter(self.make_repo(directory))
+            title, commands = center.build_commands("approve-intake", {
+                "mode": "live",
+                "issue": 12,
+                "case_id": "case-12",
+                "reason": "Reviewed the causal reproduction evidence.",
+            })
+            self.assertEqual(title, "Approve evidence-backed intake")
+            self.assertIn("approve-intake", commands[0])
+            self.assertIn("--yes", commands[0])
+            self.assertIn("case-12", commands[0])
+            with self.assertRaisesRegex(InputError, "Live mode"):
+                center.build_commands("approve-intake", {
+                    "mode": "rehearsal", "issue": 12,
+                    "case_id": "case-12", "reason": "Enough reviewed evidence.",
+                })
+
+    def test_merge_steward_sync_is_explicit_and_never_invokes_merge(self):
+        with tempfile.TemporaryDirectory() as directory:
+            center = ControlCenter(self.make_repo(directory))
+            title, commands = center.build_commands("steward-sync", {
+                "issue": 7,
+            })
+            self.assertEqual(title, "Synchronize candidate for re-verification")
+            self.assertIn("steward", commands[0])
+            self.assertIn("--synchronize", commands[0])
+            self.assertIn("--yes", commands[0])
+            self.assertNotIn("merge", commands[0])
 
     def test_configuration_is_allowlisted_and_never_uses_a_shell_command(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -1925,7 +2059,7 @@ class ControlCenterTests(unittest.TestCase):
         backend = (Path(__file__).parents[1] / "control_center.py").read_text()
 
         for label in (
-            "Connect the factory",
+            "Set up the factory in three steps",
             "Define the outcome",
             "Review the plan",
             "Operate the factory",
@@ -2042,6 +2176,19 @@ class ControlCenterTests(unittest.TestCase):
         self.assertIn('href="./styles.css"', source)
         self.assertIn('src="./app.js"', source)
         self.assertIn("Advanced role settings", source)
+        self.assertNotIn("Run setup", source)
+        self.assertNotIn('data-action="prepare-project"', source)
+        self.assertIn("Set up the factory in three steps", source)
+        self.assertEqual(source.count('class="setup-step-number"'), 3)
+        self.assertIn('data-action="approve-contract"', source)
+        for action in (
+            'data-action="doctor"', 'data-action="approve-charter"',
+            'data-action="publish-setup"', 'data-action="environment-provision"',
+            'data-action="environment-prepare"', 'data-action="environment-health"',
+        ):
+            self.assertNotIn(action, source)
+        self.assertIn('operation.action === "approve-contract"', javascript)
+        self.assertIn("The Activity panel shows every command", source)
         self.assertIn("Your draft saves automatically", source)
         self.assertNotIn('id="global-next"', source)
         self.assertNotIn('id="open-reset-overview"', source)
@@ -2052,6 +2199,16 @@ class ControlCenterTests(unittest.TestCase):
         self.assertIn('$("#attention-surface").hidden = decisions.length === 0', javascript)
         self.assertIn('$("#continue-plan").hidden = !planning.can_continue', javascript)
         self.assertIn("grid-template-columns: repeat(4,1fr)", styles)
+
+    def test_cloud_control_center_exposes_bedrock_preset_and_planning_adapter(self):
+        frontend = Path(__file__).parents[1] / "control_center"
+        source = (frontend / "index.html").read_text()
+        javascript = (frontend / "app.js").read_text()
+
+        self.assertIn('value="bedrock-aws">Amazon Bedrock on AWS', source)
+        self.assertIn('Bedrock, Claude, Codex, Cursor, or custom', source)
+        self.assertIn('["bedrock", "claude", "codex"].includes(item)', javascript)
+        self.assertIn('["bedrock", "claude", "codex"].includes(agent)', javascript)
 
     def test_factory_progress_pulses_only_the_current_running_phase(self):
         frontend = Path(__file__).parents[1] / "control_center"

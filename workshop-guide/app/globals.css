@@ -311,6 +311,20 @@ main {
 .supervisor-boundaries li { margin: 7px 0; }
 
 .why-section { background: var(--surface-alt); }
+.layers-section { padding: 66px 0; border-bottom: 1px solid var(--line); }
+.layer-chain { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr) 18px) minmax(0, 1fr); align-items: stretch; gap: 4px; margin: 28px 0 18px; }
+.layer-chain article { display: flex; min-height: 126px; padding: 16px 13px; flex-direction: column; border: 1px solid var(--line); border-top: 4px solid var(--orange); border-radius: 5px; background: var(--surface-alt); }
+.layer-chain article span { color: var(--orange-dark); font-family: "SFMono-Regular", Consolas, monospace; font-size: 10px; font-weight: 800; }
+.layer-chain article b { margin: 8px 0 6px; font-size: 14px; line-height: 1.25; }
+.layer-chain article small { color: var(--muted); font-size: 11px; line-height: 1.4; }
+.layer-chain > i { align-self: center; color: var(--quiet); font-style: normal; text-align: center; }
+.factory-principles { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.factory-principles article { padding: 17px 19px; border-left: 4px solid var(--blue); background: var(--blue-pale); }
+.factory-principles p { margin: 4px 0 0; color: var(--muted); font-size: 13px; }
+.capability-compare { margin-top: 14px; padding: 16px 19px; border: 1px solid var(--line); border-radius: 6px; background: #fff; }
+.capability-table { margin-top: 14px; border-top: 1px solid var(--line); }
+.capability-table > div { display: grid; grid-template-columns: minmax(120px, .4fr) 1fr; gap: 18px; padding: 10px 4px; border-bottom: 1px solid var(--line-soft); font-size: 13px; }
+.capability-compare > p { margin-bottom: 0; color: var(--muted); font-size: 13px; }
 .why-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
 .why-grid article { min-height: 188px; padding: 22px; border: 1px solid var(--line); border-radius: 6px; background: #fff; }
 .why-icon { display: grid; width: 39px; height: 39px; margin-bottom: 17px; place-items: center; border-radius: 4px; background: var(--orange-pale); color: var(--orange-dark); font-family: "SFMono-Regular", Consolas, monospace; font-size: 15px; font-weight: 800; }
@@ -405,6 +419,9 @@ main {
 .control-center-card { border-top: 4px solid var(--orange); }
 .cli-card { border-top: 4px solid #495c71; background: var(--surface-alt); }
 .cli-card .path-label { color: var(--ink); background: var(--line-soft); }
+.cli-card > summary { display: flex; align-items: center; gap: 10px; margin-bottom: 0; cursor: pointer; }
+.cli-card > summary strong { font-size: 16px; }
+.cli-card[open] > summary { margin-bottom: 18px; }
 .cli-card .code-block { margin: 0; }
 .cli-card .code-block pre { padding: 15px; font-size: 11px; line-height: 1.6; }
 .instruction-list { margin: 0; }
@@ -510,6 +527,13 @@ details summary:hover { text-decoration: underline; }
 .completion-ring::before { position: absolute; width: 56px; height: 56px; border-radius: 50%; background: var(--orange-pale); content: ""; }
 .completion-ring span { z-index: 1; color: var(--orange-dark); font-size: 13px; font-weight: 750; }
 
+.transfer-section { display: grid; grid-template-columns: minmax(220px, .7fr) 1.3fr; gap: 30px; margin: 62px 0 0; padding: 28px; border-radius: 6px; background: #232f3e; color: #fff; }
+.transfer-section h2 { margin: 6px 0 8px; color: #fff; font-size: 25px; }
+.transfer-section p { margin: 0; color: #d6e2e9; font-size: 13px; }
+.transfer-section ol { display: grid; grid-template-columns: 1fr 1fr; gap: 1px; margin: 0; padding: 1px; background: #495c71; list-style: none; counter-reset: transfer; }
+.transfer-section li { padding: 10px 12px; background: #31465f; color: #fff; counter-increment: transfer; font-size: 12px; }
+.transfer-section li::before { margin-right: 8px; color: #ffb14a; content: counter(transfer, decimal-leading-zero); font-family: "SFMono-Regular", Consolas, monospace; font-size: 10px; }
+
 .optional-detail { margin: 30px 0 0; padding: 18px 20px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface-alt); }
 .optional-detail[open] { background: #fff; }
 .optional-detail > summary { color: var(--ink); font-size: 17px; }
@@ -560,6 +584,8 @@ footer button { border: 0; background: none; color: var(--blue-dark); cursor: po
   .factory-map { width: 100%; min-width: 0; max-width: 560px; }
   .story-line { grid-template-columns: 1fr 1fr; }
   .story-line article { min-height: 155px; }
+  .layer-chain { grid-template-columns: 1fr; }
+  .layer-chain > i { transform: rotate(90deg); }
 }
 
 @media (max-width: 650px) {
@@ -577,7 +603,7 @@ footer button { border: 0; background: none; color: var(--blue-dark); cursor: po
   .factory-map { max-width: 100%; padding: 18px 12px; }
   .map-row { min-width: 0; gap: 3px; }
   .map-node { min-width: 0; padding: 8px 3px; overflow-wrap: anywhere; font-size: 9px; white-space: normal; }
-  .concept-grid, .supervisor-role-flow, .supervisor-boundaries, .why-grid, .benefit-grid, .story-line, .outcome-grid, .use-case-grid, .prerequisites-grid, .path-grid, .evidence-grid, .verification-grid, .workshop-figure-grid, .instruction-paths, .next-links { grid-template-columns: 1fr; gap: 14px; }
+  .concept-grid, .supervisor-role-flow, .supervisor-boundaries, .why-grid, .benefit-grid, .story-line, .outcome-grid, .use-case-grid, .prerequisites-grid, .path-grid, .evidence-grid, .verification-grid, .workshop-figure-grid, .instruction-paths, .next-links, .factory-principles, .transfer-section { grid-template-columns: 1fr; gap: 14px; }
   .terminal-grid { grid-template-columns: 1fr 1fr; }
   .concept-section, .supervisor-section, .why-section, .story-section, .prerequisites-section, .path-section, .apply-section, .support-section, .reference-section, .lesson { padding: 48px 0; }
   .definition-panel { padding: 21px 20px; }
@@ -603,6 +629,7 @@ footer button { border: 0; background: none; color: var(--blue-dark); cursor: po
   .completion-list { columns: 1; }
   .completion-panel { grid-template-columns: auto 1fr; padding: 22px; }
   .completion-panel .primary-button { grid-column: 1 / -1; justify-content: space-between; }
+  .transfer-section ol { grid-template-columns: 1fr; }
   .reference-table > div { grid-template-columns: 1fr; gap: 4px; }
   footer { grid-template-columns: 1fr; text-align: left; }
 }

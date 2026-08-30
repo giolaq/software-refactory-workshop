@@ -1,0 +1,40 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Software Re-Factory container registry bootstrap
+
+Parameters:
+  RepositoryName:
+    Type: String
+    Default: software-refactory
+    AllowedPattern: "[a-z0-9]+(?:[._/-][a-z0-9]+)*"
+
+Resources:
+  Repository:
+    Type: AWS::ECR::Repository
+    Properties:
+      RepositoryName: !Ref RepositoryName
+      EmptyOnDelete: true
+      EncryptionConfiguration:
+        EncryptionType: AES256
+      ImageScanningConfiguration:
+        ScanOnPush: true
+      ImageTagMutability: IMMUTABLE
+      LifecyclePolicy:
+        LifecyclePolicyText: |-
+          {
+            "rules": [{
+              "rulePriority": 1,
+              "description": "Keep the latest 20 images",
+              "selection": {"tagStatus": "any", "countType": "imageCountMoreThan", "countNumber": 20},
+              "action": {"type": "expire"}
+            }]
+          }
+      Tags:
+        - Key: Application
+          Value: software-refactory
+
+Outputs:
+  RepositoryUri:
+    Description: ECR URI used as the image prefix
+    Value: !GetAtt Repository.RepositoryUri
+  RepositoryName:
+    Value: !Ref Repository

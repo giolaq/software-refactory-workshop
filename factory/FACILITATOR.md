@@ -1,13 +1,14 @@
 # Facilitator runbook
 
-Release: `workshop-v1.1.3`
+Release: `workshop-v1.2.0`
 
-Use [WORKSHOP_OUTLINE.md](WORKSHOP_OUTLINE.md) for the presentation path and
+Use [WORKSHOP_NARRATIVE.md](WORKSHOP_NARRATIVE.md) for the spoken story,
+[WORKSHOP_OUTLINE.md](WORKSHOP_OUTLINE.md) for the presentation path, and
 [COMPATIBILITY.md](COMPATIBILITY.md) for upgrades and migration behavior. This
 runbook is the detailed preparation, release, and recovery reference; do not
 read it as the attendee script.
 
-Use this runbook to prepare and deliver the 100-minute Software (re)-Factory
+Use this runbook to prepare and deliver the three-hour Software (re)-Factory
 workshop. The attendee website contains the full instructions. Your job is to
 keep time, make the control points visible, and stop the group when evidence is
 weak.
@@ -31,7 +32,7 @@ Complete this checklist before attendees arrive:
 - [ ] A colleague has recovered one failed preflight by using the website without verbal help.
 - [ ] The attendee website is open at the prerequisites section.
 - [ ] The frozen source, CLI, website, and Git tag all identify
-      `workshop-v1.1.3`.
+      `workshop-v1.2.0`.
 - [ ] Every attendee will create and own a separate repository. Rehearsal may
       stay local; Live uses GitHub. The facilitator uses a different repository.
 - [ ] Peer-review pairs are assigned without sharing repository state.
@@ -69,8 +70,7 @@ node --version
 git --version
 ./factory/factory init
 # Review factory.project.toml and factory.charter.toml.
-./factory/factory approve-charter --yes
-./factory/factory doctor
+./factory/factory approve-contract --yes
 ```
 
 Prepare the live checkout only if you plan to demonstrate real agents:
@@ -83,7 +83,7 @@ git push origin main
 ./factory/factory configure \
   --github-repository "$(gh repo view --json url --jq .url)" \
   --preset claude-workshop
-./factory/factory doctor --full
+./factory/factory approve-contract --live --yes
 ```
 
 Continue only when the doctor reports zero failures. A warning is acceptable
@@ -101,12 +101,14 @@ Project Contract card in **Setup → Connection**. The extension path is:
 
 Explain the boundary plainly: a Live Run accepts any PRD and repository;
 Rehearsal is a deterministic TableStory teaching pack. Do not switch the core
-exercise to an unfamiliar repository during the 100-minute session.
+exercise to an unfamiliar repository during the three-hour session.
 
 If the group uses another implementation or QA adapter, register it under
 `[agents]` in `factory/factory.toml`, then save the attendee defaults with
 `factory configure`. Keep Claude or Codex as the structured planning adapter.
 The exact contract and wrapper requirements are in `factory/CONFIGURATION.md`.
+Run `./factory/factory adapter-check` and show its declared capabilities in
+**Setup → Connection** before using a custom adapter live.
 
 ## Arrange the presentation workspace
 
@@ -137,17 +139,19 @@ versioned CLI. Do not tunnel or publicly expose port 5050.
 
 | Time | Attendee action | What to say or show |
 | --- | --- | --- |
-| 0–5 min | Pass readiness and pair | Confirm separate repositories and identify each peer reviewer. |
-| 5–13 min | Define the factory and inspect Pocket Cinema | Teach Plan, Build, Verify, Review; ask what must change besides the logo. |
-| 13–20 min | Read the PRD | Identify the user journey, system constraints, and shared-data risk. |
-| 20–35 min | Revise Product Review | Reject vague R4 evidence, record feedback, and approve the objective revision. |
-| 35–50 min | Trace R3 | Follow R3 across the four planning artifacts. |
-| 50–58 min | Align and publish | Show PRD-derived tickets and dependencies in GitHub Projects. |
-| 58–68 min | Review Acceptance Tests | Ask whether QA-owned assertions prove behavior before approving them. |
-| 68–85 min | Observe the Factory Run | Follow a Supervisor checkpoint, then one ticket through Plan, Build, Verify, automated code review, human Review, and the deterministic retry. |
-| 85–91 min | Verify the app | Verify TableStory and preview delivery evidence. |
-| 91–98 min | Peer review the Canvas | Attendees review another repository's authority, capacity, evidence, and monitoring choices. |
-| 98–100 min | Export and close | Export the Evidence Packet and name one bounded next experiment. |
+| 0–10 min | Pair and frame the outcome | Confirm separate repositories, identify peer reviewers, and name one candidate use case. |
+| 10–25 min | Define the factory | Teach the five replaceable layers, review bottleneck, and location of human judgment. |
+| 25–50 min | Connect and prove readiness | Establish the Project Contract, Charter, environment lifecycle, adapter capabilities, and passing preflight. |
+| 50–65 min | Inspect Pocket Cinema and read the PRD | Identify the user journey, system constraints, preserved behavior, and observable success. |
+| 65–82 min | Revise Product Review | Reject vague evidence, record feedback, and approve the objective revision. |
+| 82–95 min | Trace R3 | Follow one requirement across Architecture, Program Design, Vertical Slices, and planned QA evidence. |
+| 95–105 min | Break | Keep Control Centers and healthy agent sessions running. |
+| 105–120 min | Align and publish | Show PRD-derived tickets and dependencies in GitHub Projects. |
+| 120–138 min | Review Acceptance Tests | Approve QA-owned assertions only after causal RED evidence. |
+| 138–157 min | Observe the Factory Run | Follow claim, worktree, Supervisor coordination, logs, gates, receipts, and back-pressure. |
+| 157–168 min | Review, rework, and merge | Inspect the exact candidate revision and retain the accountable human merge decision. |
+| 168–175 min | Verify the app and evidence | Verify TableStory, export the Evidence Packet, and preview Monitor findings. |
+| 175–180 min | Complete the Canvas and close | Choose what to own, buy, or bring existing and name one bounded experiment. |
 
 The schedule is a teaching target, not a guarantee that live model work will
 finish. Live agents have no presentation timeout. Narrate observable state
@@ -292,10 +296,10 @@ approval needs a distinct reviewer identity supplied through the uncommitted
 | Live merge shows Rehearsal evidence | Do not merge it as Live. In Ticket Summary, either **Finish Rehearsal** or select **Open Reset**, clear only local run state, and rerun the published GitHub ticket. Source files and remote artifacts are preserved. |
 | An attendee reset the wrong scope | Open **Reset**, verify the checkpoint timestamp and plan, then choose **Recover latest state**. With no checkpoint, a connected Live repository reconstructs from GitHub. Do not claim that deleted local receipts were restored. |
 | Preflight reports `default branch` or `branch synchronization` | In the product checkout, save local work, then run `git fetch origin`, `git switch main`, and `git pull --ff-only origin main`. Do not force-reset attendee work. |
-| Preflight reports an unavailable Codex or Claude adapter | Open **Setup → Connection**, select the preset for the CLI the attendee actually installed, save, sign in to that CLI, and rerun preflight. |
-| Preflight reports `No module named pytest` | Select **Run setup** in **Setup → Connection**, then rerun preflight. Explain that preflight checks dependencies; it does not install them. |
-| Preflight reports missing GitHub Projects scope | Run `gh auth refresh -s project`, finish authorization, and rerun preflight. |
-| Branch, Codex, and `pytest` failures appear together | Fix them in order: preserve local work; fetch, switch to `main`, and fast-forward it; select the passing Claude preset or sign in to Codex; select **Run setup**; then rerun preflight. Do not ask the attendee to repeat the same failed check between fixes. |
+| Preflight reports an unavailable Codex or Claude adapter | Open **Setup → Connection**, select the preset for the CLI the attendee actually installed, save, sign in to that CLI, and select **Retry automatic setup**. |
+| Preflight reports `No module named pytest` | Install the dependency with the repository's declared setup command, correct the contract if that command is missing, then select **Retry automatic setup**. |
+| Preflight reports missing GitHub Projects scope | Run `gh auth refresh -s project`, finish authorization, and select **Retry automatic setup**. |
+| Branch, Codex, and `pytest` failures appear together | Fix them in order: preserve local work; fetch, switch to `main`, and fast-forward it; select the passing Claude preset or sign in to Codex; install the declared dependencies; then select **Retry automatic setup**. Do not ask the attendee to repeat the same failed operation between fixes. |
 | Live restart says the checkout is not on `main` | Run local reset again. A clean checkout preserves divergent local `main` under `recovery/pre-reset-main-*`, then aligns `main` exactly with `origin/main`. A dirty checkout must be committed or stashed by its owner first. |
 | A port is occupied | Stop the old process or use a fresh checkout. |
 | The state is stale | Use **Reset current run** in the Control Center after confirming demo changes can be discarded. |
@@ -381,6 +385,6 @@ The command creates a unique smoke endpoint and Project on every invocation so
 an explicitly disposable repository can be retested without invalidating RED
 proof. It still merges a real change; do not point it at an attendee repository.
 
-After all checks pass, tag `workshop-v1.1.3`, make the repository public, and
+After all checks pass, tag `workshop-v1.2.0`, make the repository public, and
 enable GitHub template mode. Those external owner actions are intentionally not
 automated by the factory.

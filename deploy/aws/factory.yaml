@@ -1,0 +1,458 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Single-tenant Software Re-Factory Control Center on AWS and GitHub
+
+Parameters:
+  ImageUri:
+    Type: String
+    Description: Immutable ECR image URI including its tag
+  GitHubRepositoryUrl:
+    Type: String
+    AllowedPattern: "https://github\\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+(?:\\.git)?"
+    Description: The one GitHub repository owned by this deployment
+  GitHubTokenSecretArn:
+    Type: String
+    Description: Secrets Manager ARN whose SecretString is a GitHub token, not JSON
+  ReviewerTokenSecretArn:
+    Type: String
+    Default: ""
+    Description: Optional separate reviewer GitHub token SecretString
+  BedrockModelId:
+    Type: String
+    MinLength: 1
+    Description: Model or inference-profile ID passed to Bedrock Converse
+  BedrockModelResourceArns:
+    Type: CommaDelimitedList
+    Description: Comma-separated model/inference-profile ARNs allowed to receive prompts
+  DomainName:
+    Type: String
+    AllowedPattern: "[A-Za-z0-9.-]+"
+    Description: HTTPS hostname, for example factory.example.com
+  HostedZoneId:
+    Type: AWS::Route53::HostedZone::Id
+  CertificateArn:
+    Type: String
+    Description: ACM certificate ARN in this stack's AWS Region
+  CognitoDomainPrefix:
+    Type: String
+    AllowedPattern: "[a-z0-9-]{3,63}"
+    Description: Region-unique prefix for the Cognito hosted login domain
+  GitUserName:
+    Type: String
+    Default: Software Re-Factory
+  GitUserEmail:
+    Type: String
+    Default: factory@example.invalid
+  TaskCpu:
+    Type: String
+    Default: "2048"
+    AllowedValues: ["1024", "2048", "4096"]
+  TaskMemory:
+    Type: String
+    Default: "4096"
+    AllowedValues: ["2048", "3072", "4096", "5120", "6144", "7168", "8192"]
+  LogRetentionDays:
+    Type: Number
+    Default: 30
+    AllowedValues: [7, 14, 30, 60, 90, 180, 365]
+
+Conditions:
+  HasReviewerToken: !Not [!Equals [!Ref ReviewerTokenSecretArn, ""]]
+
+Rules:
+  CpuMemoryCompatibility:
+    Assertions:
+      - Assert: !Or
+          - !And
+            - !Equals [!Ref TaskCpu, "1024"]
+            - !Contains [["2048", "3072", "4096", "5120", "6144", "7168", "8192"], !Ref TaskMemory]
+          - !And
+            - !Equals [!Ref TaskCpu, "2048"]
+            - !Contains [["4096", "5120", "6144", "7168", "8192"], !Ref TaskMemory]
+          - !And
+            - !Equals [!Ref TaskCpu, "4096"]
+            - !Equals [!Ref TaskMemory, "8192"]
+        AssertDescription: TaskMemory must be valid for the selected Fargate TaskCpu
+
+Resources:
+  Vpc:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 10.42.0.0/16
+      EnableDnsHostnames: true
+      EnableDnsSupport: true
+      Tags:
+        - {Key: Name, Value: !Sub "${AWS::StackName}-vpc"}
+        - {Key: Application, Value: software-refactory}
+
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+  InternetGatewayAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      InternetGatewayId: !Ref InternetGateway
+      VpcId: !Ref Vpc
+
+  PublicSubnetA:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref Vpc
+      AvailabilityZone: !Select [0, !GetAZs ""]
+      CidrBlock: 10.42.0.0/24
+      MapPublicIpOnLaunch: true
+      Tags:
+        - {Key: Name, Value: !Sub "${AWS::StackName}-public-a"}
+  PublicSubnetB:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref Vpc
+      AvailabilityZone: !Select [1, !GetAZs ""]
+      CidrBlock: 10.42.1.0/24
+      MapPublicIpOnLaunch: true
+      Tags:
+        - {Key: Name, Value: !Sub "${AWS::StackName}-public-b"}
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref Vpc
+  PublicDefaultRoute:
+    Type: AWS::EC2::Route
+    DependsOn: InternetGatewayAttachment
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+  PublicSubnetARouteAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties: {SubnetId: !Ref PublicSubnetA, RouteTableId: !Ref PublicRouteTable}
+  PublicSubnetBRouteAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties: {SubnetId: !Ref PublicSubnetB, RouteTableId: !Ref PublicRouteTable}
+
+  LoadBalancerSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Public HTTPS entry point
+      VpcId: !Ref Vpc
+      SecurityGroupIngress:
+        - {IpProtocol: tcp, FromPort: 443, ToPort: 443, CidrIp: 0.0.0.0/0}
+      SecurityGroupEgress:
+        - {IpProtocol: tcp, FromPort: 5050, ToPort: 5050, CidrIp: 10.42.0.0/16}
+        - {IpProtocol: tcp, FromPort: 443, ToPort: 443, CidrIp: 0.0.0.0/0}
+  TaskSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Factory task receives only ALB traffic
+      VpcId: !Ref Vpc
+      SecurityGroupIngress:
+        - {IpProtocol: tcp, FromPort: 5050, ToPort: 5050, SourceSecurityGroupId: !Ref LoadBalancerSecurityGroup}
+      SecurityGroupEgress:
+        - {IpProtocol: "-1", CidrIp: 0.0.0.0/0}
+  FileSystemSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: NFS from the one Factory task
+      VpcId: !Ref Vpc
+      SecurityGroupIngress:
+        - {IpProtocol: tcp, FromPort: 2049, ToPort: 2049, SourceSecurityGroupId: !Ref TaskSecurityGroup}
+
+  FileSystem:
+    Type: AWS::EFS::FileSystem
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BackupPolicy: {Status: ENABLED}
+      Encrypted: true
+      FileSystemTags:
+        - {Key: Name, Value: !Sub "${AWS::StackName}-workspace"}
+      PerformanceMode: generalPurpose
+      ThroughputMode: bursting
+  FileSystemMountTargetA:
+    Type: AWS::EFS::MountTarget
+    Properties:
+      FileSystemId: !Ref FileSystem
+      SubnetId: !Ref PublicSubnetA
+      SecurityGroups: [!Ref FileSystemSecurityGroup]
+  FileSystemMountTargetB:
+    Type: AWS::EFS::MountTarget
+    Properties:
+      FileSystemId: !Ref FileSystem
+      SubnetId: !Ref PublicSubnetB
+      SecurityGroups: [!Ref FileSystemSecurityGroup]
+  FileSystemAccessPoint:
+    Type: AWS::EFS::AccessPoint
+    Properties:
+      FileSystemId: !Ref FileSystem
+      PosixUser: {Uid: "10001", Gid: "10001"}
+      RootDirectory:
+        Path: /factory
+        CreationInfo: {OwnerUid: "10001", OwnerGid: "10001", Permissions: "0770"}
+
+  LogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/software-refactory/${AWS::StackName}"
+      RetentionInDays: !Ref LogRetentionDays
+
+  Cluster:
+    Type: AWS::ECS::Cluster
+    Properties:
+      ClusterName: !Sub "${AWS::StackName}-cluster"
+      ClusterSettings:
+        - {Name: containerInsights, Value: enabled}
+      Configuration:
+        ExecuteCommandConfiguration: {Logging: DEFAULT}
+
+  ExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal: {Service: ecs-tasks.amazonaws.com}
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy
+      Policies:
+        - PolicyName: ReadFactorySecrets
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: secretsmanager:GetSecretValue
+                Resource:
+                  - !Ref GitHubTokenSecretArn
+                  - !If [HasReviewerToken, !Ref ReviewerTokenSecretArn, !Ref "AWS::NoValue"]
+
+  TaskRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal: {Service: ecs-tasks.amazonaws.com}
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: InvokeConfiguredBedrockModels
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: [bedrock:InvokeModel, bedrock:InvokeModelWithResponseStream]
+                Resource: !Ref BedrockModelResourceArns
+        - PolicyName: UseFactoryWorkspace
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: [elasticfilesystem:ClientMount, elasticfilesystem:ClientWrite]
+                Resource: !GetAtt FileSystem.Arn
+                Condition:
+                  StringEquals:
+                    elasticfilesystem:AccessPointArn: !GetAtt FileSystemAccessPoint.Arn
+        - PolicyName: EcsExecChannels
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - ssmmessages:CreateControlChannel
+                  - ssmmessages:CreateDataChannel
+                  - ssmmessages:OpenControlChannel
+                  - ssmmessages:OpenDataChannel
+                Resource: "*"
+
+  UserPool:
+    Type: AWS::Cognito::UserPool
+    Properties:
+      UserPoolName: !Sub "${AWS::StackName}-operators"
+      UsernameAttributes: [email]
+      AutoVerifiedAttributes: [email]
+      MfaConfiguration: OPTIONAL
+      EnabledMfas: [SOFTWARE_TOKEN_MFA]
+      AccountRecoverySetting:
+        RecoveryMechanisms:
+          - {Name: verified_email, Priority: 1}
+      AdminCreateUserConfig: {AllowAdminCreateUserOnly: true}
+      Policies:
+        PasswordPolicy:
+          MinimumLength: 14
+          RequireLowercase: true
+          RequireNumbers: true
+          RequireSymbols: true
+          RequireUppercase: true
+          TemporaryPasswordValidityDays: 3
+  UserPoolClient:
+    Type: AWS::Cognito::UserPoolClient
+    Properties:
+      UserPoolId: !Ref UserPool
+      GenerateSecret: true
+      AllowedOAuthFlowsUserPoolClient: true
+      AllowedOAuthFlows: [code]
+      AllowedOAuthScopes: [openid, email, profile]
+      CallbackURLs: [!Sub "https://${DomainName}/oauth2/idpresponse"]
+      LogoutURLs: [!Sub "https://${DomainName}/"]
+      SupportedIdentityProviders: [COGNITO]
+      PreventUserExistenceErrors: ENABLED
+  UserPoolDomain:
+    Type: AWS::Cognito::UserPoolDomain
+    Properties:
+      Domain: !Ref CognitoDomainPrefix
+      UserPoolId: !Ref UserPool
+
+  LoadBalancer:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Scheme: internet-facing
+      SecurityGroups: [!Ref LoadBalancerSecurityGroup]
+      Subnets: [!Ref PublicSubnetA, !Ref PublicSubnetB]
+      Type: application
+      LoadBalancerAttributes:
+        - {Key: routing.http.drop_invalid_header_fields.enabled, Value: "true"}
+        - {Key: deletion_protection.enabled, Value: "false"}
+  TargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      VpcId: !Ref Vpc
+      Port: 5050
+      Protocol: HTTP
+      TargetType: ip
+      HealthCheckEnabled: true
+      HealthCheckPath: /healthz
+      HealthCheckIntervalSeconds: 30
+      HealthyThresholdCount: 2
+      UnhealthyThresholdCount: 3
+      Matcher: {HttpCode: "200"}
+  HttpsListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn: !Ref LoadBalancer
+      Port: 443
+      Protocol: HTTPS
+      Certificates: [{CertificateArn: !Ref CertificateArn}]
+      SslPolicy: ELBSecurityPolicy-TLS13-1-2-2021-06
+      DefaultActions:
+        - Type: authenticate-cognito
+          Order: 1
+          AuthenticateCognitoConfig:
+            UserPoolArn: !GetAtt UserPool.Arn
+            UserPoolClientId: !Ref UserPoolClient
+            UserPoolDomain: !Ref UserPoolDomain
+            OnUnauthenticatedRequest: authenticate
+            Scope: "openid email profile"
+            SessionCookieName: AWSELBAuthSessionCookie
+            SessionTimeout: 43200
+        - Type: forward
+          Order: 2
+          TargetGroupArn: !Ref TargetGroup
+  DnsRecord:
+    Type: AWS::Route53::RecordSet
+    Properties:
+      HostedZoneId: !Ref HostedZoneId
+      Name: !Ref DomainName
+      Type: A
+      AliasTarget:
+        DNSName: !GetAtt LoadBalancer.DNSName
+        HostedZoneId: !GetAtt LoadBalancer.CanonicalHostedZoneID
+        EvaluateTargetHealth: true
+
+  TaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: !Sub "${AWS::StackName}-factory"
+      RequiresCompatibilities: [FARGATE]
+      NetworkMode: awsvpc
+      Cpu: !Ref TaskCpu
+      Memory: !Ref TaskMemory
+      ExecutionRoleArn: !GetAtt ExecutionRole.Arn
+      TaskRoleArn: !GetAtt TaskRole.Arn
+      RuntimePlatform: {CpuArchitecture: X86_64, OperatingSystemFamily: LINUX}
+      Volumes:
+        - Name: workspace
+          EFSVolumeConfiguration:
+            FilesystemId: !Ref FileSystem
+            TransitEncryption: ENABLED
+            AuthorizationConfig:
+              AccessPointId: !Ref FileSystemAccessPoint
+              IAM: ENABLED
+      ContainerDefinitions:
+        - Name: factory
+          Image: !Ref ImageUri
+          Essential: true
+          PortMappings:
+            - {ContainerPort: 5050, Protocol: tcp}
+          MountPoints:
+            - {SourceVolume: workspace, ContainerPath: /workspace, ReadOnly: false}
+          Environment:
+            - {Name: AWS_REGION, Value: !Ref "AWS::Region"}
+            - {Name: AWS_DEFAULT_REGION, Value: !Ref "AWS::Region"}
+            - {Name: FACTORY_BEDROCK_MODEL_ID, Value: !Ref BedrockModelId}
+            - {Name: FACTORY_CONTROL_CENTER_PUBLIC_ORIGIN, Value: !Sub "https://${DomainName}"}
+            - {Name: GITHUB_REPOSITORY_URL, Value: !Ref GitHubRepositoryUrl}
+            - {Name: FACTORY_GIT_USER_NAME, Value: !Ref GitUserName}
+            - {Name: FACTORY_GIT_USER_EMAIL, Value: !Ref GitUserEmail}
+            - {Name: PORT, Value: "5050"}
+          Secrets:
+            - {Name: GH_TOKEN, ValueFrom: !Ref GitHubTokenSecretArn}
+            - !If
+              - HasReviewerToken
+              - {Name: FACTORY_REVIEW_GH_TOKEN, ValueFrom: !Ref ReviewerTokenSecretArn}
+              - !Ref "AWS::NoValue"
+          HealthCheck:
+            Command: [CMD-SHELL, "curl -fsS http://localhost:5050/healthz || exit 1"]
+            Interval: 30
+            Timeout: 5
+            Retries: 3
+            StartPeriod: 60
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref LogGroup
+              awslogs-region: !Ref "AWS::Region"
+              awslogs-stream-prefix: factory
+
+  Service:
+    Type: AWS::ECS::Service
+    DependsOn:
+      - HttpsListener
+      - FileSystemMountTargetA
+      - FileSystemMountTargetB
+    Properties:
+      Cluster: !Ref Cluster
+      ServiceName: !Sub "${AWS::StackName}-service"
+      TaskDefinition: !Ref TaskDefinition
+      DesiredCount: 1
+      LaunchType: FARGATE
+      EnableExecuteCommand: true
+      HealthCheckGracePeriodSeconds: 120
+      DeploymentConfiguration:
+        MinimumHealthyPercent: 0
+        MaximumPercent: 100
+        DeploymentCircuitBreaker: {Enable: true, Rollback: true}
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          AssignPublicIp: ENABLED
+          SecurityGroups: [!Ref TaskSecurityGroup]
+          Subnets: [!Ref PublicSubnetA, !Ref PublicSubnetB]
+      LoadBalancers:
+        - ContainerName: factory
+          ContainerPort: 5050
+          TargetGroupArn: !Ref TargetGroup
+
+Outputs:
+  ControlCenterUrl:
+    Value: !Sub "https://${DomainName}"
+  UserPoolId:
+    Value: !Ref UserPool
+  UserPoolClientId:
+    Value: !Ref UserPoolClient
+  ClusterName:
+    Value: !Ref Cluster
+  ServiceName:
+    Value: !GetAtt Service.Name
+  LogGroupName:
+    Value: !Ref LogGroup
+  FileSystemId:
+    Description: Retained EFS file system containing checkout, worktrees, state, and logs
+    Value: !Ref FileSystem

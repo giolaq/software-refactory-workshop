@@ -95,6 +95,22 @@ class GitHubReviewTests(unittest.TestCase):
         self.assertFalse(any(args[:2] == ("issue", "comment") for args in calls))
         backend.add_issue_to_project.assert_called_once_with(12, issue["url"])
 
+    def test_repository_intake_requires_an_explicit_human_approval_to_be_ready(self):
+        backend = GitHubBackend(Path.cwd(), project_number=5)
+        backend.owner, backend.name = "attendee", "product"
+        backend.gh = mock.Mock(return_value=completed())
+
+        backend.approve_repository_intake(
+            12, case_id="case-12", reason="Reviewed the causal reproduction evidence.",
+        )
+
+        calls = [call.args for call in backend.gh.call_args_list]
+        label_call = next(args for args in calls if args[:2] == ("issue", "edit"))
+        self.assertIn("agent-ready", label_call)
+        comment_call = next(args for args in calls if args[:2] == ("issue", "comment"))
+        self.assertIn("case-12", comment_call[-1])
+        self.assertIn("Human intake approval", comment_call[-1])
+
     def test_project_status_write_recovers_when_github_applies_it_before_a_502(self):
         backend = GitHubBackend(Path.cwd(), project_number=13)
         backend.owner = "attendee"

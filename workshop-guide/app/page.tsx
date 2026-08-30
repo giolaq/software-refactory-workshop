@@ -5,14 +5,14 @@ import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from
 type Track = "rehearsal" | "live";
 
 const steps = [
-  { id: "setup", label: "Finish Setup", time: "8 min" },
-  { id: "baseline", label: "Check the starting app", time: "5 min" },
+  { id: "setup", label: "Finish Setup", time: "25 min" },
+  { id: "baseline", label: "Check the starting app", time: "8 min" },
   { id: "prd", label: "Write requirements", time: "7 min" },
-  { id: "plan", label: "Approve Product Review", time: "15 min" },
-  { id: "publish", label: "Create tickets", time: "18 min" },
-  { id: "qa", label: "Approve Acceptance Tests", time: "10 min" },
-  { id: "factory", label: "Deliver tickets", time: "22 min" },
-  { id: "finish", label: "Review the app", time: "5 min" },
+  { id: "plan", label: "Approve Product Review", time: "17 min" },
+  { id: "publish", label: "Create tickets", time: "28 min + break" },
+  { id: "qa", label: "Approve Acceptance Tests", time: "18 min" },
+  { id: "factory", label: "Deliver tickets", time: "30 min" },
+  { id: "finish", label: "Review the app", time: "12 min" },
 ] as const;
 
 function CodeBlock({ children, label = "Terminal" }: { children: string; label?: string }) {
@@ -93,11 +93,10 @@ function WorkshopPaths({
           <div><dt>Continue when</dt><dd>{continueWhen}</dd></div>
         </dl>
       </section>
-      <section className="instruction-card cli-card" aria-label="CLI path">
-        <span className="path-label">CLI</span>
-        <h3>Use the CLI</h3>
+      <details className="instruction-card cli-card" aria-label="CLI path">
+        <summary><span className="path-label">CLI</span><strong>Use the CLI</strong></summary>
         <CodeBlock label="CLI">{children}</CodeBlock>
-      </section>
+      </details>
     </div>
   );
 }
@@ -225,7 +224,7 @@ export default function Home() {
         <span className="header-divider" aria-hidden="true" />
         <span className="header-section">Workshop guide</span>
         <div className="topbar-actions">
-          <span className="duration-pill">100 minutes</span>
+          <span className="duration-pill">3 hours</span>
           <a className="github-link" href="https://github.com/giolaq/software-refactory-workshop">GitHub</a>
         </div>
       </header>
@@ -239,6 +238,7 @@ export default function Home() {
         <nav aria-label="Workshop sections">
           <p className="nav-label">Start</p>
           <a href="#overview" onClick={() => setMenuOpen(false)}>Overview</a>
+          <a href="#layers" onClick={() => setMenuOpen(false)}>Factory layers</a>
           <a href="#prerequisites" onClick={() => setMenuOpen(false)}>Prerequisites</a>
           <a href="#path" onClick={() => setMenuOpen(false)}>Choose a path</a>
           <p className="nav-label">Workshop</p>
@@ -262,7 +262,7 @@ export default function Home() {
               Follow Setup, Plan, Deliver, and Review to turn a PRD into tickets, code, tests, and a reviewed change. The Control Center tells you when to act and why it stopped.
             </p>
             <div className="hero-meta">
-              <span><b>Duration:</b> 100 minutes</span>
+              <span><b>Duration:</b> 3 hours</span>
               <span><b>Format:</b> individual repository</span>
               <span><b>Tools:</b> Claude, Codex, Cursor, or your own CLI</span>
             </div>
@@ -277,11 +277,39 @@ export default function Home() {
           </div>
         </section>
 
+        <section id="layers" className="layers-section" aria-labelledby="layers-title">
+          <div className="section-heading">
+            <span className="section-kicker">The system around the agent</span>
+            <h2 id="layers-title">A coding agent makes a change. A software factory makes delivery repeatable.</h2>
+            <p>Generation is fast; intent, environments, review, and accountability remain scarce.</p>
+          </div>
+          <div className="layer-chain" aria-label="Five replaceable factory layers">
+            <article><span>01</span><b>Compute</b><small>Laptop, container, or runner</small></article><i>→</i>
+            <article><span>02</span><b>Development environment</b><small>Checkout, tools, services, gates</small></article><i>→</i>
+            <article><span>03</span><b>Inner harness</b><small>Claude, Codex, Cursor, or yours</small></article><i>→</i>
+            <article><span>04</span><b>Outer harness</b><small>Roles, Charter, QA, retries, review</small></article><i>→</i>
+            <article><span>05</span><b>Control plane</b><small>Orchestrator, Control Center, GitHub</small></article>
+          </div>
+          <div className="factory-principles">
+            <article><strong>Review capacity is the limit</strong><p>More agents are a cost. Parallelize only reviewable evidence.</p></article>
+            <article><strong>Prototype or Vertical Slice?</strong><p>A prototype may be discarded. A Vertical Slice is bounded, tested, reviewed, and intended to merge.</p></article>
+          </div>
+          <details className="capability-compare">
+            <summary>Selected adapter capabilities</summary>
+            <div className="capability-table">
+              <div><b>Adapter</b><b>Protocol v1 declaration</b></div>
+              <div><span>Codex</span><span>Structured planning, native read-only, subagents</span></div>
+              <div><span>Cursor</span><span>Optional features not declared</span></div>
+            </div>
+            <p><strong>Unavailable stays unavailable.</strong> The same Agent Role keeps its policy, gates, and authority when you swap adapters.</p>
+          </details>
+        </section>
+
         <section id="prerequisites" className="prerequisites-section">
           <div className="section-heading">
             <span className="section-kicker">Before you begin</span>
             <h2>Install and sign in</h2>
-            <p>Complete this once before you open the Control Center.</p>
+            <p>Complete this before opening the Control Center.</p>
           </div>
           <div className="prerequisites-grid">
             <article>
@@ -328,7 +356,7 @@ claude auth status --text
           <div className="section-heading">
             <span className="section-kicker">Choose once</span>
             <h2>Select your path</h2>
-            <p>The page changes its commands to match your choice.</p>
+            <p>Commands match your choice.</p>
           </div>
           <div className="path-grid">
             <button type="button" className={`path-card${track === "rehearsal" ? " path-selected" : ""}`} onClick={() => chooseTrack("rehearsal")}>
@@ -348,7 +376,7 @@ claude auth status --text
         </section>
 
         <StepSection index={1} id="setup" title="Finish Setup" goal="Open the Control Center, connect the correct repository, and pass preflight." complete={completed.includes("setup")} onToggle={() => toggleStep("setup")}>
-          <p>{track === "live" ? "You control the factory from the workshop checkout. The factory makes a separate managed checkout of your product repository." : "Rehearsal uses one disposable local checkout and built-in deterministic agents. It does not need GitHub or an agent login."}</p>
+          <p>{track === "live" ? "The workshop checkout controls a separate managed checkout of your product repository." : "Rehearsal is local, disposable, and credential-free."}</p>
           <CodeBlock label="Terminal 1 — do this once">{track === "rehearsal" ? `git clone https://github.com/giolaq/software-refactory-workshop.git software-refactory-rehearsal
 cd software-refactory-rehearsal
 ./setup_demo.sh --scenario recipe-rebrand
@@ -365,34 +393,35 @@ export TARGET="$CONTROL/.factory/repositories/YOUR-NAME/YOUR-REPOSITORY"`}</Code
           <div className="activity-card launch-card">
             <span className="activity-label">Keep this process running</span>
             <h3>Start the Control Center</h3>
-            <p>Open a second terminal in <code>{track === "live" ? "software-refactory-control" : "software-refactory-rehearsal"}</code>. Run:</p>
+            <p>In a second terminal at <code>{track === "live" ? "software-refactory-control" : "software-refactory-rehearsal"}</code>, run:</p>
             <CodeBlock label="Terminal 2 — keep this running">{`./factory/factory control-center`}</CodeBlock>
             <ol>
               <li>Wait for <code>Factory Control Center: http://127.0.0.1:5050</code>.</li>
-              <li>Your browser should open automatically. If it does not, open <a href="http://127.0.0.1:5050">127.0.0.1:5050</a> yourself.</li>
-              <li>Leave this terminal running for the workshop. Press <code>Ctrl+C</code> only when you want to stop the Control Center.</li>
+              <li>The browser should open automatically. Otherwise open <a href="http://127.0.0.1:5050">127.0.0.1:5050</a>.</li>
+              <li>Leave this terminal running. <code>Ctrl+C</code> stops the Control Center.</li>
             </ol>
           </div>
 
-          <h3>Complete Setup in this order</h3>
+          <h3>Complete Setup in three steps</h3>
           <ol className="setup-sequence">
-            <li><span>1</span><div><strong>Open Setup → Connection</strong><p>Use the numbered navigation on the left. Do not start in Tickets.</p></div></li>
-            <li><span>2</span><div><strong>Choose the run settings</strong><p>Select <strong>{track === "live" ? "Live" : "Rehearsal"}</strong> and <strong>Standard</strong>. {track === "live" ? <>Choose the preset that matches the CLI you signed in to, then paste the full URL of <em>your product repository</em>.</> : <>Leave the default agent preset; Rehearsal does not call it.</>}</p></div></li>
-            <li><span>3</span><div><strong>Save configuration</strong><p>{track === "live" ? <>For the guided exercise, select <strong>Seed the guided Pocket Cinema starter</strong> before saving. Leave it clear for your own existing product.</> : <>No GitHub URL or Project number is required.</>}</p></div></li>
-            <li><span>4</span><div><strong>Create and approve the repository rules</strong><p>If offered, select <strong>Create contract and Charter</strong>. Read <strong>Review exact policy</strong>, then select <strong>Approve exact Charter</strong>. {track === "live" ? <>Select <strong>Commit and push setup</strong>.</> : <>Do not use Commit and push setup in Rehearsal.</>}</p></div></li>
-            <li><span>5</span><div><strong>Run setup</strong><p>This installs the dependencies declared by the repository, including test tools such as <code>pytest</code>. Preflight checks dependencies; it does not install them.</p></div></li>
-            <li><span>6</span><div><strong>Run preflight</strong><p>Open <strong>Current run → Activity and CLI output</strong>. Continue only when it reports no <code>FAIL</code> results.</p></div></li>
+            <li><span>1</span><div><strong>Connect</strong><p>Open <strong>Setup → Connection</strong>. Select <strong>{track === "live" ? "Live" : "Rehearsal"}</strong>, <strong>Standard</strong>, and your agent preset. {track === "live" ? <>Paste <em>your product repository</em> URL. Select <strong>Seed the guided Pocket Cinema starter</strong> for this exercise; leave it clear for your own existing product.</> : <>No GitHub settings are needed.</>} Select <strong>Save and connect</strong>.</p></div></li>
+            <li><span>2</span><div><strong>Create contract</strong><p>Select <strong>Create contract</strong>. The factory detects source folders, tests, verification gates, and conservative operating rules. No coding agent runs.</p></div></li>
+            <li><span>3</span><div><strong>Review and approve</strong><p>Open <strong>Review repository model</strong> and <strong>Review operating policy</strong>. If they match the repository, select <strong>Approve contract and continue</strong>.</p></div></li>
           </ol>
 
-          <Callout type="warning" title="If preflight fails, do not keep clicking it">
-            <p>Expand <strong>Activity and CLI output</strong>, scroll to the first <code>[FAIL]</code>, fix that item, and run preflight again. A <code>[WARN]</code> for an unused adapter, port 5050, or the optional reviewer identity does not block the workshop. Use the <a href="#preflight-recovery">preflight recovery table</a> below for exact fixes.</p>
+          <Callout type="note" title="One approval, visible automation">
+            <p>After Step 3, the factory publishes the contract in Live mode, provisions and prepares the environment, checks health and gates, and runs preflight. <strong>Activity and CLI output</strong> shows each substep and stops at the first error.</p>
+          </Callout>
+
+          <Callout type="warning" title="If automatic setup stops, fix the first error">
+            <p>Open <strong>Activity and CLI output</strong>, fix the first <code>[FAIL]</code>, then return to Step 3 and select <strong>Retry automatic setup</strong>. The <a href="#preflight-recovery">recovery table</a> gives exact fixes. An optional-adapter, port 5050, or reviewer <code>[WARN]</code> does not block the workshop.</p>
           </Callout>
 
           <WorkshopPaths
-            click={<>Use <strong>Setup → Connection</strong> and complete the six numbered actions above.</>}
-            whyStopped={<>The factory will not plan until the Project Contract describes how to build and test the repository, a person approves the Charter, dependencies are installed, and preflight passes.</>}
-            inspect={<>Confirm the product repository, default branch, source and test folders, required checks, selected agent preset, and merge authority.</>}
-            continueWhen={<>The Charter is <strong>Approved</strong>, setup completed, and Activity output contains no <code>[FAIL]</code>.</>}
+            click={<>Use <strong>Setup → Connection</strong> and complete the three numbered steps above.</>}
+            whyStopped={<>The factory will not plan until the repository contract is approved and its automatic environment and preflight checks pass.</>}
+            inspect={<>Confirm the product repository, source and test folders, required checks, selected agent preset, and merge authority.</>}
+            continueWhen={<>Step 3 says <strong>Approved and ready</strong> and Activity output contains no <code>[FAIL]</code>.</>}
           >{track === "live" ? `# Run from the software-refactory-control directory.
 ./factory/factory checkout https://github.com/YOUR-NAME/YOUR-REPOSITORY \\
   --workspace-root "$CONTROL/.factory/repositories"
@@ -405,24 +434,20 @@ export TARGET="$CONTROL/.factory/repositories/YOUR-NAME/YOUR-REPOSITORY"`}</Code
 
 ./factory/factory configure --repo "$TARGET" --preset claude-workshop \\
   --github-repository https://github.com/YOUR-NAME/YOUR-REPOSITORY
-./factory/factory approve-charter --repo "$TARGET" --yes
-./factory/factory publish-setup --repo "$TARGET" --yes
-./factory/factory prepare --repo "$TARGET" --yes
-./factory/factory doctor --repo "$TARGET" --full` : `./factory/factory approve-charter --yes
-./factory/factory prepare --yes
-./factory/factory doctor`}</WorkshopPaths>
+./factory/factory approve-contract --repo "$TARGET" --live --yes` : `# setup_demo.sh already created the local contract.
+./factory/factory approve-contract --yes`}</WorkshopPaths>
           <WorkshopMedia
             src="/screenshots/control-center-connect.jpg"
-            alt="Control Center Setup and Connection screen with essential run settings, repository details, and setup controls"
+            alt="Control Center Setup screen with Connect, Create contract, and Review and approve steps"
             label="Setup → Connection"
-            caption="Choose the run settings, approve the repository rules, run setup, then run preflight."
+            caption="Three decisions: connect, create the contract, then review and approve."
             width={1440}
             height={980}
           />
           <Callout type="tip" title="Use Current run as your guide">
             <p><strong>Current phase</strong> explains the state. <strong>Next safe action</strong> opens the one action the factory needs from you.</p>
           </Callout>
-          <Checkpoint><a href="http://127.0.0.1:5050">127.0.0.1:5050</a> is open, the correct repository is shown, the Charter is approved, and preflight reports no failures.</Checkpoint>
+          <Checkpoint><a href="http://127.0.0.1:5050">127.0.0.1:5050</a> is open, the correct repository is shown, Step 3 says <strong>Approved and ready</strong>, and Activity reports no failures.</Checkpoint>
         </StepSection>
 
         <StepSection index={2} id="baseline" title="Check the starting app" goal="Confirm what the factory will change." complete={completed.includes("baseline")} onToggle={() => toggleStep("baseline")}>
@@ -499,8 +524,11 @@ export PLAN_ID=<plan-id-from-output>
         </StepSection>
 
         <StepSection index={5} id="publish" title="Create tickets" goal="Review the technical plan and approve the Vertical Slices." complete={completed.includes("publish")} onToggle={() => toggleStep("publish")}>
+          <Callout type="tip" title="Break">
+            <p>After experts finish, pause 10 minutes; keep agents running.</p>
+          </Callout>
           <WorkshopPaths
-            click={<>In <strong>Plan → Review plan</strong>, select <strong>Run remaining experts</strong>. Open each result, answer blocking questions, complete the shown approvals, then select <strong>Create tickets</strong>.</>}
+            click={<>In <strong>Plan → Review plan</strong>, select <strong>Run remaining experts</strong>. Open each result, resolve blockers, and complete approvals. Then select <strong>Create tickets</strong>.</>}
             whyStopped={<>The factory waits for answers when an expert cannot make a safe assumption. It also waits for your final approval before it creates tickets.</>}
             inspect={<>Check the planned components, code changes, ticket acceptance criteria, order, and dependencies.</>}
             continueWhen={track === "live" ? <>The GitHub Project contains the planned issues.</> : <>The Tickets page contains the planned work.</>}
@@ -620,9 +648,14 @@ export PLAN_ID=<plan-id-from-output>
           <Checkpoint>TableStory opens from the repository produced by the factory.</Checkpoint>
         </StepSection>
 
+        <section className="transfer-section" aria-labelledby="transfer-title">
+          <div><span className="section-kicker">Use it for your work</span><h2 id="transfer-title">Own, buy, or bring existing</h2><p>Name each layer&apos;s interface, evidence, and failure owner.</p></div>
+          <ol><li>Compute</li><li>Development environment</li><li>Inner harness</li><li>Outer harness</li><li>Control plane</li></ol>
+        </section>
+
         <section className="completion-panel">
           <div className="completion-ring" style={{ "--progress": `${progress}%` } as CSSProperties}><span>{progress}%</span></div>
-          <div><span className="section-kicker">Workshop progress</span><h2>{progress === 100 ? "Factory complete" : "Keep going"}</h2><p>{completed.length} of {steps.length} steps marked complete.</p></div>
+          <div><span className="section-kicker">Factory progress</span><h2>{progress === 100 ? "Factory complete" : "Keep going"}</h2><p>{completed.length} of {steps.length} steps marked complete.</p></div>
           {progress < 100 && <a className="primary-button" href={`#${steps.find((step) => !completed.includes(step.id))?.id ?? "setup"}`}>Next step</a>}
         </section>
 
@@ -634,22 +667,22 @@ export PLAN_ID=<plan-id-from-output>
           </div>
           <section className="preflight-recovery" id="preflight-recovery" aria-labelledby="preflight-recovery-title">
             <span className="section-kicker">Setup recovery</span>
-            <h3 id="preflight-recovery-title">Preflight failed: fix the first FAIL</h3>
+            <h3 id="preflight-recovery-title">Automatic setup stopped: fix the first FAIL</h3>
             <ol>
               <li>Open <strong>Current run → Activity and CLI output</strong>.</li>
               <li>Scroll to the first <code>[FAIL]</code>. Ignore later failures until this one is fixed.</li>
               <li>Apply the matching fix below. Do not delete work or force-reset a branch.</li>
-              <li>Return to <strong>Setup → Connection</strong> and select <strong>Run preflight</strong> again.</li>
+              <li>Return to <strong>Setup → Connection</strong> and select <strong>Retry automatic setup</strong>.</li>
             </ol>
             <div className="status-key" aria-label="Preflight status meanings"><span className="status-pass">PASS · ready</span><span className="status-warn">WARN · check whether optional</span><span className="status-fail">FAIL · fix before continuing</span></div>
             <div className="fix-table" role="table" aria-label="Common preflight failures and fixes">
               <div className="fix-table-head" role="row"><span role="columnheader">The FAIL says</span><span role="columnheader">Fix it</span></div>
               <div role="row"><code role="cell">default branch<br />branch synchronization</code><span role="cell">Save any local work first. Then run <code>git fetch origin</code>, <code>git switch main</code>, and <code>git pull --ff-only origin main</code> in the product checkout.</span></div>
               <div role="row"><code role="cell">codex/claude adapter not found or not signed in</code><span role="cell">In <strong>Setup → Connection</strong>, choose the preset for the CLI you actually installed and save. Sign in with <code>codex login</code> or <code>claude auth login</code>.</span></div>
-              <div role="row"><code role="cell">No module named pytest<br />gate: api-tests</code><span role="cell">Select <strong>Run setup</strong>. It installs the dependencies in the Project Contract. Then rerun preflight.</span></div>
-              <div role="row"><code role="cell">GitHub Projects scope</code><span role="cell">Run <code>gh auth refresh -s project</code>, finish the browser authorization, and rerun preflight.</span></div>
+              <div role="row"><code role="cell">No module named pytest<br />gate: api-tests</code><span role="cell">Install the dependency with the repository&apos;s normal setup command, then select <strong>Retry automatic setup</strong>. If the contract omitted that command, correct its setup commands before retrying.</span></div>
+              <div role="row"><code role="cell">GitHub Projects scope</code><span role="cell">Run <code>gh auth refresh -s project</code>, finish the browser authorization, and select <strong>Retry automatic setup</strong>.</span></div>
               <div role="row"><code role="cell">repository target<br />origin remote</code><span role="cell">Paste the full URL of your product repository in <strong>Setup → Connection</strong> and save. Do not paste the workshop repository URL.</span></div>
-              <div role="row"><code role="cell">Project Contract<br />Factory Charter</code><span role="cell">Select <strong>Create contract and Charter</strong>, review the policy, approve it, and—in Live mode—select <strong>Commit and push setup</strong>.</span></div>
+              <div role="row"><code role="cell">Project Contract<br />Factory Charter</code><span role="cell">Select <strong>Create contract</strong>, review both contract sections, then select <strong>Approve contract and continue</strong>.</span></div>
             </div>
             <p className="warning-note"><strong>Usually safe to ignore:</strong> a warning for port 5050 while the Control Center is open, an unused adapter, or the optional second reviewer identity.</p>
           </section>
@@ -657,7 +690,7 @@ export PLAN_ID=<plan-id-from-output>
             src="/screenshots/control-center-preflight-failure.jpg"
             alt="Control Center Current run page with a failed preflight, recovery explanation, exact command, and CLI output"
             label="Failed preflight"
-            caption="Open the activity panel, find the first FAIL, fix it, and rerun preflight."
+            caption="Open the activity panel, find the first FAIL, fix it, and retry automatic setup."
             width={1440}
             height={980}
           />
@@ -668,13 +701,13 @@ export PLAN_ID=<plan-id-from-output>
               <li>Run <code>git status</code>. Commit or stash work you need to keep.</li>
               <li>Run <code>git fetch origin</code>, <code>git switch main</code>, and <code>git pull --ff-only origin main</code>.</li>
               <li>If Claude passes but Codex fails, choose <strong>Claude workshop</strong> in <strong>Setup → Connection</strong> and save. Otherwise sign in with <code>codex login</code>.</li>
-              <li>Select <strong>Run setup</strong> to install <code>pytest</code> and the other declared dependencies.</li>
-              <li>Select <strong>Run preflight</strong> again. Continue only when no <code>[FAIL]</code> remains.</li>
+              <li>Install <code>pytest</code> with the repository&apos;s normal setup command.</li>
+              <li>Select <strong>Retry automatic setup</strong>. Continue only when no <code>[FAIL]</code> remains.</li>
             </ol>
           </details>
           <div className="accordion-list">
-            <details><summary>The repository is not connected</summary><p>Open <strong>Setup → Connection</strong>, choose <strong>Live</strong>, enter the full product repository URL, and save. Push its default branch if it already contains code. Then run preflight again.</p></details>
-            <details><summary>An agent asks for the wrong credentials</summary><p>Open <strong>Setup → Connection</strong> and choose the preset for the CLI you use. Save, sign in to that CLI, and run preflight again.</p></details>
+            <details><summary>The repository is not connected</summary><p>Open <strong>Setup → Connection</strong>, choose <strong>Live</strong>, enter the full product repository URL, and select <strong>Save and connect</strong>. Push its default branch first if it already contains code.</p></details>
+            <details><summary>An agent asks for the wrong credentials</summary><p>Open <strong>Setup → Connection</strong> and choose the preset for the CLI you use. Save, sign in to that CLI, then select <strong>Retry automatic setup</strong>.</p></details>
             <details><summary>A planning expert failed</summary><p>Open <strong>Plan → Review plan</strong> and select the failed expert. For an invalid result, select <strong>Apply correction and continue</strong>. For a login or rate-limit error, fix access or choose another agent. If the PRD or repository settings changed, select <strong>Restart planning safely</strong>.</p></details>
             <details><summary>Ticket publication failed</summary><p>Open <strong>Plan → Review plan</strong> and select <strong>Retry ticket publication</strong>. The retry reuses issues already created for this plan. In the CLI, rerun the same <code>factory approve</code> command shown in the error.</p></details>
             <details><summary>A ticket is blocked</summary><p>Open the ticket history and read the last error. Fix that problem, then select <strong>Retry</strong> or run <code>factory retry ISSUE_NUMBER</code>.</p></details>
@@ -699,7 +732,8 @@ export PLAN_ID=<plan-id-from-output>
             <summary>Show the CLI command reference</summary>
             <div className="reference-table">
               <div><code>factory control-center</code><span>Open the web interface.</span></div>
-              <div><code>factory doctor --full</code><span>Check tools, access, and repository settings.</span></div>
+              <div><code>factory init</code><span>Create the repository contract.</span></div>
+              <div><code>factory approve-contract --live</code><span>Approve and complete automatic Live setup.</span></div>
               <div><code>factory plan PRD</code><span>Start planning from a PRD.</span></div>
               <div><code>factory review product PLAN_ID</code><span>Read the product plan.</span></div>
               <div><code>factory approve-product PLAN_ID</code><span>Approve the product plan.</span></div>
@@ -711,6 +745,10 @@ export PLAN_ID=<plan-id-from-output>
               <div><code>factory retry ISSUE</code><span>Retry a blocked ticket.</span></div>
               <div><code>.factory/venv/bin/python demo-app/app.py</code><span>Start the completed workshop app.</span></div>
             </div>
+          </details>
+          <details className="optional-detail">
+            <summary>Factory interfaces for production</summary>
+            <p>Open <strong>More tools → Factory interfaces</strong>. Workspace checks name related revisions. Authenticated triggers create deduplicated intake proposals. Reviewed compounding suggests improvements from repeated evidence. The merge steward may synchronize and re-verify a candidate, but it never merges.</p>
           </details>
           <div className="next-links">
             <a href="https://github.com/giolaq/software-refactory-workshop/blob/main/factory/WORKSHOP_OUTLINE.md"><span>FACILITATOR</span><b>Workshop outline</b><i>→</i></a>
@@ -727,7 +765,7 @@ export PLAN_ID=<plan-id-from-output>
 
       <footer>
         <span className="footer-brand"><span className="brand-mark" aria-hidden="true"><i /><i /><i /><i /></span>Software (re)-Factory</span>
-        <span>Setup. Plan. Deliver. Review. · workshop-v1.1.3</span>
+        <span>Setup. Plan. Deliver. Review. · workshop-v1.2.0</span>
       </footer>
     </>
   );

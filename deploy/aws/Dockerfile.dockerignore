@@ -1,0 +1,6 @@
+**
+!factory/
+!factory/**
+!deploy/
+!deploy/aws/
+!deploy/aws/entrypoint.sh

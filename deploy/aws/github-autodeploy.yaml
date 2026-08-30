@@ -1,0 +1,187 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: GitHub OIDC deployment roles for Software Re-Factory
+
+Parameters:
+  GitHubOidcSubject:
+    Type: String
+    Default: repo:giolaq/software-refactory-workshop:ref:refs/heads/codex/feat-aws-github-cloud
+    MinLength: 10
+    Description: Exact GitHub OIDC sub claim allowed to deploy; never use a wildcard
+  CreateGitHubOidcProvider:
+    Type: String
+    Default: "true"
+    AllowedValues: ["true", "false"]
+  ExistingGitHubOidcProviderArn:
+    Type: String
+    Default: ""
+    Description: Existing token.actions.githubusercontent.com provider ARN when creation is disabled
+  FactoryStackName:
+    Type: String
+    Default: software-refactory
+    AllowedPattern: "[A-Za-z][-A-Za-z0-9]*"
+  RegistryStackName:
+    Type: String
+    Default: software-refactory-registry
+    AllowedPattern: "[A-Za-z][-A-Za-z0-9]*"
+  EcrRepositoryName:
+    Type: String
+    Default: software-refactory
+    AllowedPattern: "[a-z0-9]+(?:[._/-][a-z0-9]+)*"
+
+Conditions:
+  CreateProvider: !Equals [!Ref CreateGitHubOidcProvider, "true"]
+
+Rules:
+  ExistingProviderRequired:
+    RuleCondition: !Equals [!Ref CreateGitHubOidcProvider, "false"]
+    Assertions:
+      - Assert: !Not [!Equals [!Ref ExistingGitHubOidcProviderArn, ""]]
+        AssertDescription: ExistingGitHubOidcProviderArn is required when provider creation is disabled
+
+Resources:
+  GitHubOidcProvider:
+    Type: AWS::IAM::OIDCProvider
+    Condition: CreateProvider
+    Properties:
+      Url: https://token.actions.githubusercontent.com
+      ClientIdList: [sts.amazonaws.com]
+      Tags:
+        - {Key: Application, Value: software-refactory}
+
+  CloudFormationServiceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      Description: Applies the two reviewed Software Re-Factory CloudFormation templates
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal: {Service: cloudformation.amazonaws.com}
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: ManageFactoryInfrastructure
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Sid: ManageFactoryServices
+                Effect: Allow
+                Action:
+                  - acm:DescribeCertificate
+                  - cognito-idp:*
+                  - ec2:*
+                  - ecr:*
+                  - ecs:*
+                  - elasticfilesystem:*
+                  - elasticloadbalancing:*
+                  - logs:*
+                  - route53:ChangeResourceRecordSets
+                  - route53:GetChange
+                  - route53:GetHostedZone
+                  - route53:ListResourceRecordSets
+                  - secretsmanager:DescribeSecret
+                Resource: "*"
+              - Sid: ManageFactoryRoles
+                Effect: Allow
+                Action:
+                  - iam:AttachRolePolicy
+                  - iam:CreateRole
+                  - iam:DeleteRole
+                  - iam:DeleteRolePolicy
+                  - iam:DetachRolePolicy
+                  - iam:GetRole
+                  - iam:GetRolePolicy
+                  - iam:ListAttachedRolePolicies
+                  - iam:ListRolePolicies
+                  - iam:PassRole
+                  - iam:PutRolePolicy
+                  - iam:TagRole
+                  - iam:UntagRole
+                  - iam:UpdateAssumeRolePolicy
+                Resource: !Sub arn:${AWS::Partition}:iam::${AWS::AccountId}:role/*
+              - Sid: CreateRequiredServiceLinkedRoles
+                Effect: Allow
+                Action: iam:CreateServiceLinkedRole
+                Resource: !Sub arn:${AWS::Partition}:iam::${AWS::AccountId}:role/aws-service-role/*
+                Condition:
+                  StringEquals:
+                    iam:AWSServiceName:
+                      - ecs.amazonaws.com
+                      - elasticfilesystem.amazonaws.com
+                      - elasticloadbalancing.amazonaws.com
+
+  GitHubDeploymentRole:
+    Type: AWS::IAM::Role
+    Properties:
+      Description: Exact-branch GitHub Actions publisher for Software Re-Factory
+      MaxSessionDuration: 3600
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Federated: !If
+                - CreateProvider
+                - !Ref GitHubOidcProvider
+                - !Ref ExistingGitHubOidcProviderArn
+            Action: sts:AssumeRoleWithWebIdentity
+            Condition:
+              StringEquals:
+                token.actions.githubusercontent.com:aud: sts.amazonaws.com
+                token.actions.githubusercontent.com:sub: !Ref GitHubOidcSubject
+      Policies:
+        - PolicyName: PublishFactory
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Sid: UpdateFactoryStacks
+                Effect: Allow
+                Action:
+                  - cloudformation:CreateChangeSet
+                  - cloudformation:CreateStack
+                  - cloudformation:DeleteChangeSet
+                  - cloudformation:DescribeChangeSet
+                  - cloudformation:DescribeStackEvents
+                  - cloudformation:DescribeStacks
+                  - cloudformation:ExecuteChangeSet
+                  - cloudformation:GetTemplate
+                  - cloudformation:GetTemplateSummary
+                  - cloudformation:ListStackResources
+                  - cloudformation:UpdateStack
+                Resource:
+                  - !Sub arn:${AWS::Partition}:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/${FactoryStackName}/*
+                  - !Sub arn:${AWS::Partition}:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/${RegistryStackName}/*
+              - Sid: PassCloudFormationServiceRole
+                Effect: Allow
+                Action: iam:PassRole
+                Resource: !GetAtt CloudFormationServiceRole.Arn
+                Condition:
+                  StringEquals:
+                    iam:PassedToService: cloudformation.amazonaws.com
+              - Sid: AuthenticateToEcr
+                Effect: Allow
+                Action: ecr:GetAuthorizationToken
+                Resource: "*"
+              - Sid: PushFactoryImages
+                Effect: Allow
+                Action:
+                  - ecr:BatchCheckLayerAvailability
+                  - ecr:BatchGetImage
+                  - ecr:CompleteLayerUpload
+                  - ecr:DescribeImages
+                  - ecr:GetDownloadUrlForLayer
+                  - ecr:InitiateLayerUpload
+                  - ecr:PutImage
+                  - ecr:UploadLayerPart
+                Resource: !Sub arn:${AWS::Partition}:ecr:${AWS::Region}:${AWS::AccountId}:repository/${EcrRepositoryName}
+
+Outputs:
+  GitHubDeploymentRoleArn:
+    Description: Set as the AWS_DEPLOY_ROLE_ARN GitHub repository variable
+    Value: !GetAtt GitHubDeploymentRole.Arn
+  CloudFormationServiceRoleArn:
+    Description: Set as the AWS_CLOUDFORMATION_ROLE_ARN GitHub repository variable
+    Value: !GetAtt CloudFormationServiceRole.Arn
+  GitHubOidcProviderArn:
+    Value: !If [CreateProvider, !Ref GitHubOidcProvider, !Ref ExistingGitHubOidcProviderArn]
+  TrustedGitHubSubject:
+    Value: !Ref GitHubOidcSubject

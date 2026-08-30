@@ -24,6 +24,16 @@ test("server-renders the concise self-guided workshop", async () => {
   assert.match(html, /Software \(re\)-Factory workshop/);
   assert.match(html, /Follow Setup, Plan, Deliver, and Review/);
   assert.match(html, /tells you when to act and why it stopped/);
+  assert.match(html, /A coding agent makes a change\. A software factory makes delivery repeatable/);
+  for (const layer of ["Compute", "Development environment", "Inner harness", "Outer harness", "Control plane"]) {
+    assert.match(html, new RegExp(layer));
+  }
+  assert.match(html, /Review capacity is the limit/);
+  assert.match(html, /Selected adapter capabilities/);
+  assert.match(html, /Protocol v1/);
+  assert.match(html, /Unavailable stays unavailable/);
+  assert.match(html, /prototype/i);
+  assert.match(html, /Vertical Slice/);
 
   assert.match(html, /Install and sign in/);
   assert.match(html, /Python 3\.11/);
@@ -34,6 +44,11 @@ test("server-renders the concise self-guided workshop", async () => {
   assert.match(html, /Live/);
   assert.match(html, /factory control-center/);
   assert.match(html, /Start the Control Center/);
+  assert.match(html, /Complete Setup in three steps/);
+  assert.match(html, /Save and connect/);
+  assert.match(html, /Create contract/);
+  assert.match(html, /Approve contract and continue/);
+  assert.match(html, /Retry automatic setup/);
   assert.match(html, /Project Contract/);
   assert.match(html, /Terminal 2 — keep this running/);
   assert.match(html, /Factory Control Center: http:\/\/127\.0\.0\.1:5050/);
@@ -60,7 +75,7 @@ test("server-renders the concise self-guided workshop", async () => {
     assert.match(html, new RegExp(heading));
   }
 
-  assert.match(html, /factory doctor --full/);
+  assert.match(html, /factory approve-contract --live/);
   assert.match(html, /factory plan recipe-app-prd\.md/);
   assert.match(html, /factory approve-product/);
   assert.match(html, /factory approve-rehearsal/);
@@ -77,14 +92,16 @@ test("server-renders the concise self-guided workshop", async () => {
   assert.match(html, /The coding agent changes an isolated Git worktree/);
   assert.match(html, /A required check still tests removed behavior/);
   assert.match(html, /Troubleshooting/);
-  assert.match(html, /Preflight failed: fix the first FAIL/);
-  assert.match(html, /Run setup/);
+  assert.match(html, /Automatic setup stopped: fix the first FAIL/);
+  assert.match(html, /provisions and prepares the environment/);
   assert.match(html, /No module named pytest/);
   assert.match(html, /git pull --ff-only origin main/);
   assert.match(html, /Setup → Connection/);
   assert.match(html, /Plan → Requirements/);
   assert.match(html, /Deliver → Tickets/);
   assert.match(html, /Review → Run app/);
+  assert.match(html, /Factory interfaces/);
+  assert.match(html, /Own, buy, or bring existing/);
 
   assert.match(html, /screenshots\/pocket-cinema-before\.webp/);
   assert.match(html, /screenshots\/control-center-connect\.jpg/);
@@ -98,7 +115,7 @@ test("server-renders the concise self-guided workshop", async () => {
   assert.match(html, /screenshots\/control-center-preflight-failure\.jpg/);
 
   assert.doesNotMatch(html, /Start with one responsible delivery loop/);
-  assert.doesNotMatch(html, /More agents are a cost/);
+  assert.match(html, /More agents are a cost/);
   assert.doesNotMatch(html, /The supervisor coordinates work\. It does not own delivery/);
   assert.doesNotMatch(html, /The Code Review role closes the feedback loop/);
   assert.doesNotMatch(html, /Turn product intent into contracts and small vertical slices/);
@@ -123,14 +140,14 @@ test("attendee page stays within its copy budget", async () => {
     .replace(/&(?:[a-z]+|#\d+);/gi, " ");
   const words = visible.trim().split(/\s+/).filter(Boolean).length;
   assert.ok(words < 2400, `attendee page renders ${words} visible words; expected fewer than 2400`);
-  assert.match(source, /factory doctor --repo "\$TARGET" --full/);
+  assert.match(source, /factory approve-contract --repo "\$TARGET" --live --yes/);
   assert.match(source, /factory run --repo "\$TARGET"/);
   assert.match(source, /approve-tests ISSUE_NUMBER --repo "\$TARGET"/);
   assert.match(source, /gh project view <project-number>/);
   assert.match(source, /screenshots\/github-project-board\.jpg/);
   assert.match(source, /gh repo create YOUR-REPOSITORY --private/);
   assert.match(source, /Seed the guided Pocket Cinema starter/);
-  assert.match(source, /Leave it clear for your own existing product/);
+  assert.match(source, /leave it clear for your own existing product/i);
   assert.match(source, /repository contains only factory settings/);
   assert.match(source, /Retry ticket publication/);
   assert.match(source, /retry reuses issues already created for this plan/);

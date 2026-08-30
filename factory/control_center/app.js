@@ -46,7 +46,7 @@ function showView(name, updateHash = true) {
     view.classList.toggle("active", active);
   });
   $$('[data-view-link]').forEach((link) => link.classList.toggle("active", link.dataset.viewLink === name));
-  if (["supervisor", "monitor"].includes(name)) $(".nav-more").open = true;
+  if (["supervisor", "monitor", "interfaces"].includes(name)) $(".nav-more").open = true;
   if (updateHash) history.replaceState(null, "", `#${name}`);
   closeSidebar();
   if (name === "prd") loadPrd();
@@ -124,6 +124,7 @@ function setMode(value) {
   if ($("#bootstrap-workshop-option")) $("#bootstrap-workshop-option").hidden = next !== "live";
   const listen = $('[data-action="listen"]');
   if (listen) listen.disabled = next !== "live";
+  if (app.snapshot) renderSnapshot(app.snapshot);
 }
 
 function formatTime(value) {
@@ -144,6 +145,17 @@ function formatDateTime(value) {
       hour: "2-digit",
       minute: "2-digit",
     });
+}
+
+function setSetupStep(selector, state, status) {
+  const step = $(selector);
+  if (!step) return;
+  step.classList.remove("waiting", "active", "complete", "blocked");
+  step.classList.add(state);
+  if (state === "active" || state === "blocked") step.setAttribute("aria-current", "step");
+  else step.removeAttribute("aria-current");
+  const label = $(`${selector}-status`);
+  if (label) label.textContent = status;
 }
 
 function setSignal(selector, text, tone = "") {
@@ -190,12 +202,72 @@ function section(body, title) {
 function populateAgentSelects(adapters, config) {
   $$('[data-agent-select]').forEach((select) => {
     const role = select.dataset.agentSelect;
-    const allowed = role === "planning" ? adapters.filter((item) => ["claude", "codex"].includes(item)) : adapters.filter((item) => !item.startsWith("mock"));
+    const allowed = role === "planning" ? adapters.filter((item) => ["bedrock", "claude", "codex"].includes(item)) : adapters.filter((item) => !item.startsWith("mock"));
     const configured = { qa: config.qa_agent, planning: config.planning_agent, supervisor: config.supervisor_agent, review: config.review_agent, implementation: config.agent }[role];
     const previous = select.value || configured || "codex";
     select.innerHTML = allowed.map((item) => `<option value="${esc(item)}">${esc(item[0].toUpperCase() + item.slice(1))}</option>`).join("");
     if (allowed.includes(previous)) select.value = previous;
   });
+}
+
+function renderAdapterCapabilities(details, config) {
+  const selected = [...new Set([
+    config.planning_agent, config.agent, config.qa_agent,
+    config.supervisor_agent, config.review_agent,
+  ].filter(Boolean))];
+  const labels = {
+    "structured-planning": "Structured planning",
+    "native-read-only": "Native read-only",
+    "progress-events": "Progress events",
+    "cancellation": "Cancellation",
+    "session-resume": "Session resume",
+    browser: "Browser verification",
+    subagents: "Subagents",
+    "container-execution": "Container execution",
+    "hosted-execution": "Hosted execution",
+    "usage-telemetry": "Usage telemetry",
+  };
+  const list = $("#adapter-capability-list");
+  if (!selected.length) {
+    list.innerHTML = '<p class="empty-state">Save an Agent Adapter configuration to inspect it.</p>';
+    return;
+  }
+  list.innerHTML = selected.map((name) => {
+    const capability = details[name];
+    if (!capability) return `<article class="adapter-capability"><div><b>${esc(name)}</b><span>Compatibility command</span></div><p>Capability declaration unavailable.</p></article>`;
+    const features = new Set(capability.features || []);
+    const selectedFeatures = Object.entries(labels).map(([feature, label]) => (
+      `<span class="${features.has(feature) ? "available" : "unavailable"}">${features.has(feature) ? "✓" : "—"} ${esc(label)}</span>`
+    )).join("");
+    return `<article class="adapter-capability"><div><b>${esc(name)}</b><span>Protocol v${esc(capability.protocol_version)} · ${esc(capability.execution_environment)} · ${esc(capability.filesystem_mode)}</span></div><div class="capability-pills">${selectedFeatures}</div></article>`;
+  }).join("");
+}
+
+function renderInterfaces(workspace, triggers, improvements) {
+  $("#workspace-status").textContent = workspace.status === "ready"
+    ? `${workspace.configured ? "Configured" : "Default"} workspace is ready`
+    : "Workspace is blocked";
+  $("#workspace-guidance").textContent = workspace.status === "ready"
+    ? `${workspace.ticket_repository || "This repository"} receives Tickets and pull requests. ${workspace.configured ? "Every related revision is named below." : "No multi-repository contract is required."}`
+    : workspace.recovery_action || "Repair the missing repository or service before implementation.";
+  const revisions = workspace.revisions || {};
+  $("#workspace-revisions").innerHTML = Object.keys(revisions).length
+    ? Object.entries(revisions).map(([name, revision]) => `<p><b>${esc(name)}</b><code>${esc(String(revision).slice(0, 12))}</code></p>`).join("")
+    : '<p class="empty-state">Single repository; revision appears after the first check.</p>';
+
+  const triggerRecords = triggers.latest || [];
+  $("#trigger-count").textContent = `${triggers.proposal_count || 0} governed proposal${triggers.proposal_count === 1 ? "" : "s"}`;
+  $("#trigger-records").innerHTML = triggerRecords.length
+    ? triggerRecords.map((item) => `<p><b>${esc(item.source)}</b><span>${esc(item.event_id)}</span><small>${esc(item.status)}</small></p>`).join("")
+    : '<p class="empty-state">No trigger proposals recorded.</p>';
+
+  const suggestions = improvements.suggestions || [];
+  $("#improvement-status").textContent = improvements.status === "not-generated"
+    ? "No report generated"
+    : `${suggestions.length} reviewable suggestion${suggestions.length === 1 ? "" : "s"}`;
+  $("#improvement-suggestions").innerHTML = suggestions.length
+    ? suggestions.map((item) => `<article><b>${esc(item.signal)}</b><p>${esc(item.proposal)}</p><small>${esc(item.observation_count)} observation${item.observation_count === 1 ? "" : "s"} · human decision pending</small></article>`).join("")
+    : '<p class="empty-state">No signal met the evidence threshold.</p>';
 }
 
 function renderSnapshot(data) {
@@ -217,41 +289,77 @@ function renderSnapshot(data) {
   $("#sidebar-profile").textContent = config.profile || data.factory?.profile || "standard";
   $("#sidebar-mode").textContent = data.planning?.plan_id ? (data.planning.mode || "live") : mode();
   $("#connect-project").textContent = config.project_number ? `#${config.project_number}` : "Automatic";
+  const configSaved = Object.keys(config).length > 0;
+  const connectionReady = configSaved && (mode() !== "live" || repo.github_connected);
   const project = data.project || {};
   $("#contract-status").textContent = project.error
-    ? "Contract needs correction"
-    : project.configured ? `${project.name} · configured` : `${project.name || "Repository"} · detected`;
+    ? "Needs correction"
+    : project.configured ? "Created" : connectionReady ? "Ready" : "Waiting";
   $("#contract-guidance").textContent = project.error
     ? project.error
     : project.configured
-      ? `Review ${project.path} whenever the repository structure or verification commands change.`
-      : "Create the contract, review and commit it, then run setup and preflight.";
+      ? `Review the detected model below. The factory will use it for ${project.name || "this repository"}.`
+      : connectionReady
+        ? "Create one reviewable contract from the repository structure. No agent runs yet."
+        : "Save the repository and settings in Step 1 first.";
   $("#contract-sources").textContent = (project.source_roots || []).join(", ") || "—";
   $("#contract-tests").textContent = (project.test_roots || []).join(", ") || "—";
   $("#contract-gates").textContent = (project.gates || []).join(", ") || "—";
-  $("#initialize-project").disabled = Boolean(project.configured);
-  $("#initialize-project").textContent = project.configured ? "Contract created" : "Create contract and Charter";
-  $("#prepare-project").disabled = !project.configured || !project.valid || !(project.setup_commands || []).length;
+  $("#project-contract-policy").textContent = project.text || "Create the contract first.";
+  $("#initialize-project").disabled = Boolean(project.configured) || !connectionReady;
+  $("#initialize-project").textContent = project.configured ? "Contract created" : "Create contract";
+  const environment = data.environment || {};
+  const environmentChecks = environment.checks || [];
   const charter = data.charter || {};
-  $("#charter-status").textContent = !charter.configured
-    ? "Not created"
-    : !charter.valid
-      ? "Needs correction"
-      : charter.approved ? "Approved" : "Awaiting your approval";
   $("#charter-guidance").textContent = charter.error
-    || (charter.approved
-      ? `Approval is bound to policy ${String(charter.policy_sha256 || "").slice(0, 12)}.`
-      : "Review the exact policy below. Approval is invalidated if any policy field changes.");
+    || (!project.configured
+      ? "Create the contract in Step 2 before reviewing it."
+      : charter.approved
+        ? `Approval is bound to policy ${String(charter.policy_sha256 || "").slice(0, 12)}.`
+        : "Review the repository model and operating policy. Any later policy edit requires approval again.");
   $("#charter-tier").textContent = charter.consequence_tier || "—";
   $("#charter-merge").textContent = charter.merge_authority || "—";
   $("#charter-gates").textContent = charter.gate_level || "—";
-  $("#charter-policy").textContent = charter.text || "Create the Charter draft first.";
-  $("#approve-charter").disabled = !charter.configured || !charter.valid || charter.approved;
-  $("#approve-charter").textContent = charter.approved ? "Charter approved" : "Approve exact Charter";
-  $("#publish-setup").disabled = !charter.approved || project.committed;
-  $("#publish-setup").textContent = project.committed ? "Setup published" : "Commit and push setup";
+  $("#charter-policy").textContent = charter.text || "Create the contract first.";
+  const operation = data.operation || {};
+  const setupRunning = operation.action === "approve-contract" && ["running", "stopping"].includes(operation.status);
+  const publishReady = mode() !== "live" || project.committed;
+  const environmentReady = environment.status === "healthy";
+  const setupAttemptIncomplete = operation.action === "approve-contract" && operation.status !== "succeeded";
+  const setupComplete = Boolean(charter.approved && publishReady && environmentReady && !setupAttemptIncomplete);
+  $("#approval-status").textContent = setupRunning
+    ? "Running"
+    : setupComplete
+      ? "Approved"
+      : environment.status === "blocked" || (operation.action === "approve-contract" && operation.status === "failed")
+        ? "Needs attention"
+        : project.configured ? "Ready for review" : "Waiting";
+  $("#automatic-publish").querySelector("span").textContent = mode() === "live"
+    ? "Commit and push the contract"
+    : "Keep the rehearsal contract local";
+  $("#automatic-publish-status").textContent = mode() !== "live"
+    ? "No push"
+    : project.committed ? "Published" : setupRunning ? "In sequence" : "Waiting";
+  $("#automatic-environment-status").textContent = environmentReady
+    ? `${environmentChecks.filter((item) => item.status === "PASS").length}/${environmentChecks.length} checks passed`
+    : environment.status === "blocked" ? "Stopped at a failed check" : setupRunning ? "In sequence" : "Waiting";
+  $("#automatic-preflight-status").textContent = setupComplete
+    ? "Passed"
+    : operation.action === "approve-contract" && operation.status === "failed"
+      ? "Stopped — open Activity"
+      : setupRunning ? "Runs last" : "Runs automatically";
+  $("#approve-contract").disabled = !connectionReady || !project.configured || !project.valid || !charter.configured || !charter.valid || setupRunning || setupComplete;
+  $("#approve-contract").textContent = setupRunning
+    ? "Preparing repository…"
+    : setupComplete
+      ? "Approved and ready"
+      : charter.approved ? "Retry automatic setup" : "Approve contract and continue";
+  setSetupStep("#setup-step-connect", connectionReady ? "complete" : "active", connectionReady ? "Repository and settings saved" : "Select repository and settings");
+  setSetupStep("#setup-step-contract", project.configured && project.valid ? "complete" : connectionReady ? "active" : "waiting", project.configured && project.valid ? "Contract created" : connectionReady ? "Ready to create" : "Waiting for connection");
+  setSetupStep("#setup-step-approve", setupComplete ? "complete" : project.configured ? (environment.status === "blocked" ? "blocked" : "active") : "waiting", setupComplete ? "Approved and ready" : environment.status === "blocked" ? "Fix the first Activity error, then retry" : project.configured ? "Review and approve" : "Waiting for contract");
   populateAgentSelects(data.adapters || [], config);
   hydrateConfigForm(config);
+  renderAdapterCapabilities(data.adapter_details || {}, config);
 
   const tickets = data.factory?.tickets || [];
   const active = tickets.filter((ticket) => ["In Progress", "Verifying"].includes(ticket.status)).length;
@@ -274,6 +382,7 @@ function renderSnapshot(data) {
   renderSupervisor(data.supervisor || {}, data.factory || {}, data.config || {});
   renderApplication(data.application || {}, data.operation || {});
   renderMonitor(data.monitor || {}, data.repo || {});
+  renderInterfaces(data.workspace || {}, data.triggers || {}, data.improvements || {});
   if (app.selectedTicket) {
     const current = tickets.find((ticket) => Number(ticket.number) === Number(app.selectedTicket.number));
     if (current) {
@@ -463,7 +572,7 @@ function renderExpertPanel(item) {
     const validationFailure = item.failure_kind === "validation";
     const currentAgent = app.snapshot?.planning?.planning_agent || "";
     const recovery = app.snapshot?.planning?.recovery || {};
-    const fallbackAgents = recovery.alternative_adapters || (app.snapshot?.adapters || []).filter((agent) => ["claude", "codex"].includes(agent) && agent !== currentAgent);
+    const fallbackAgents = recovery.alternative_adapters || (app.snapshot?.adapters || []).filter((agent) => ["bedrock", "claude", "codex"].includes(agent) && agent !== currentAgent);
     const fallback = fallbackAgents.length ? `<div class="approval-card"><label><b>Use another planning adapter</b><select id="planning-retry-agent">${fallbackAgents.map((agent) => `<option value="${esc(agent)}">${esc(agent[0].toUpperCase() + agent.slice(1))}</option>`).join("")}</select></label><div class="approval-actions"><button class="button button-primary" type="button" id="retry-planning-with-agent">Fix with ${esc((recovery.recommended_adapter || fallbackAgents[0])[0].toUpperCase() + (recovery.recommended_adapter || fallbackAgents[0]).slice(1))}</button></div><p class="field-help">Switch adapter and continue from the approved upstream artifacts. The factory records the adapter change in the planning manifest.</p></div>` : "";
     const suggestedCorrection = `Return a complete corrected ${item.title} artifact that satisfies this validator error: ${item.validation_error || item.error}`;
     const correction = validationFailure ? `<div class="approval-card"><label><b>Correction sent to the expert</b><textarea id="planning-recovery-feedback">${esc(suggestedCorrection)}</textarea></label><div class="approval-actions"><button class="button button-primary" type="button" id="apply-planning-correction">${item.id === "product_review" ? "Apply correction" : "Apply correction and continue"}</button></div><p class="field-help">Edit the instruction if needed. The factory uses the rejected artifact as the revision source, validates the replacement, and resumes only after it passes.</p></div>` : "";
@@ -643,7 +752,14 @@ function renderTickets(factory, planning = {}, operation = {}) {
   board.innerHTML = visibleStates.map((state) => {
     const items = tickets.filter((ticket) => ticket.status === state);
     const cards = items.map((ticket) => {
-      const content = `<div class="ticket-top"><span class="ticket-number">#${ticket.number}</span><span>${esc(ticket.agent || "unassigned")}</span></div><h3>${esc(ticket.title)}</h3><div class="ticket-meta"><div><b>${esc((ticket.phase || ticket.status).replaceAll("_", " "))}</b><span>${ticket.preview ? "Awaiting local load" : `Attempt ${ticket.attempt || 0}`}</span></div><div><span>Needs</span><span class="dependency-list">${ticket.dependencies?.length ? ticket.dependencies.map((number) => `<i>#${number}</i>`).join("") : "None"}</span></div></div>`;
+      const intake = ticket.intake?.proposal;
+      const steward = ticket.merge_steward?.state;
+      const interfaceState = intake && !ticket.intake?.human_approved
+        ? `<span class="ticket-interface-state intake">Intake · ${esc(intake.classification)}</span>`
+        : steward && steward !== "not-applicable"
+          ? `<span class="ticket-interface-state steward">Steward · ${esc(steward.replaceAll("-", " "))}</span>`
+          : "";
+      const content = `<div class="ticket-top"><span class="ticket-number">#${ticket.number}</span><span>${esc(ticket.agent || "unassigned")}</span></div><h3>${esc(ticket.title)}</h3>${interfaceState}<div class="ticket-meta"><div><b>${esc((ticket.phase || ticket.status).replaceAll("_", " "))}</b><span>${ticket.preview ? "Awaiting local load" : `Attempt ${ticket.attempt || 0}`}</span></div><div><span>Needs</span><span class="dependency-list">${ticket.dependencies?.length ? ticket.dependencies.map((number) => `<i>#${number}</i>`).join("") : "None"}</span></div></div>`;
       return ticket.preview
         ? `<a class="ticket-card" href="${esc(ticket.url)}" target="_blank" rel="noreferrer">${content}</a>`
         : `<button class="ticket-card" type="button" data-ticket="${ticket.number}">${content}</button>`;
@@ -801,11 +917,14 @@ function basePayload(extra = {}) {
 async function action(name, extra = {}) {
   try {
     if (name === "init-project" && !window.confirm("Create factory.project.toml and a conservative factory.charter.toml draft from the detected repository structure?")) return;
+    if (name === "approve-contract" && !window.confirm("Approve the exact repository contract shown in Connect? The factory will publish the setup in Live mode, provision and prepare the environment, check its gates, and run preflight. It stops at the first error and shows every command in Activity.")) return;
     if (name === "approve-charter" && !window.confirm("Approve the exact Factory Charter policy shown in Connect? Any policy edit will invalidate this approval.")) return;
     if (name === "publish-setup" && !window.confirm("Commit and push only .gitignore, factory.project.toml, and the approved factory.charter.toml to the default branch?")) return;
     if (name === "merge" && !window.confirm("Merge only the exact approved revision shown for this Ticket? This records your human shipping decision.")) return;
-    if (name === "prepare-project" && !window.confirm("Run the setup commands recorded in factory.project.toml? Review that file first.")) return;
-    const destructive = ["publish-plan", "approve-product", "approve-stage", "approve-tests", "request-test-changes", "retry", "save-ticket-and-retry", "release-claim"].includes(name);
+    if (name === "environment-prepare" && !window.confirm("Run only the setup commands recorded in the reviewed Project Contract with your local permissions?")) return;
+    if (name === "environment-reset" && !window.confirm("Stop the provider-owned preview and clear only .factory/environment state? Source code and GitHub evidence are preserved.")) return;
+    if (name === "steward-sync" && !window.confirm("Synchronize the default branch into this candidate? Any head change revokes gates and Code Review and requires re-verification.")) return;
+    const destructive = ["publish-plan", "approve-product", "approve-stage", "approve-tests", "request-test-changes", "retry", "save-ticket-and-retry", "release-claim", "approve-intake"].includes(name);
     if (destructive && !window.confirm("Record this decision and continue?")) return;
     const operation = await request(`/api/actions/${name}`, { method: "POST", body: JSON.stringify(basePayload(extra)) });
     if (operation.companion) {
@@ -1018,6 +1137,8 @@ async function renderDrawer({ preservePosition = false } = {}) {
     const budgetExceeded = ticket.status === "Blocked" && budget.status === "exceeded";
     const recoveryInfo = ticket.recovery || {};
     const mergeState = mergeEligibility(ticket);
+    const intakeProposal = ticket.intake?.proposal || {};
+    const mergeSteward = ticket.merge_steward || {};
     const implementationLines = Number(budget.implementation_lines || 0);
     const suggestedLimit = Math.ceil(Math.max(implementationLines, implementationLines * 1.15) / 100) * 100;
     const retryReasonField = (placeholder = "Explain what changed and why another attempt can succeed.", value = "") => `
@@ -1190,15 +1311,17 @@ async function renderDrawer({ preservePosition = false } = {}) {
           <button class="button button-primary" type="button" data-ticket-action="retry">Retry ticket</button>
         </div>
       </section>`;
+    const intakePanel = intakeProposal.case_id && !ticket.intake?.human_approved ? `<section class="detail-panel intake-decision"><span class="section-label">Raw feedback intake</span><h3>${esc(intakeProposal.classification)}</h3><p>${esc(intakeProposal.rationale || "Review the bounded intake evidence before choosing the next workflow.")}</p>${intakeProposal.missing?.length ? `<p><b>Missing evidence</b><br>${intakeProposal.missing.map((item) => `<code>${esc(item)}</code>`).join(" ")}</p>` : ""}${intakeProposal.classification === "READY_TO_IMPLEMENT" ? `<label>Human approval reason<textarea id="intake-approval-reason" rows="3" placeholder="Explain why the revisions, reproduction, criteria, and ownership are sufficient."></textarea></label><div class="form-actions"><button class="button button-primary" type="button" data-ticket-action="approve-intake">Approve intake for triage</button></div>` : intakeProposal.classification === "READY_TO_PLAN" ? '<div class="form-actions"><button class="button" type="button" data-intake-view="planning">Move the request into planning</button></div>' : ""}<p class="field-help">The proposal cannot dispatch work. Your decision is recorded separately from the original classification.</p></section>` : "";
     const qaDecision = ticket.status === "QA Review" ? `<section class="detail-panel"><h3>Acceptance Test decision</h3><label for="qa-revision-feedback">Revision feedback</label><textarea id="qa-revision-feedback" rows="4" placeholder="Describe what the revised tests must change or cover."></textarea><p class="field-help">Request a new test revision here. Edit the GitHub issue only when its requirements or acceptance criteria are wrong.</p><div class="form-actions"><button class="button" type="button" data-ticket-action="request-test-changes">Request test changes</button><button class="button button-primary" type="button" data-ticket-action="approve-tests">Approve tests</button></div></section>` : "";
-    const actions = ticket.status === "In Review" && ticket.merge_authority === "human" && mergeState.allowed ? `<button class="button button-primary" type="button" data-ticket-action="merge">Merge exact revision</button>` : "";
-    const merge = ticket.status === "In Review" ? `<section class="detail-panel"><h3>Merge authority</h3><p><span class="pill">${esc(ticket.merge_authority || "human")}</span> Approved head <code>${esc(ticket.approved_head || "not recorded")}</code></p><p>${ticket.supervisor_merge_action === "MERGE" && ticket.merge_authority === "human" ? "The Supervisor recommends merge. A person still owns the final decision." : esc(ticket.supervisor_merge_decision || "Inspect the evidence before deciding.")}</p></section>` : "";
+    const stewardReady = !mergeSteward.state || mergeSteward.state === "ready-for-human-merge";
+    const actions = ticket.status === "In Review" && ticket.merge_authority === "human" && mergeState.allowed && stewardReady ? `<button class="button button-primary" type="button" data-ticket-action="merge">Merge exact revision</button>` : "";
+    const merge = ticket.status === "In Review" ? `<section class="detail-panel"><span class="section-label">Non-authoritative merge steward</span><h3>${esc((mergeSteward.state || "human-decision-required").replaceAll("-", " "))}</h3><p><span class="pill">${esc(ticket.merge_authority || "human")}</span> Approved head <code>${esc(ticket.approved_head || "not recorded")}</code></p><p>${esc((mergeSteward.reasons || [ticket.supervisor_merge_decision || "Inspect the exact-revision evidence before deciding."]).join(" "))}</p>${mergeSteward.state === "steward-updating" ? '<div class="form-actions"><button class="button" type="button" data-ticket-action="steward-sync">Synchronize and re-verify</button></div><p class="field-help">A changed head revokes gates and Code Review. The steward never merges.</p>' : ""}</section>` : "";
     const triage = ticket.triage || {};
     const controls = triage.controls || {};
     const metrics = ticket.metrics || {};
     const timing = `<section class="detail-panel"><h3>Time by owner</h3><div class="detail-grid"><p><b>${esc(metrics.agent_seconds || 0)}s</b><br><small>Useful agent work</small></p><p><b>${esc(metrics.gate_seconds || ticket.verification_duration_seconds || 0)}s</b><br><small>Verification overhead</small></p><p><b>${esc(metrics.human_wait_seconds || 0)}s</b><br><small>Human wait</small></p><p><b>${esc(metrics.retry_count || 0)}</b><br><small>Retries · ${esc(metrics.verifier_rejections || 0)} verifier rejections</small></p></div></section>`;
     const retryDecision = ticket.last_retry_reason ? `<section class="detail-panel"><h3>Latest retry reason</h3><p>${esc(ticket.last_retry_reason)}</p></section>` : "";
-    replaceDrawerContent(content, `${recovery}<div class="detail-grid"><section class="detail-panel"><h3>Implementation</h3><p><span class="pill">${esc(ticket.agent)}</span> attempt ${ticket.attempt || 0}</p></section><section class="detail-panel"><h3>Independent QA</h3><p><span class="pill">${esc(ticket.qa_agent || "disabled")}</span> attempt ${ticket.qa_attempt || 0}</p></section></div><section class="detail-panel"><h3>Triage and controls</h3><p><span class="pill">${esc(triage.result || "not run")}</span> ${esc(controls.risk || "unclassified")} risk · ${esc(ticket.verification_level || controls.gate_level || "unselected")} verification</p><p>${esc(controls.reason || triage.reason || "Controls are selected before dispatch and checked again from the actual diff.")}</p></section>${timing}${retryDecision}${merge}${qaDecision}<section class="detail-panel"><h3>Specification</h3><pre>${esc(section(ticket.body, "Spec"))}</pre></section><section class="detail-panel"><h3>Acceptance criteria</h3><pre>${esc(section(ticket.body, "Acceptance criteria"))}</pre></section>${ticket.failure ? `<section class="detail-panel"><h3>Last failure</h3><pre>${esc(ticket.failure)}</pre></section>` : ""}<div class="form-actions">${actions}${ticket.issue_url ? `<a class="button" href="${esc(ticket.issue_url)}" target="_blank" rel="noreferrer">Open issue</a>` : ""}${ticket.pr_url ? `<a class="button" href="${esc(ticket.pr_url)}" target="_blank" rel="noreferrer">Open pull request</a>` : ""}</div>`, preservePosition);
+    replaceDrawerContent(content, `${recovery}${intakePanel}<div class="detail-grid"><section class="detail-panel"><h3>Implementation</h3><p><span class="pill">${esc(ticket.agent)}</span> attempt ${ticket.attempt || 0}</p></section><section class="detail-panel"><h3>Independent QA</h3><p><span class="pill">${esc(ticket.qa_agent || "disabled")}</span> attempt ${ticket.qa_attempt || 0}</p></section></div><section class="detail-panel"><h3>Triage and controls</h3><p><span class="pill">${esc(triage.result || "not run")}</span> ${esc(controls.risk || "unclassified")} risk · ${esc(ticket.verification_level || controls.gate_level || "unselected")} verification</p><p>${esc(controls.reason || triage.reason || "Controls are selected before dispatch and checked again from the actual diff.")}</p></section>${timing}${retryDecision}${merge}${qaDecision}<section class="detail-panel"><h3>Specification</h3><pre>${esc(section(ticket.body, "Spec"))}</pre></section><section class="detail-panel"><h3>Acceptance criteria</h3><pre>${esc(section(ticket.body, "Acceptance criteria"))}</pre></section>${ticket.failure ? `<section class="detail-panel"><h3>Last failure</h3><pre>${esc(ticket.failure)}</pre></section>` : ""}<div class="form-actions">${actions}${ticket.issue_url ? `<a class="button" href="${esc(ticket.issue_url)}" target="_blank" rel="noreferrer">Open issue</a>` : ""}${ticket.pr_url ? `<a class="button" href="${esc(ticket.pr_url)}" target="_blank" rel="noreferrer">Open pull request</a>` : ""}</div>`, preservePosition);
     $('[data-ticket-action="approve-tests"]', content)?.addEventListener("click", () => action("approve-tests", { issue: ticket.number }));
     $('[data-ticket-action="request-test-changes"]', content)?.addEventListener("click", () => {
       const feedback = $("#qa-revision-feedback", content)?.value.trim() || "";
@@ -1261,6 +1384,19 @@ async function renderDrawer({ preservePosition = false } = {}) {
     });
     $('[data-ticket-action="release-claim"]', content)?.addEventListener("click", () => action("release-claim", { issue: ticket.number, owner_run_id: claimOwner, reason: "Operator confirmed this remote claim was abandoned in the Control Center" }));
     $('[data-ticket-action="merge"]', content)?.addEventListener("click", () => action("merge", { issue: ticket.number }));
+    $('[data-ticket-action="steward-sync"]', content)?.addEventListener("click", () => action("steward-sync", { issue: ticket.number }));
+    $('[data-ticket-action="approve-intake"]', content)?.addEventListener("click", () => {
+      const reason = $("#intake-approval-reason", content)?.value.trim() || "";
+      if (reason.length < 12) {
+        toast("Explain why the intake evidence is sufficient before approving it.", true);
+        return;
+      }
+      action("approve-intake", { issue: ticket.number, case_id: intakeProposal.case_id, reason });
+    });
+    $("[data-intake-view]", content)?.addEventListener("click", () => {
+      closeDrawer();
+      showView("planning");
+    });
     $$("[data-recovery-view]", content).forEach((button) => button.addEventListener("click", () => {
       closeDrawer();
       showView(button.dataset.recoveryView);

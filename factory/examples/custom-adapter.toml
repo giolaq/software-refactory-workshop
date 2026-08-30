@@ -1,0 +1,15 @@
+# Merge these tables into factory/factory.toml, then run:
+# ./factory/factory adapter-check example-protocol --json
+
+[agents]
+example-protocol = '{python} {factory_dir}/examples/custom_protocol_adapter.py --assignment {assignment} --prompt {prompt}'
+
+[agent_capabilities.example-protocol]
+protocol_version = 1
+features = ["progress-events"]
+execution_environment = "local"
+filesystem_mode = "workspace-write"
+allowed_working_roots = ["worktree"]
+network_expectation = "none"
+environment_allowlist = ["PATH", "HOME", "TMPDIR", "LANG"]
+credential_names = []

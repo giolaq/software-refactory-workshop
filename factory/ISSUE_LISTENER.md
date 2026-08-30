@@ -1,8 +1,8 @@
 # Repository Issue Listener
 
-This guide shows how to keep a Live Factory running, admit new user-created
-GitHub issues, triage them, and deliver valid requests through the normal
-Factory controls.
+This guide shows how to keep a Live Factory running and turn new user-created
+GitHub issues into evidence-backed proposals. Raw feedback never starts an
+Implementation adapter directly.
 
 ## Before you start
 
@@ -16,13 +16,14 @@ normal **Setup** checks first:
    ```
 
 2. Open <http://127.0.0.1:5050/>.
-3. Open **Setup → Connection** and select **Live**.
-4. Enter the GitHub repository URL and save the configuration.
-5. Select the required Factory Profile and role adapters.
-6. Create or review the Project Contract and Factory Charter.
-7. Approve the exact Charter.
-8. Commit and push the repository setup.
-9. Run the full preflight and confirm that it has no failures.
+3. Open **Setup → Connection**, select **Live**, enter the GitHub repository
+   URL, choose the Factory Profile and role adapters, then select **Save and
+   connect**.
+4. Select **Create contract** and review the detected repository model and
+   operating policy.
+5. Select **Approve contract and continue**. Confirm that the automatic publish,
+   environment preparation, health, gates, and preflight operation has no
+   failures.
 
 The GitHub repository must have Issues enabled. The selected GitHub identity
 must be able to edit issues, create labels, add Project items, and create pull
@@ -44,17 +45,17 @@ from being executed unexpectedly.
 The listener status band shows:
 
 - **Baseline**: open issues recorded at first start;
-- **Admitted**: later user-created issues accepted into Factory intake; and
+- **Admitted**: later user-created issues evaluated by Factory intake; and
 - **Ignored**: later Factory-managed issues excluded from intake.
 
 Do not create the demonstration issue until the status is **Listening**. An
 issue opened before the baseline is recorded is intentionally treated as old
 backlog.
 
-## Step 2: Open a valid GitHub issue
+## Step 2: Open raw feedback
 
-In the connected GitHub repository, create an issue after the listener starts.
-Use a specific title and this body:
+For a feature, create an Issue with a specific title and this short body. It
+will become `READY_TO_PLAN`, not a delivery Ticket:
 
 ```markdown
 ## Spec
@@ -65,14 +66,40 @@ constraints.
 - State an observable result that proves the behavior works.
 - State an important boundary or failure case.
 
-## File ownership
-- src/path-owned-by-this-issue
-- tests/path-owned-by-this-issue
 ```
 
-`## Spec` and at least one bulleted item under `## Acceptance criteria` are
-required. `## File ownership` is recommended because it gives the worker a
-clear change boundary.
+For a bug, add the `bug` label and provide reproducible evidence:
+
+```markdown
+## Spec
+Submitting an empty ingredient crashes recipe search.
+
+## Affected revision
+`0123456789abcdef0123456789abcdef01234567`
+
+## Environment
+Python 3.12, macOS 15, clean checkout
+
+## Reproduction command
+`python -m pytest tests/test_search.py -q`
+
+## Reproduction result
+AssertionError: expected validation message, process exited 1
+
+## Acceptance criteria
+- Empty input shows a validation message.
+- Search does not start for empty input.
+
+## File ownership
+- src/search.py
+- tests/test_search.py
+```
+
+The listener records the current default-branch revision as the latest revision
+checked. It treats the reproduction text as reviewed evidence and never runs an
+attached script or code from feedback. Use only a command and bounded output a
+person has already inspected. Collection errors, missing dependencies, login
+failures, and unrelated test failures are not causal product reproductions.
 
 Optional dependencies use issue numbers:
 
@@ -85,23 +112,31 @@ Avoid adding an `agent:` line unless the named adapter is configured. If an
 issue requests an unknown adapter, Factory records an intake warning and uses
 the configured default implementation adapter.
 
-## Step 3: Watch admission and triage
+## Step 3: Review the proposal
 
 Return to **Deliver → Tickets**. After the next poll:
 
 1. The **Admitted** count increases.
-2. Factory adds the issue to its GitHub Project.
-3. Factory adds its hidden intake and governance markers.
-4. The ticket enters the delivery board.
+2. Factory records a sanitized intake case and proposed classification.
+3. The Ticket Summary shows the rationale and missing evidence.
+4. The proposal remains unable to dispatch work.
 
-A complete dependency-free issue moves to **Ready** and follows the selected
-profile. An issue with unfinished dependencies remains in **Backlog**. Factory
-planning, monitoring, and previously governed intake issues are ignored rather
-than admitted again.
+Use the classification deliberately:
+
+- `READY_TO_PLAN`: open **Plan → Requirements** and use the request as a PRD.
+- `READY_TO_IMPLEMENT`: review the revisions, environment, causal reproduction,
+  acceptance criteria, and ownership. Enter the human approval reason, then
+  select **Approve intake for triage**.
+- `NEEDS_INFORMATION`: ask for the named missing evidence. Do not dispatch.
+- `WAIT`: fix the collection or environment boundary, or wait for the external
+  dependency. Do not pretend it is a product reproduction.
+
+Factory planning, monitoring, and previously governed intake Issues are ignored
+rather than admitted again.
 
 ## Step 4: Follow the normal delivery controls
 
-Admission does not bypass the Factory Profile:
+Human intake approval does not bypass the Factory Profile:
 
 1. Independent QA writes acceptance tests when the profile requires QA.
 2. If **Test approval** is required, open the ticket at **QA Review**, inspect
@@ -116,22 +151,19 @@ Admission does not bypass the Factory Profile:
 Use the **Autonomous Demo** profile only when the workshop explicitly intends to
 delegate merge authority. Other profiles retain their normal human decisions.
 
-## Step 5: Recover an incomplete issue
+## Step 5: Correct an intake proposal
 
-An issue without the required headings or a bulleted acceptance criterion is
-admitted but moves to **Blocked**.
+An incomplete bug proposal remains `NEEDS_INFORMATION` or `WAIT`.
 
 1. Open the blocked ticket in the Control Center.
-2. On **Summary**, read **Why it stopped**.
-3. Review **Proposed recovery**.
-4. Inspect the proposed Ticket body.
-5. Accept the proposal or edit it to accurately describe the intended result.
-6. Enter a retry reason explaining why the correction is now implementable.
-7. Select **Save ticket and retry**.
+2. On **Summary**, read **Raw feedback intake** and its missing evidence.
+3. Add the evidence to the GitHub Issue, or use the CLI correction command to
+   record a human classification and reason.
+4. Wait for the next listener poll to create a new evidence proposal.
+5. Approve intake only when a causal bug is truly ready for triage.
 
-The correction runs as a companion action, so the long-running listener does
-not need to stop. Factory updates the GitHub issue, reloads it, restores its
-governance markers, and re-runs deterministic triage.
+Corrections preserve the original classification in
+`.factory/intake/cases.jsonl`. The long-running listener does not need to stop.
 
 You can instead edit the issue directly on GitHub. Preserve the hidden Factory
 comments when possible. The listener detects the edit on its next poll and
@@ -171,6 +203,20 @@ The same constraints apply from the CLI:
 - the first start creates the no-backlog baseline; and
 - `Ctrl+C` stops the listener.
 
+To evaluate or correct a bounded request without the listener:
+
+```sh
+./factory/factory intake evaluate request.json --repo /path/to/product
+./factory/factory intake correct CASE_ID correction.json --repo /path/to/product
+./factory/factory approve-intake ISSUE --case CASE_ID \
+  --reason "Reproduction, criteria, and ownership reviewed" \
+  --repo /path/to/product --yes
+```
+
+The approval command applies only to a `READY_TO_IMPLEMENT` proposal and records
+the named human reason. It does not waive QA, gates, Code Review, or merge
+policy.
+
 ## Troubleshooting
 
 ### Listen for new issues is disabled
@@ -196,11 +242,11 @@ Open the operation output and read the first GitHub error. Run **Full
 preflight** again and correct authentication, repository access, Project scope,
 or connectivity. The listener keeps running and retries on the next poll.
 
-### The ticket is blocked
+### The intake proposal needs information
 
-Open its Summary. The Control Center shows the cause and proposed recovery.
-Missing `## Spec` or `## Acceptance criteria` content must be corrected before
-implementation can start.
+Open its Summary. The Control Center names the missing revision, environment,
+reproduction, acceptance, or ownership evidence. Update the Issue; do not keep
+retrying the coding agent because it has not been dispatched.
 
 ### All tickets are Done but the operation still runs
 

@@ -494,6 +494,12 @@ class GitHubBackend:
             label for label in existing_labels
             if not str(label).startswith("state:")
         ]
+        if not ready and "agent-ready" in labels:
+            labels.remove("agent-ready")
+            self.gh(
+                "issue", "edit", number, "--repo", repository,
+                "--remove-label", "agent-ready", check=False,
+            )
         for label in existing_labels:
             if label.startswith("state:"):
                 self.gh(
@@ -517,9 +523,10 @@ class GitHubBackend:
                 "issue", "comment", number, "--repo", repository,
                 "--body", (
                     "<!-- factory-intake-admission:v1 -->\n"
-                    "Factory admitted this user-created repository issue for deterministic "
-                    "triage. It will implement the issue when the body contains a `## Spec` "
-                    "section and at least one observable `## Acceptance criteria` item. "
+                    "Factory admitted this user-created repository issue as a raw-feedback "
+                    "proposal. It cannot start implementation until a person reviews the "
+                    "affected and latest revisions, reproduction evidence, duplicate candidates, "
+                    "acceptance criteria, and file ownership, then records an intake approval. "
                     "Factory-created planning and monitoring issues are never re-admitted."
                 ),
                 check=False,
@@ -532,6 +539,24 @@ class GitHubBackend:
             "pr_url": "",
             "intake": {"source": "repository", "admitted": True},
         }
+
+    def approve_repository_intake(self, number: int, *, case_id: str, reason: str) -> None:
+        """Record the named human decision that permits deterministic triage."""
+        repository = f"{self.owner}/{self.name}"
+        self.gh(
+            "issue", "edit", int(number), "--repo", repository,
+            "--add-label", "agent-ready",
+        )
+        self.gh(
+            "issue", "comment", int(number), "--repo", repository,
+            "--body", (
+                "<!-- factory-intake-human-approval:v1 -->\n"
+                f"**Human intake approval** for evidence case `{str(case_id)[:80]}`.\n\n"
+                f"Reason: {str(reason)[:1000]}\n\n"
+                "This approval permits deterministic triage; the Factory Charter, QA, "
+                "review, and exact-revision merge gates still apply."
+            ),
+        )
 
     def restore_repository_issue_contract(
         self,

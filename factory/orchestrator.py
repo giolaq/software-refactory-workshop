@@ -17,6 +17,7 @@ import argparse
 import concurrent.futures
 import fnmatch
 import hashlib
+import importlib.util
 import json
 import os
 import re
@@ -41,6 +42,27 @@ from codex_cli import (
 )
 from acceptance_evidence import classify_focused_result, focused_test_command
 from adapter_capabilities import load_capabilities
+from adapter_protocol import (
+    AdapterEventJournal,
+    AdapterProtocolError,
+    RESULT_PREFIX,
+    build_assignment,
+    conformance_report,
+    validate_result,
+)
+from environment_provider import (
+    ACTIONS as ENVIRONMENT_ACTIONS,
+    LocalEnvironmentProvider,
+)
+from intake_evidence import (
+    CLASSIFICATIONS as INTAKE_CLASSIFICATIONS,
+    IntakeEvaluator,
+    request_from_github_issue,
+)
+from compounding_report import CompoundingEngine
+from merge_steward import MergeSteward
+from trigger_contract import SOURCES as TRIGGER_SOURCES, TriggerRegistry
+from workspace_contract import WorkspaceContract
 from evidence_packet import create_canvas, export_evidence
 from factory_charter import CHARTER_PATH, FactoryCharter, FactoryCharterError
 from factory_contracts import (
@@ -87,6 +109,7 @@ from issue_listener import (
 )
 from session_config import (
     FACTORY_PROFILES,
+    PLANNING_AGENTS,
     PRESETS,
     configure_session,
     load_session_config,
@@ -133,8 +156,8 @@ DEFAULT_AGENTS = {
     "claude": 'claude -p "$(cat {prompt})" --permission-mode acceptEdits',
     "codex": '{codex} exec --sandbox workspace-write --ephemeral "$(cat {prompt})"',
     "cursor": 'cursor-agent -p "$(cat {prompt})"',
-    "mock": "{python} {factory_dir}/mock_agent.py {ticket} --scenario {scenario} --attempt {attempt}",
-    "mock-qa": "{python} {factory_dir}/mock_qa_agent.py {ticket} --scenario {scenario}",
+    "mock": "{python} {factory_dir}/mock_agent.py {ticket} --scenario {scenario} --attempt {attempt} < {prompt}",
+    "mock-qa": "{python} {factory_dir}/mock_qa_agent.py {ticket} --scenario {scenario} < {prompt}",
     "mock-supervisor": "{python} {factory_dir}/mock_supervisor.py {prompt}",
     "mock-review": "{python} {factory_dir}/mock_review_agent.py {ticket} {prompt} --attempt {attempt}",
 }
@@ -151,6 +174,13 @@ DEFAULT_QA = {
 
 def now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
+
+
+def read_json_file(path: Path, default):
+    try:
+        return json.loads(path.read_text())
+    except (OSError, json.JSONDecodeError):
+        return default
 
 
 def worktree_path(repo: Path, ticket_number: int) -> Path:
@@ -314,6 +344,10 @@ def candidate_worktree_matches(ticket: dict, repo: Path, revision: str) -> bool:
 
 def saved_candidate_reverification(ticket: dict, repo: Path | None = None) -> str:
     """Return a saved candidate whose successful focused test was misclassified."""
+    explicit = str(ticket.get("reverify_candidate") or "")
+    if re.fullmatch(r"[a-f0-9]{40,64}", explicit):
+        if repo is None or candidate_worktree_matches(ticket, repo, explicit):
+            return explicit
     green = (ticket.get("qa_evidence") or {}).get("green") or {}
     revision = str(green.get("revision") or "")
     try:
@@ -1366,6 +1400,14 @@ def resolve_codex_cli() -> str:
 def resolve_planning_cli(agent: str) -> str:
     if agent == "codex":
         return resolve_codex_cli()
+    if agent == "bedrock":
+        if not (os.environ.get("AWS_REGION") or os.environ.get("AWS_DEFAULT_REGION")):
+            raise RuntimeError("Bedrock planning requires AWS_REGION or AWS_DEFAULT_REGION.")
+        if not os.environ.get("FACTORY_BEDROCK_MODEL_ID"):
+            raise RuntimeError("Bedrock planning requires FACTORY_BEDROCK_MODEL_ID.")
+        if importlib.util.find_spec("boto3") is None:
+            raise RuntimeError("Bedrock planning requires boto3. Install it, then retry.")
+        return str(Path(__file__).with_name("bedrock_adapter.py"))
     if agent != "claude":
         raise ValueError(f"unsupported planning adapter: {agent}")
     binary = shutil.which("claude")
@@ -1656,6 +1698,12 @@ class Factory:
         self.project = self.cfg["project"]
         self.capabilities = self.cfg["agent_capabilities"]
         self.project_context = self.project.context()
+        self.workspace = WorkspaceContract.load(self.repo)
+        self.workspace_report = (
+            self.workspace.require_ready()
+            if self.workspace.configured
+            else self.workspace.check()
+        )
         self.profile_name = getattr(args, "profile", None) or "standard"
         self.profile = factory_profile(self.profile_name)
         self.charter = FactoryCharter.load(self.repo, require_approved=True)
@@ -2480,12 +2528,26 @@ class Factory:
                     profile=self.profile_name,
                     charter=self.charter,
                 )
-                ready = triage["result"] != "NEEDS_INFORMATION"
+                proposal = (ticket.get("intake") or {}).get("proposal") or {}
+                human_approved = "agent-ready" in {
+                    str(label) for label in remote.get("labels", [])
+                }
+                ready = bool(
+                    triage["result"] == "READY_TO_IMPLEMENT"
+                    and proposal.get("classification") == "READY_TO_IMPLEMENT"
+                    and human_approved
+                )
                 refreshed = ticket_refresh_payload(
                     {**remote, "body": body},
                     "mock" if self.args.mock else self.args.agent,
                 )
-                if refreshed["spec_sha256"] == ticket.get("spec_sha256"):
+                readiness_changed = human_approved != (
+                    "agent-ready" in {str(label) for label in ticket.get("labels", [])}
+                )
+                if (
+                    refreshed["spec_sha256"] == ticket.get("spec_sha256")
+                    and not readiness_changed
+                ):
                     continue
                 remote = self.backend.restore_repository_issue_contract(
                     remote,
@@ -2495,7 +2557,11 @@ class Factory:
                 self.load_tickets(source=[{
                     **remote,
                     "status": ticket.get("status", "Backlog"),
-                    "intake": {"source": "repository", "admitted": True},
+                    "intake": {
+                        "source": "repository", "admitted": True,
+                        "proposal": proposal,
+                        "human_approved": ready,
+                    },
                 }])
                 self.issue_listener.record_refresh(number)
                 print(f"#{number:<3} Backlog      Reloaded edited repository issue for triage", flush=True)
@@ -2527,25 +2593,55 @@ class Factory:
                     profile=self.profile_name,
                     charter=self.charter,
                 )
-                ready = triage["result"] != "NEEDS_INFORMATION"
+                evaluator = IntakeEvaluator(self.repo)
+                source_ref = str(issue.get("url") or f"github-issue:{number}")
+                proposal = (
+                    evaluator.latest(source_ref)
+                    if recovering_admission else None
+                ) or evaluator.evaluate(request_from_github_issue(
+                    issue,
+                    latest_revision=self.git(
+                        "rev-parse", "HEAD", check=False,
+                    ).stdout.strip(),
+                ))
+                human_approved = bool(
+                    recovering_admission
+                    and "agent-ready" in {
+                        str(label) for label in issue.get("labels", [])
+                    }
+                )
+                ready = bool(
+                    triage["result"] == "READY_TO_IMPLEMENT"
+                    and proposal.get("classification") == "READY_TO_IMPLEMENT"
+                    and human_approved
+                )
                 admitted = self.backend.admit_repository_issue(
                     issue,
                     body=body,
                     ready=ready,
                 )
-                self.load_tickets(source=[admitted])
+                self.load_tickets(source=[{
+                    **admitted,
+                    "intake": {
+                        "source": "repository",
+                        "admitted": True,
+                        "proposal": proposal,
+                        "human_approved": ready,
+                    },
+                }])
                 self.issue_listener.acknowledge(
                     number,
                     outcome="admitted",
                     detail=(
                         "Recovered an interrupted admission for implementation."
                         if recovering_admission and ready else
-                        "Recovered an interrupted admission; blocked until the issue "
-                        "has a Spec and Acceptance criteria."
+                        "Recovered an interrupted admission; waiting for complete "
+                        "evidence and a named human intake approval."
                         if recovering_admission else
-                        "Admitted for implementation."
+                        "Admitted after human review for deterministic triage."
                         if ready else
-                        "Admitted and blocked until the issue has a Spec and Acceptance criteria."
+                        f"Admitted as {proposal.get('classification', 'NEEDS_INFORMATION')}; "
+                        "waiting for the named human intake decision."
                     ),
                 )
                 print(
@@ -3150,6 +3246,43 @@ class Factory:
             ticket.setdefault("warnings", []).append(
                 f"Adapter {agent} cannot enforce read-only execution; worktree mutation detection remains active."
             )
+        invocation = f"{ticket['number']}-{phase}-{uuid.uuid4().hex[:8]}"
+        assignment_path = self.repo / ".factory/assignments" / self.run_id / f"{invocation}.json"
+        events_path = self.repo / ".factory/events" / self.run_id / f"{invocation}.jsonl"
+        result_path = self.repo / ".factory/results" / self.run_id / f"{invocation}.json"
+        assignment_path.parent.mkdir(parents=True, exist_ok=True)
+        requested_capabilities = [
+            "read-only" if read_only_role else "workspace-write",
+        ]
+        if capability.supports("progress-events"):
+            requested_capabilities.append("progress-events")
+        if phase in {"code-review", "architecture_conformance", "final_verifier", "critic"}:
+            requested_capabilities.append("structured-output")
+        try:
+            prompt_ref = str(prompt.resolve().relative_to(self.repo))
+        except ValueError:
+            prompt_ref = str(prompt.resolve())
+        assignment = build_assignment(
+            run_id=self.run_id,
+            role=phase,
+            ticket=ticket["number"],
+            attempt=max(1, ticket.get("attempt", ticket.get("qa_attempt", 1))),
+            repository=str(self.repo),
+            working_root=str(worktree.resolve()),
+            prompt_ref=prompt_ref,
+            profile=self.profile_name,
+            charter_sha256=self.governance["charter_sha256"],
+            policy_hashes=self.store.data.get("policy", {}).get("hashes", {}),
+            requested_capabilities=requested_capabilities,
+        )
+        assignment_path.write_text(json.dumps(assignment, indent=2) + "\n")
+        journal = AdapterEventJournal(
+            events_path,
+            run_id=self.run_id,
+            role=phase,
+            ticket=ticket["number"],
+        )
+        journal.started(adapter=agent)
         command = template.format(
             prompt=shlex.quote(str(prompt)), ticket=ticket["number"],
             python=shlex.quote(self.python), codex=shlex.quote(self.codex_bin or "codex"),
@@ -3157,6 +3290,7 @@ class Factory:
             attempt=max(1, ticket.get("attempt", ticket.get("qa_attempt", 1))),
             repo=shlex.quote(str(self.repo)), worktree=shlex.quote(str(worktree)),
             factory_dir=shlex.quote(str(Path(__file__).parent)),
+            assignment=shlex.quote(str(assignment_path)),
         )
         log = self.repo / ".factory/logs" / log_name
         log.parent.mkdir(parents=True, exist_ok=True)
@@ -3164,10 +3298,21 @@ class Factory:
             phase=phase,
             current_prompt=str(prompt.relative_to(self.repo)),
             current_log=str(log.relative_to(self.repo)),
+            current_assignment=str(assignment_path.relative_to(self.repo)),
+            current_events=str(events_path.relative_to(self.repo)),
+            current_result=str(result_path.relative_to(self.repo)),
+            adapter_protocol={
+                "version": capability.protocol_version,
+                "features": sorted(capability.features),
+                "mode": "protocol-v1" if "{assignment}" in template else "legacy-command",
+            },
             phase_started_at=now(),
         )
         self._sync_store()
         chunks = []
+        protocol_errors = []
+        protocol_results = []
+        protocol_mode = "{assignment}" in template
         with log.open("w") as stream:
             process = subprocess.Popen(
                 command, cwd=worktree, text=True, shell=True, executable="/bin/sh",
@@ -3180,6 +3325,21 @@ class Factory:
             def copy_output():
                 try:
                     for chunk in iter(stdout.readline, ""):
+                        if chunk.startswith(RESULT_PREFIX):
+                            try:
+                                supplied_result = json.loads(
+                                    chunk[len(RESULT_PREFIX):].strip()
+                                )
+                                protocol_results.append(validate_result(supplied_result))
+                            except (json.JSONDecodeError, AdapterProtocolError) as exc:
+                                protocol_errors.append(f"adapter result is invalid: {exc}")
+                            continue
+                        try:
+                            if journal.observe(chunk) is not None:
+                                continue
+                        except AdapterProtocolError as exc:
+                            protocol_errors.append(str(exc))
+                            continue
                         chunks.append(chunk)
                         stream.write(chunk)
                         stream.flush()
@@ -3200,8 +3360,54 @@ class Factory:
             stdout.close()
             if reader.is_alive():
                 reader.join(timeout=1)
+        if protocol_mode:
+            if len(protocol_results) != 1:
+                protocol_errors.append(
+                    "protocol-v1 adapter must emit exactly one FACTORY_RESULT line"
+                )
+            elif (
+                (returncode == 0 and protocol_results[0]["outcome"] != "success")
+                or (returncode != 0 and protocol_results[0]["outcome"] == "success")
+            ):
+                protocol_errors.append(
+                    "adapter result outcome does not match the process exit code"
+                )
+            else:
+                result_path.parent.mkdir(parents=True, exist_ok=True)
+                result_path.write_text(
+                    json.dumps(protocol_results[0], indent=2) + "\n"
+                )
+        if protocol_errors:
+            returncode = 2
+        try:
+            journal.finished(exit_code=returncode)
+        except AdapterProtocolError as exc:
+            protocol_errors.append(str(exc))
+            returncode = 2
+        if protocol_errors:
+            result_path.unlink(missing_ok=True)
+            protocol_message = "Adapter protocol failed: " + "; ".join(protocol_errors) + "\n"
+            chunks.append(protocol_message)
+            with log.open("a") as stream:
+                stream.write(protocol_message)
         output = "".join(chunks)
-        ticket.update(last_agent_exit=returncode, phase_finished_at=now())
+        try:
+            ticket_events = [
+                json.loads(line)
+                for line in events_path.read_text().splitlines()[-50:]
+            ]
+        except (OSError, json.JSONDecodeError):
+            ticket_events = []
+        ticket.update(
+            last_agent_exit=returncode,
+            phase_finished_at=now(),
+            adapter_events=ticket_events,
+            adapter_result=(
+                protocol_results[0]
+                if len(protocol_results) == 1 and not protocol_errors
+                else {}
+            ),
+        )
         self._sync_store()
         return returncode, output
 
@@ -3894,8 +4100,14 @@ class Factory:
         })
         self._sync_store()
 
-    def process(self, ticket: dict):
-        resume_qa = bool(ticket.get("qa_approved") and ticket.get("qa_commit") and ticket.get("branch"))
+    def _prepare_ticket_worktree(
+        self, ticket: dict,
+    ) -> tuple[Path, str, str] | None:
+        """Claim a ticket and prepare its isolated, QA-protected worktree."""
+        resume_qa = bool(
+            ticket.get("qa_approved") and ticket.get("qa_commit")
+            and ticket.get("branch")
+        )
         direct_reverification = str(ticket.get("reverify_candidate") or "")
         if self.backend and not resume_qa:
             try:
@@ -3906,14 +4118,14 @@ class Factory:
             except Exception as exc:
                 ticket["failure"] = str(exc)[-3000:]
                 self.transition(ticket, "Blocked", "Could not acquire the remote Ticket claim")
-                return
+                return None
             if not claim.get("owned"):
                 ticket["failure"] = (
                     f"Remote Ticket claim is owned by Factory run {claim.get('owner_run_id', 'unknown')} "
                     f"at {claim.get('ref', 'the deterministic claim ref')}. No agent was started."
                 )
                 self.transition(ticket, "Blocked", "Another Factory run owns this Ticket")
-                return
+                return None
         if direct_reverification:
             first_phase = f"Re-verifying saved candidate {direct_reverification[:12]}"
         elif resume_qa:
@@ -3930,178 +4142,168 @@ class Factory:
             if not worktree.is_dir() or self.verify_qa_tests_unchanged(ticket, worktree):
                 ticket["failure"] = "Approved QA worktree or protected tests are missing"
                 self.transition(ticket, "Blocked", "Could not resume approved QA worktree")
-                return
-            implementation_base_sha = ticket["qa_commit"]
+                return None
+            return worktree, base_sha, ticket["qa_commit"]
+        try:
+            worktree, base_sha = self.create_worktree(ticket)
+            self.snapshot_existing_tests(ticket, worktree, base_sha)
+        except Exception as exc:
+            ticket["failure"] = str(exc)[-3000:]
+            self.transition(ticket, "Blocked", "Could not create isolated worktree")
+            return None
+        implementation_base_sha = base_sha
+        if not self.qa_agent:
+            return worktree, base_sha, implementation_base_sha
+        try:
+            qa_failure = self.create_qa_tests(
+                ticket, worktree, base_sha, ticket.get("qa_retry_context", ""),
+            )
+        except Exception as exc:
+            qa_failure = f"QA acceptance-test phase failed:\n{exc}"
+        if qa_failure:
+            ticket["failure"] = qa_failure[-3000:]
+            self.transition(ticket, "Blocked", "Independent QA could not produce valid acceptance tests")
+            return None
+        ticket["qa_retry_context"] = ""
+        ticket["qa_revision_feedback"] = ""
+        implementation_base_sha = ticket["qa_commit"]
+        if self.review_qa_tests:
+            ticket["phase"] = "qa-review"
+            self.transition(
+                ticket, "QA Review",
+                f"Review {len(ticket['qa_tests'])} protected test(s), then run factory approve-tests {ticket['number']}",
+            )
+            return None
+        self.transition(
+            ticket, "In Progress",
+            f"QA committed {len(ticket['qa_tests'])} protected test(s); running {ticket['agent']}",
+        )
+        return worktree, base_sha, implementation_base_sha
+
+    def _implement_candidate(
+        self, ticket: dict, worktree: Path, implementation_base_sha: str,
+        attempt: int, previous_failure: str, reverify_candidate: str,
+    ) -> tuple[str, str]:
+        """Run one implementation attempt and return failure/head evidence."""
+        ticket["attempt"] = attempt
+        previously_reviewed_head = (
+            ticket.get("code_review", {}).get("head", "")
+            if previous_failure.startswith("Code Review requested changes:") else ""
+        )
+        try:
+            attempt_start_head = self.git(
+                "rev-parse", "HEAD", cwd=worktree,
+            ).stdout.strip()
+        except Exception:
+            attempt_start_head = ""
+        reuse_existing_candidate = bool(
+            attempt == 1 and reverify_candidate
+            and attempt_start_head == reverify_candidate
+        )
+        if reuse_existing_candidate:
+            code = 0
+            output = (
+                f"Factory preserved candidate {reverify_candidate[:12]} for direct "
+                "re-verification after correcting the focused-test classifier."
+            )
         else:
-            try:
-                worktree, base_sha = self.create_worktree(ticket)
-                self.snapshot_existing_tests(ticket, worktree, base_sha)
-            except Exception as exc:
-                ticket["failure"] = str(exc)[-3000:]
-                self.transition(ticket, "Blocked", "Could not create isolated worktree")
-                return
-            implementation_base_sha = base_sha
-            if self.qa_agent:
-                try:
-                    qa_failure = self.create_qa_tests(
-                        ticket,
-                        worktree,
-                        base_sha,
-                        ticket.get("qa_retry_context", ""),
-                    )
-                except Exception as exc:
-                    qa_failure = f"QA acceptance-test phase failed:\n{exc}"
-                if qa_failure:
-                    ticket["failure"] = qa_failure[-3000:]
-                    self.transition(ticket, "Blocked", "Independent QA could not produce valid acceptance tests")
-                    return
-                ticket["qa_retry_context"] = ""
-                ticket["qa_revision_feedback"] = ""
-                implementation_base_sha = ticket["qa_commit"]
-                if self.review_qa_tests:
-                    ticket["phase"] = "qa-review"
-                    self.transition(
-                        ticket, "QA Review",
-                        f"Review {len(ticket['qa_tests'])} protected test(s), then run factory approve-tests {ticket['number']}",
-                    )
-                    return
-                self.transition(
-                    ticket, "In Progress",
-                    f"QA committed {len(ticket['qa_tests'])} protected test(s); running {ticket['agent']}",
-                )
+            prompt = self.make_prompt(ticket, previous_failure)
+            code, output = self.run_agent(ticket, worktree, prompt)
+        candidate_head = ""
+        try:
+            self.commit_leftovers(ticket, worktree)
+            changed = self.git(
+                "diff", "--name-status", implementation_base_sha, "HEAD", cwd=worktree,
+            ).stdout.splitlines()
+            ticket["changed_files"] = [
+                {"status": fields[0], "path": fields[-1]}
+                for line in changed if len(fields := line.split("\t")) >= 2
+            ]
+            controls = classify_controls(
+                self.charter,
+                [item["path"] for item in ticket["changed_files"]],
+            )
+            if self.profile_name == "assured":
+                controls = {
+                    **controls,
+                    "gate_level": "deep",
+                    "reason": controls["reason"] + " The Assured profile requires deep verification.",
+                }
+            ticket.setdefault("triage", {})["controls"] = controls
+            self._sync_store()
+            commits = int(self.git(
+                "rev-list", "--count", f"{implementation_base_sha}..HEAD", cwd=worktree,
+            ).stdout)
+            candidate_head = self.git("rev-parse", "HEAD", cwd=worktree).stdout.strip()
+        except Exception as exc:
+            commits, output, code = 0, f"{output}\n{exc}", 1
+        unchanged_attempt = bool(
+            attempt_start_head and candidate_head == attempt_start_head
+        )
+        failure = implementation_attempt_failure(
+            output, code, commits, attempt_start_head, candidate_head,
+            previously_reviewed_head,
+            allow_unchanged_candidate=reuse_existing_candidate,
+        )
+        if failure:
+            self.record_receipt(
+                ticket, "implementation", "Build", attempt=attempt,
+                input_revisions={"implementation_base": implementation_base_sha},
+                output_revisions={}, claimed_result="Implementation attempt failed",
+                verification=[
+                    f"Agent adapter exit code: {code}",
+                    "Candidate revision did not change during this attempt."
+                    if unchanged_attempt else "Candidate revision changed during this attempt.",
+                ],
+                unresolved_risks=[
+                    "Implementation did not produce acceptable committed output; inspect the referenced log."
+                ],
+                artifacts=[ticket.get("current_log", "")],
+            )
+            return failure, ""
+        implementation_head = candidate_head
+        self.record_receipt(
+            ticket, "implementation", "Build", attempt=attempt,
+            input_revisions={"implementation_base": implementation_base_sha},
+            output_revisions={"implementation_commit": implementation_head},
+            claimed_result=(
+                "Existing implementation candidate reused"
+                if reuse_existing_candidate else "Implementation committed"
+            ),
+            verification=[
+                "Saved candidate was preserved for direct re-verification."
+                if reuse_existing_candidate else
+                "Agent exited successfully and produced at least one commit."
+            ],
+            artifacts=[item["path"] for item in ticket["changed_files"]],
+        )
+        if "cleanup" in self.profile["execution_roles"]:
+            failure = self.run_assured_roles(ticket, worktree, implementation_head)
+            if failure:
+                return failure, implementation_head
+            implementation_head = self.git("rev-parse", "HEAD", cwd=worktree).stdout.strip()
+        ticket["diff_budget"] = ticket_diff_budget(self.repo, ticket, self.charter)
+        self._sync_store()
+        if ticket["diff_budget"]["status"] == "exceeded":
+            return diff_budget_failure(ticket["diff_budget"]), implementation_head
+        return (
+            self.verify_project_protected_paths(worktree, implementation_base_sha),
+            implementation_head,
+        )
+
+    def process(self, ticket: dict):
+        prepared = self._prepare_ticket_worktree(ticket)
+        if prepared is None:
+            return
+        worktree, base_sha, implementation_base_sha = prepared
         failure = ticket.pop("retry_context", "")
         reverify_candidate = ticket.get("reverify_candidate", "")
         max_attempts = self.cfg["factory"]["max_retries"] + 1
         for attempt in range(1, max_attempts + 1):
-            ticket["attempt"] = attempt
-            previous_failure = failure
-            previously_reviewed_head = (
-                ticket.get("code_review", {}).get("head", "")
-                if previous_failure.startswith("Code Review requested changes:") else ""
+            failure, implementation_head = self._implement_candidate(
+                ticket, worktree, implementation_base_sha, attempt,
+                failure, reverify_candidate,
             )
-            try:
-                attempt_start_head = self.git(
-                    "rev-parse", "HEAD", cwd=worktree,
-                ).stdout.strip()
-            except Exception:
-                attempt_start_head = ""
-            reuse_existing_candidate = bool(
-                attempt == 1
-                and reverify_candidate
-                and attempt_start_head == reverify_candidate
-            )
-            if reuse_existing_candidate:
-                code = 0
-                output = (
-                    f"Factory preserved candidate {reverify_candidate[:12]} for direct "
-                    "re-verification after correcting the focused-test classifier."
-                )
-            else:
-                prompt = self.make_prompt(ticket, previous_failure)
-                code, output = self.run_agent(ticket, worktree, prompt)
-            candidate_head = ""
-            try:
-                self.commit_leftovers(ticket, worktree)
-                changed = self.git(
-                    "diff", "--name-status", implementation_base_sha, "HEAD", cwd=worktree,
-                ).stdout.splitlines()
-                ticket["changed_files"] = [
-                    {"status": fields[0], "path": fields[-1]}
-                    for line in changed if len(fields := line.split("\t")) >= 2
-                ]
-                controls = classify_controls(
-                    self.charter,
-                    [item["path"] for item in ticket["changed_files"]],
-                )
-                if self.profile_name == "assured":
-                    controls = {
-                        **controls,
-                        "gate_level": "deep",
-                        "reason": controls["reason"] + " The Assured profile requires deep verification.",
-                    }
-                ticket.setdefault("triage", {})["controls"] = controls
-                self._sync_store()
-                commits = int(
-                    self.git("rev-list", "--count", f"{implementation_base_sha}..HEAD", cwd=worktree).stdout
-                )
-                candidate_head = self.git("rev-parse", "HEAD", cwd=worktree).stdout.strip()
-            except Exception as exc:
-                commits, output, code = 0, f"{output}\n{exc}", 1
-            unchanged_attempt = bool(
-                attempt_start_head and candidate_head == attempt_start_head
-            )
-            attempt_failure = implementation_attempt_failure(
-                output,
-                code,
-                commits,
-                attempt_start_head,
-                candidate_head,
-                previously_reviewed_head,
-                allow_unchanged_candidate=reuse_existing_candidate,
-            )
-            if attempt_failure:
-                failure = attempt_failure
-                self.record_receipt(
-                    ticket,
-                    "implementation",
-                    "Build",
-                    attempt=attempt,
-                    input_revisions={"implementation_base": implementation_base_sha},
-                    output_revisions={},
-                    claimed_result="Implementation attempt failed",
-                    verification=[
-                        f"Agent adapter exit code: {code}",
-                        (
-                            "Candidate revision did not change during this attempt."
-                            if unchanged_attempt else
-                            "Candidate revision changed during this attempt."
-                        ),
-                    ],
-                    unresolved_risks=[
-                        "Implementation did not produce acceptable committed output; inspect the referenced log."
-                    ],
-                    artifacts=[ticket.get("current_log", "")],
-                )
-                if self.block_or_retry(ticket, failure):
-                    continue
-                return
-            implementation_head = candidate_head
-            self.record_receipt(
-                ticket,
-                "implementation",
-                "Build",
-                attempt=attempt,
-                input_revisions={"implementation_base": implementation_base_sha},
-                output_revisions={"implementation_commit": implementation_head},
-                claimed_result=(
-                    "Existing implementation candidate reused"
-                    if reuse_existing_candidate else
-                    "Implementation committed"
-                ),
-                verification=[(
-                    "Saved candidate was preserved for direct re-verification."
-                    if reuse_existing_candidate else
-                    "Agent exited successfully and produced at least one commit."
-                )],
-                artifacts=[item["path"] for item in ticket["changed_files"]],
-            )
-            if "cleanup" in self.profile["execution_roles"]:
-                failure = self.run_assured_roles(ticket, worktree, implementation_head)
-                if failure:
-                    if self.block_or_retry(ticket, failure):
-                        continue
-                    return
-                implementation_head = self.git("rev-parse", "HEAD", cwd=worktree).stdout.strip()
-            ticket["diff_budget"] = ticket_diff_budget(
-                self.repo, ticket, self.charter,
-            )
-            self._sync_store()
-            if ticket["diff_budget"]["status"] == "exceeded":
-                failure = diff_budget_failure(ticket["diff_budget"])
-                if self.block_or_retry(ticket, failure):
-                    continue
-                return
-            failure = self.verify_project_protected_paths(worktree, implementation_base_sha)
             if failure:
                 if self.block_or_retry(ticket, failure):
                     continue
@@ -4780,6 +4982,135 @@ def ticket_merge_authority(ticket: dict, default_authority: str) -> str:
     return default_authority
 
 
+def steward_synchronize_ticket(
+    repo: Path,
+    number: int,
+    *,
+    assume_yes: bool,
+) -> dict:
+    """Synchronize a candidate mechanically, then revoke revision-bound approval.
+
+    The steward never merges the pull request. A changed candidate is preserved
+    only for direct gates and code-review re-verification.
+    """
+    repo = repo.resolve()
+    store = StateStore(repo)
+    ticket = next(
+        (item for item in store.data.get("tickets", []) if item.get("number") == number),
+        None,
+    )
+    if ticket is None:
+        raise ValueError(f"Ticket #{number} not found in factory state")
+    if ticket.get("status") != "In Review":
+        raise ValueError(f"Ticket #{number} is {ticket.get('status')}, not In Review")
+    if ticket.get("merge_authority") != "human":
+        raise ValueError("Merge stewardship is available only for human-owned merge decisions.")
+    branch = str(ticket.get("branch") or "")
+    candidate = worktree_path(repo, number)
+    if not branch or not candidate.is_dir():
+        raise ValueError("The isolated candidate worktree is missing; rebuild the Ticket.")
+    dirty = run(["git", "status", "--porcelain"], candidate).stdout.strip()
+    if dirty:
+        raise ValueError("The candidate worktree has uncommitted changes; a person must inspect it.")
+    default_branch = ProjectContract.load(repo).default_branch
+    fetched = run(
+        ["git", "fetch", "origin", default_branch], repo, check=False,
+    )
+    if fetched.returncode:
+        raise ValueError(
+            "Could not fetch the default branch; repair repository access before synchronization."
+        )
+    remote_ref = f"origin/{default_branch}"
+    old_head = run(["git", "rev-parse", "HEAD"], candidate).stdout.strip()
+    up_to_date = run(
+        ["git", "merge-base", "--is-ancestor", remote_ref, "HEAD"],
+        candidate, check=False,
+    ).returncode == 0
+    if up_to_date:
+        return {
+            "schema_version": 1,
+            "state": "ready-for-human-merge",
+            "candidate_head": old_head,
+            "changed": False,
+            "merge_authority": "human",
+            "may_merge": False,
+        }
+    if not assume_yes:
+        raise ValueError(
+            f"Synchronizing Ticket #{number} changes the candidate and revokes its "
+            "review. Repeat with --yes after reviewing this scope."
+        )
+    merged = run(
+        ["git", "merge", "--no-edit", remote_ref], candidate, check=False,
+    )
+    if merged.returncode:
+        run(["git", "merge", "--abort"], candidate, check=False)
+        ticket.update(
+            status="Blocked",
+            phase="merge-steward",
+            failure="Merge steward found a semantic conflict while synchronizing the default branch.",
+            next_human_action="resolve_semantic_conflict",
+        )
+        ticket.setdefault("history", []).append({
+            "at": now(), "status": "Blocked",
+            "note": "Merge steward stopped on a semantic conflict; no candidate was pushed.",
+        })
+        store.save()
+        raise ValueError(ticket["failure"])
+    new_head = run(["git", "rev-parse", "HEAD"], candidate).stdout.strip()
+    pushed = run(["git", "push", "origin", branch], candidate, check=False)
+    if pushed.returncode:
+        ticket.update(
+            status="Blocked", phase="merge-steward",
+            failure="Synchronized candidate could not be pushed; inspect the preserved worktree.",
+            next_human_action="repair_branch_push",
+        )
+        store.save()
+        raise ValueError(ticket["failure"])
+    prior_review = ticket.get("code_review")
+    ticket.update(
+        status="Blocked",
+        phase="verifying",
+        failure=(
+            f"Merge steward synchronized candidate {old_head[:12]} to {new_head[:12]}. "
+            "Required gates and Code Review must run again on the changed head."
+        ),
+        next_human_action="reverify_candidate",
+        reverify_candidate=new_head,
+        approved_head="",
+        code_review=None,
+        previous_code_review=prior_review,
+        gate_results=[],
+        finished_at=now(),
+    )
+    ticket.setdefault("history", []).append({
+        "at": now(), "status": "Blocked",
+        "note": (
+            f"Merge steward synchronized {old_head[:12]} to {new_head[:12]}; "
+            "revision-bound gates and review were revoked."
+        ),
+    })
+    store.save()
+    event = {
+        "schema_version": 1,
+        "ticket": number,
+        "state": "steward-updating",
+        "previous_head": old_head,
+        "candidate_head": new_head,
+        "default_branch": default_branch,
+        "required_after_change": ["required-gates", "code-review"],
+        "merge_authority": "human",
+        "may_merge": False,
+        "created_at": now(),
+    }
+    event_path = repo / ".factory/steward" / f"{number}.json"
+    event_path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = event_path.with_suffix(".tmp")
+    temporary.write_text(json.dumps(event, indent=2) + "\n")
+    os.replace(temporary, event_path)
+    return event
+
+
 def publish_evidence_run_summaries(
     repo: Path,
     session: dict,
@@ -5191,9 +5522,9 @@ def initialize_project(repo: Path, name: str | None, force: bool) -> Path:
     print(f"  Test roots: {', '.join(contract.test_roots)}")
     print(f"  Gates: {', '.join(gate['name'] for gate in contract.gates)}")
     print(
-        "Review the Charter, then run `factory approve-charter --yes`. Commit both contracts. "
-        "Run `factory prepare` if setup commands are present, "
-        "then `factory doctor --full` before a Live Run."
+        "Review the repository model and operating policy, then run "
+        "`factory approve-contract --yes` (add `--live` for a connected GitHub "
+        "repository). The command publishes, prepares, checks, and runs preflight."
     )
     return path
 
@@ -5219,6 +5550,69 @@ def approve_charter(repo: Path, *, assume_yes: bool) -> Path:
     print(f"Factory Charter approved: {approved.path}")
     print(f"Approved policy sha256: {approved.approved_policy_sha256}")
     return approved.path or repo / "factory.charter.toml"
+
+
+def approve_repository_contract(
+    repo: Path, *, assume_yes: bool, live: bool, session: dict,
+) -> None:
+    """Approve one repository contract and complete its mechanical setup."""
+    project = ProjectContract.load(repo, require=True)
+    charter = FactoryCharter.load(repo)
+    print("Repository Contract review:")
+    print(f"  Repository: {project.name}")
+    print(f"  Source roots: {', '.join(project.source_roots)}")
+    print(f"  Test roots: {', '.join(project.test_roots)}")
+    print(f"  Gates: {', '.join(gate['name'] for gate in project.gates)}")
+    print(f"  Required tools: {', '.join(project.required_tools) or 'none'}")
+    print(f"  Setup commands: {', '.join(project.setup_commands) or 'none'}")
+    print(f"  Merge authority: {charter.merge_authority}")
+    print(f"  Policy hash: {charter.policy_sha256()}")
+    if live and not session.get("github_repository"):
+        raise ValueError(
+            "Live contract approval requires a saved GitHub repository. Run "
+            "`factory configure --github-repository URL` first."
+        )
+    if not assume_yes:
+        try:
+            answer = input("Approve this exact repository contract? Type APPROVE CONTRACT: ")
+        except EOFError as exc:
+            raise ValueError(
+                "Repository Contract approval required; rerun in a terminal or pass --yes"
+            ) from exc
+        if answer != "APPROVE CONTRACT":
+            raise ValueError("Repository Contract approval cancelled")
+
+    print("\n[1/4] Record the exact policy approval")
+    approve_charter(repo, assume_yes=True)
+    if live:
+        print("\n[2/4] Commit and push the repository contract")
+        publish_repository_setup(repo, assume_yes=True)
+    else:
+        print("\n[2/4] Keep the Rehearsal contract local")
+
+    provider = LocalEnvironmentProvider(repo)
+    print("\n[3/4] Provision, prepare, and check the development environment")
+    provider.execute("provision")
+    provider.execute("prepare", approved=True)
+    provider.execute("health", run_gates=True)
+
+    print("\n[4/4] Run factory preflight")
+    result = run_doctor(
+        repo, load_config(repo), full=live,
+        implementation_agent=session.get("agent", "codex"),
+        qa_agent=session.get("qa_agent"),
+        supervisor_agent=session.get("supervisor_agent"),
+        review_agent=session.get("review_agent"),
+        planning_agent=session.get("planning_agent", "codex"),
+        profile_name=session.get("profile", "standard"),
+        github_repository=session.get("github_repository"),
+    )
+    if result:
+        raise RuntimeError(
+            "Repository Contract was approved, but preflight found a blocking failure. "
+            "Fix the first FAIL and run approve-contract again."
+        )
+    print("\nRepository approved and ready for planning.")
 
 
 def publish_repository_setup(repo: Path, *, assume_yes: bool) -> str:
@@ -6154,6 +6548,13 @@ def parser():
     )
     approve_charter_p.add_argument("--repo", default=".")
     approve_charter_p.add_argument("--yes", action="store_true")
+    approve_contract = sub.add_parser(
+        "approve-contract",
+        help="approve the repository contract and complete automatic setup",
+    )
+    approve_contract.add_argument("--repo", default=".")
+    approve_contract.add_argument("--live", action="store_true")
+    approve_contract.add_argument("--yes", action="store_true")
     publish_setup = sub.add_parser(
         "publish-setup",
         help="commit and push the approved Project Contract and Factory Charter",
@@ -6175,7 +6576,7 @@ def parser():
     configure.add_argument("--qa-agent", help="registered independent QA adapter name")
     configure.add_argument("--supervisor-agent", help="registered adapter that coordinates ticket dispatch")
     configure.add_argument("--review-agent", help="registered adapter that reviews candidate pull-request diffs")
-    configure.add_argument("--planning-agent", choices=["claude", "codex"])
+    configure.add_argument("--planning-agent", choices=sorted(PLANNING_AGENTS))
     configure.add_argument(
         "--review-qa-tests", action=argparse.BooleanOptionalAction, default=None,
         help="pause for human review after QA writes acceptance tests",
@@ -6200,6 +6601,97 @@ def parser():
     bootstrap.add_argument("--source", required=True)
     profiles = sub.add_parser("profiles", help="show executable Factory Profile role sequences")
     profiles.add_argument("--json", action="store_true", dest="as_json")
+    adapter_check = sub.add_parser(
+        "adapter-check",
+        help="inspect versioned Agent Adapter capabilities without running the adapter",
+    )
+    adapter_check.add_argument("adapter", nargs="?", help="registered adapter name; omit to inspect all")
+    adapter_check.add_argument("--repo", default=".")
+    adapter_check.add_argument("--json", action="store_true", dest="as_json")
+    environment = sub.add_parser(
+        "environment",
+        help="manage the versioned development environment through one provider interface",
+    )
+    environment.add_argument("action", choices=sorted(ENVIRONMENT_ACTIONS))
+    environment.add_argument("--repo", default=".")
+    environment.add_argument(
+        "--yes",
+        action="store_true",
+        help="approve reviewed setup commands or destructive provider cleanup",
+    )
+    environment.add_argument(
+        "--gates",
+        action="store_true",
+        help="include Project Contract verification gates in a health check",
+    )
+    environment.add_argument(
+        "--preview-command",
+        help="reviewed command used by the local preview provider",
+    )
+    environment.add_argument("--port", type=positive_int)
+    environment.add_argument("--json", action="store_true", dest="as_json")
+    intake = sub.add_parser(
+        "intake", help="turn raw feedback into a human-reviewed evidence proposal",
+    )
+    intake_sub = intake.add_subparsers(dest="intake_action", required=True)
+    intake_evaluate = intake_sub.add_parser("evaluate")
+    intake_evaluate.add_argument("request")
+    intake_evaluate.add_argument("--repo", default=".")
+    intake_evaluate.add_argument("--json", action="store_true", dest="as_json")
+    intake_correct = intake_sub.add_parser("correct")
+    intake_correct.add_argument("case_id")
+    intake_correct.add_argument("--classification", required=True, choices=sorted(INTAKE_CLASSIFICATIONS))
+    intake_correct.add_argument("--reason", required=True)
+    intake_correct.add_argument("--repo", default=".")
+    intake_correct.add_argument("--json", action="store_true", dest="as_json")
+    approve_intake = sub.add_parser(
+        "approve-intake",
+        help="record a named human approval for a READY_TO_IMPLEMENT intake case",
+    )
+    approve_intake.add_argument("issue", type=positive_int)
+    approve_intake.add_argument("--case", required=True, dest="case_id")
+    approve_intake.add_argument("--reason", required=True)
+    approve_intake.add_argument("--repo", default=".")
+    approve_intake.add_argument("--project-number", type=positive_int)
+    approve_intake.add_argument("--yes", action="store_true")
+    improve = sub.add_parser(
+        "improve", help="produce reviewable cross-run improvement suggestions",
+    )
+    improve_sub = improve.add_subparsers(dest="improve_action", required=True)
+    improve_report = improve_sub.add_parser("report")
+    improve_report.add_argument("--repo", default=".")
+    improve_report.add_argument("--json", action="store_true", dest="as_json")
+    improve_decide = improve_sub.add_parser("decide")
+    improve_decide.add_argument("suggestion_id")
+    improve_decide.add_argument("--decision", choices=["accepted", "rejected"], required=True)
+    improve_decide.add_argument("--reason", required=True)
+    improve_decide.add_argument("--repo", default=".")
+    improve_decide.add_argument("--json", action="store_true", dest="as_json")
+    steward = sub.add_parser(
+        "steward", help="assess merge-queue mechanics without transferring merge authority",
+    )
+    steward.add_argument("issue", type=positive_int)
+    steward.add_argument("--repo", default=".")
+    steward.add_argument(
+        "--synchronize", action="store_true",
+        help="merge the current default branch into the candidate and revoke review",
+    )
+    steward.add_argument("--yes", action="store_true")
+    steward.add_argument("--json", action="store_true", dest="as_json")
+    trigger = sub.add_parser(
+        "trigger", help="authenticate and deduplicate one governed intake proposal",
+    )
+    trigger.add_argument("source", choices=sorted(TRIGGER_SOURCES))
+    trigger.add_argument("event_id")
+    trigger.add_argument("payload")
+    trigger.add_argument("--authenticated", action="store_true")
+    trigger.add_argument("--repo", default=".")
+    trigger.add_argument("--json", action="store_true", dest="as_json")
+    workspace_check = sub.add_parser(
+        "workspace-check", help="validate optional multi-repository revisions and ownership",
+    )
+    workspace_check.add_argument("--repo", default=".")
+    workspace_check.add_argument("--json", action="store_true", dest="as_json")
     canvas = sub.add_parser("canvas", help="create a Factory Canvas from the versioned template")
     canvas.add_argument("--repo", default=".")
     canvas.add_argument("--output", default="factory-canvas.md")
@@ -6219,7 +6711,7 @@ def parser():
     )
     release_check.add_argument(
         "--live-agent",
-        choices=["claude", "codex"],
+        choices=sorted(PLANNING_AGENTS),
         default="claude",
         help="Agent Adapter used for Live planning, QA, implementation, and supervision",
     )
@@ -6329,7 +6821,7 @@ def parser():
     plan.add_argument("prd"); plan.add_argument("--repo", default="."); plan.add_argument("--output")
     plan.add_argument("--profile", choices=sorted(FACTORY_PROFILES))
     plan.add_argument("--default-agent", help="registered adapter written into generated tickets")
-    plan.add_argument("--planning-agent", choices=["claude", "codex"])
+    plan.add_argument("--planning-agent", choices=sorted(PLANNING_AGENTS))
     plan.add_argument("--min-tickets", type=int, default=3); plan.add_argument("--max-tickets", type=int, default=12)
     plan.add_argument("--mock", action="store_true", help="use bundled deterministic planning artifacts")
     plan.add_argument(
@@ -6355,7 +6847,7 @@ def parser():
     continue_p = sub.add_parser("continue-plan", help="run architecture, program design, and vertical-slice experts")
     continue_p.add_argument("plan"); continue_p.add_argument("--repo", default=".")
     continue_p.add_argument(
-        "--planning-agent", choices=["claude", "codex"],
+        "--planning-agent", choices=sorted(PLANNING_AGENTS),
         help="retry blocked planning with a different configured adapter",
     )
     continue_p.add_argument("--mock", action="store_true", help="use bundled deterministic planning artifacts")
@@ -6402,17 +6894,55 @@ def parser():
     doctor.add_argument("--qa-agent", help="registered independent QA adapter name")
     doctor.add_argument("--supervisor-agent", help="registered ticket-supervisor adapter name")
     doctor.add_argument("--review-agent", help="registered pull-request code-review adapter name")
-    doctor.add_argument("--planning-agent", choices=["claude", "codex"])
+    doctor.add_argument("--planning-agent", choices=sorted(PLANNING_AGENTS))
     return p
 
 
-def main():
-    args = parser().parse_args()
-    repo = Path(getattr(args, "repo", ".")).resolve()
-    try:
-        session = apply_session_defaults(args, repo)
+CLI_COMMAND_GROUPS = {
+    **dict.fromkeys({
+        "init", "approve-contract", "approve-charter", "publish-setup", "prepare",
+        "control-center", "configure", "checkout", "bootstrap-workshop",
+        "profiles", "adapter-check",
+    }, "_repository_commands"),
+    **dict.fromkeys({
+        "environment", "intake", "approve-intake", "improve", "steward",
+        "trigger", "workspace-check",
+    }, "_interface_commands"),
+    **dict.fromkeys({
+        "canvas", "evidence", "release-check", "seed", "status", "monitor",
+    }, "_evidence_commands"),
+    **dict.fromkeys({
+        "retry", "release-claim", "merge", "reset", "recover",
+    }, "_ticket_commands"),
+    **dict.fromkeys({
+        "plan", "review", "approve-product", "approve-stage",
+        "continue-plan", "revise", "approve", "approve-rehearsal",
+        "approve-tests", "request-test-changes",
+    }, "_planning_commands"),
+    "doctor": "_doctor_command",
+}
+
+
+class FactoryCLI:
+    """Dispatch CLI commands through cohesive command-family modules."""
+
+    def __init__(self, args, repo: Path, session: dict) -> None:
+        self.args = args
+        self.repo = repo
+        self.session = session
+
+    def run(self) -> None:
+        handler_name = CLI_COMMAND_GROUPS.get(self.args.command, "_run_factory")
+        getattr(self, handler_name)()
+
+    def _repository_commands(self) -> None:
+        args, repo, session = self.args, self.repo, self.session
         if args.command == "init":
             initialize_project(repo, args.name, args.force)
+        elif args.command == "approve-contract":
+            approve_repository_contract(
+                repo, assume_yes=args.yes, live=args.live, session=session,
+            )
         elif args.command == "approve-charter":
             approve_charter(repo, assume_yes=args.yes)
         elif args.command == "publish-setup":
@@ -6443,7 +6973,11 @@ def main():
                     f"(origin {connected_repository['origin']})"
                 )
             print(f"\nSaved attendee defaults: {path}")
-            print("Next: ./factory/factory doctor")
+            if (repo / CONTRACT_PATH).is_file():
+                live_flag = " --live" if configured.get("github_repository") else ""
+                print(f"Next: review the contract, then run ./factory/factory approve-contract{live_flag}")
+            else:
+                print("Next: ./factory/factory init")
         elif args.command == "checkout":
             connected = checkout_github_repository(
                 Path(args.workspace_root), args.github_repository,
@@ -6459,7 +6993,221 @@ def main():
             print(f"  Baseline: {bootstrapped['baseline']}")
         elif args.command == "profiles":
             print(render_profiles(args.as_json))
-        elif args.command == "canvas":
+        elif args.command == "adapter-check":
+            config = load_config(repo)
+            names = [args.adapter] if args.adapter else sorted(config["agents"])
+            unknown = [name for name in names if name not in config["agents"]]
+            if unknown:
+                raise ValueError(
+                    "Agent Adapter is not registered: " + ", ".join(unknown)
+                )
+            reports = []
+            for name in names:
+                capability = config["agent_capabilities"][name]
+                report = conformance_report(
+                    name,
+                    config["agents"][name],
+                    capability.as_dict(),
+                )
+                report["capability"] = capability.as_dict()
+                reports.append(report)
+            value = reports[0] if args.adapter else reports
+            if args.as_json:
+                print(json.dumps(value, indent=2))
+            else:
+                for report in reports:
+                    status = "PASS" if report["compatible"] else "FAIL"
+                    features = ", ".join(report["features"]) or "legacy command compatibility"
+                    print(f"[{status}] {report['adapter']}: {report['mode']} · {features}")
+                    for error in report["errors"]:
+                        print(f"  - {error}")
+            if any(not report["compatible"] for report in reports):
+                raise SystemExit(1)
+    def _interface_commands(self) -> None:
+        args, repo, session = self.args, self.repo, self.session
+        if args.command == "environment":
+            if args.action == "destroy" and not args.yes:
+                raise ValueError(
+                    "Destroy removes only provider-owned environment state, but still "
+                    "requires an explicit --yes confirmation."
+                )
+            provider = LocalEnvironmentProvider(repo)
+            result = provider.execute(
+                args.action,
+                approved=args.yes,
+                run_gates=args.gates,
+                command=args.preview_command or "",
+                port=args.port,
+            )
+            if args.as_json:
+                print(json.dumps(result, indent=2))
+            else:
+                print(
+                    f"Environment {args.action}: "
+                    f"{result.get('status', result.get('action', 'complete'))}"
+                )
+                for check in result.get("checks", []):
+                    print(
+                        f"[{check.get('status', 'INFO')}] "
+                        f"{check.get('name', 'check')}: {check.get('detail', '')}"
+                    )
+        elif args.command == "intake":
+            evaluator = IntakeEvaluator(repo)
+            if args.intake_action == "evaluate":
+                request_path = Path(args.request)
+                if not request_path.is_absolute():
+                    request_path = repo / request_path
+                value = evaluator.evaluate(json.loads(request_path.read_text()))
+            else:
+                value = evaluator.correct(
+                    args.case_id, args.classification, args.reason,
+                )
+            if args.as_json:
+                print(json.dumps(value, indent=2))
+            else:
+                print(
+                    f"Intake {value['case_id']}: {value['classification']} · "
+                    "human review required; no work was dispatched"
+                )
+        elif args.command == "approve-intake":
+            if not args.yes:
+                raise ValueError(
+                    "Intake approval is a named human dispatch decision; review the "
+                    "evidence and repeat with --yes."
+                )
+            if len(args.reason.strip()) < 12:
+                raise ValueError("Intake approval reason must be at least 12 characters.")
+            cases = []
+            case_path = repo / ".factory/intake/cases.jsonl"
+            try:
+                for line in case_path.read_text().splitlines():
+                    value = json.loads(line)
+                    if value.get("case_id") == args.case_id:
+                        cases.append(value)
+            except (OSError, json.JSONDecodeError):
+                pass
+            proposal = next(
+                (value for value in cases if value.get("status") == "proposed"),
+                None,
+            )
+            if proposal is None:
+                raise ValueError("The referenced intake evidence case was not found.")
+            if proposal.get("classification") != "READY_TO_IMPLEMENT":
+                raise ValueError(
+                    "Only READY_TO_IMPLEMENT intake evidence can be approved for "
+                    "dispatch. READY_TO_PLAN belongs in the planning workflow."
+                )
+            backend = GitHubBackend(
+                repo,
+                project_number=args.project_number or session.get("project_number"),
+            )
+            backend.preflight()
+            backend.approve_repository_intake(
+                args.issue, case_id=args.case_id, reason=args.reason,
+            )
+            print(
+                f"Approved intake case {args.case_id} for Ticket #{args.issue}. "
+                "The active listener will re-run deterministic triage."
+            )
+        elif args.command == "improve":
+            engine = CompoundingEngine(repo)
+            value = (
+                engine.build_report()
+                if args.improve_action == "report"
+                else engine.decide(args.suggestion_id, args.decision, args.reason)
+            )
+            if args.as_json:
+                print(json.dumps(value, indent=2))
+            else:
+                if args.improve_action == "report":
+                    print(
+                        f"Factory improvement report: {len(value['suggestions'])} "
+                        "human-reviewed suggestion(s)"
+                    )
+                    print(f"  {engine.report_path}")
+                else:
+                    print(f"Suggestion {value['suggestion_id']}: {value['decision']}")
+        elif args.command == "steward":
+            if args.synchronize:
+                value = steward_synchronize_ticket(
+                    repo, args.issue, assume_yes=args.yes,
+                )
+                if args.as_json:
+                    print(json.dumps(value, indent=2))
+                else:
+                    print(
+                        f"Merge steward #{args.issue}: {value['state']} · "
+                        "human merge authority retained"
+                    )
+                return
+            state = read_json_file(repo / ".factory/state.json", {"tickets": []})
+            ticket = next(
+                (item for item in state.get("tickets", []) if int(item.get("number", 0)) == args.issue),
+                None,
+            )
+            if ticket is None:
+                raise ValueError(f"Ticket #{args.issue} was not found in Factory state.")
+            head = str(ticket.get("pr_head") or ticket.get("approved_head") or "")
+            review = ticket.get("code_review") or {}
+            review_result = review.get("result") if isinstance(review.get("result"), dict) else {}
+            value = MergeSteward().assess({
+                "candidate_head": head,
+                "reviewed_head": str(ticket.get("approved_head") or review.get("candidate_sha") or ""),
+                "candidate_base": str(ticket.get("base_sha") or ""),
+                "default_branch_head": run(
+                    ["git", "rev-parse", "HEAD"], repo, check=False,
+                ).stdout.strip(),
+                "required_gates": [
+                    {
+                        "name": gate.get("name", "gate"),
+                        "status": "passed" if gate.get("classification") == "PASS" else "failed",
+                        "revision": head,
+                    }
+                    for gate in ticket.get("gate_results", []) if gate.get("required", True)
+                ],
+                "review_decision": (
+                    "approved" if str(review_result.get("decision") or "").upper() == "APPROVE" else "changes-requested"
+                ),
+                "unresolved_comments": review_result.get("comments", []),
+                "protected_paths_changed": bool(ticket.get("protected_paths_changed")),
+                "acceptance_evidence_sha256": ticket.get("qa_commit", ""),
+                "reviewed_acceptance_evidence_sha256": ticket.get("qa_commit", ""),
+                "branch_protection": ticket.get("branch_protection", "passed"),
+            })
+            if args.as_json:
+                print(json.dumps(value, indent=2))
+            else:
+                print(f"Merge steward #{args.issue}: {value['state']}")
+                for reason in value["reasons"]:
+                    print(f"  - {reason}")
+        elif args.command == "trigger":
+            payload_path = Path(args.payload)
+            if not payload_path.is_absolute():
+                payload_path = repo / payload_path
+            value = TriggerRegistry(repo).propose(
+                args.source, args.event_id, json.loads(payload_path.read_text()),
+                authenticated=args.authenticated,
+            )
+            if args.as_json:
+                print(json.dumps(value, indent=2))
+            else:
+                print(
+                    f"Trigger {value['trigger_id']}: {value['status']} · "
+                    "intake proposal only"
+                )
+        elif args.command == "workspace-check":
+            value = WorkspaceContract.load(repo).check()
+            if args.as_json:
+                print(json.dumps(value, indent=2))
+            else:
+                print(f"Workspace {value['name']}: {value['status']}")
+                for check in value["checks"]:
+                    print(f"[{check['status']}] {check.get('repository', check.get('service', 'check'))}: {check['detail']}")
+            if value["status"] == "blocked":
+                raise SystemExit(1)
+    def _evidence_commands(self) -> None:
+        args, repo, session = self.args, self.repo, self.session
+        if args.command == "canvas":
             path = create_canvas(repo, Path(args.output), args.force)
             print(f"Factory Canvas created: {path}")
         elif args.command == "evidence":
@@ -6528,7 +7276,9 @@ def main():
                 for finding in report["findings"]:
                     print(f"- {finding['severity'].upper()} {finding['summary']}: {finding['detail']}")
                 print(f"Report: {output}")
-        elif args.command == "retry":
+    def _ticket_commands(self) -> None:
+        args, repo = self.args, self.repo
+        if args.command == "retry":
             retry_ticket(
                 repo,
                 args.issue,
@@ -6566,7 +7316,9 @@ def main():
                 project_number=args.project_number,
                 assume_yes=args.yes,
             )
-        elif args.command == "plan":
+    def _planning_commands(self) -> None:
+        args, repo = self.args, self.repo
+        if args.command == "plan":
             planner_label = "deterministic fixtures" if args.mock else args.planning_agent.title()
             print(f"Planning with {planner_label}; generated tickets will use {args.default_agent.title()}.")
             plan_prd(
@@ -6633,7 +7385,9 @@ def main():
                 feedback_text,
                 assume_yes=args.yes,
             )
-        elif args.command == "doctor":
+    def _doctor_command(self) -> None:
+        args, repo, session = self.args, self.repo, self.session
+        if args.command == "doctor":
             raise SystemExit(
                 run_doctor(
                     repo, load_config(repo), full=args.full,
@@ -6645,11 +7399,19 @@ def main():
                     github_repository=session.get("github_repository"),
                 )
             )
-        else:
-            if not args.mock:
-                print(render_session_config(resolved_run_config(args, session)))
-                print()
-            Factory(args).run_loop()
+    def _run_factory(self) -> None:
+        if not self.args.mock:
+            print(render_session_config(resolved_run_config(self.args, self.session)))
+            print()
+        Factory(self.args).run_loop()
+
+
+def main():
+    args = parser().parse_args()
+    repo = Path(getattr(args, "repo", ".")).resolve()
+    try:
+        session = apply_session_defaults(args, repo)
+        FactoryCLI(args, repo, session).run()
     except (RuntimeError, GitHubError, FileNotFoundError, ValueError, json.JSONDecodeError) as exc:
         raise SystemExit(f"factory: {exc}") from exc
 
