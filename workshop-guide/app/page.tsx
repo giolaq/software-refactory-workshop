@@ -402,27 +402,26 @@ export TARGET="$CONTROL/.factory/repositories/YOUR-NAME/YOUR-REPOSITORY"`}</Code
             </ol>
           </div>
 
-          <h3>Complete Setup in this order</h3>
+          <h3>Complete Setup in three steps</h3>
           <ol className="setup-sequence">
-            <li><span>1</span><div><strong>Open Setup → Connection</strong><p>Start here, not in Tickets.</p></div></li>
-            <li><span>2</span><div><strong>Choose the run settings</strong><p>Select <strong>{track === "live" ? "Live" : "Rehearsal"}</strong> and <strong>Standard</strong>. {track === "live" ? <>Choose your signed-in CLI preset and paste <em>your product repository</em> URL.</> : <>Keep the default preset.</>}</p></div></li>
-            <li><span>3</span><div><strong>Save configuration</strong><p>{track === "live" ? <>Select <strong>Seed the guided Pocket Cinema starter</strong> only for this exercise. Leave it clear for your own existing product.</> : <>No GitHub settings are needed.</>}</p></div></li>
-            <li><span>4</span><div><strong>Create and approve the repository rules</strong><p>If offered, select <strong>Create contract and Charter</strong>. Read <strong>Review exact policy</strong>, then select <strong>Approve exact Charter</strong>. {track === "live" ? <>Select <strong>Commit and push setup</strong>.</> : <>Do not use Commit and push setup in Rehearsal.</>}</p></div></li>
-            <li><span>5</span><div><strong>Provision</strong><p>In <strong>Development environment</strong>, bind the checkout, revision, and Project Contract.</p></div></li>
-            <li><span>6</span><div><strong>Prepare</strong><p>Confirm the reviewed setup commands. They install declared dependencies with your local permissions.</p></div></li>
-            <li><span>7</span><div><strong>Check health</strong><p>Prove tools, folders, ports, and gates. Fix its first failed check.</p></div></li>
-            <li><span>8</span><div><strong>Run preflight</strong><p>Open <strong>Current run → Activity and CLI output</strong>. Continue only when it reports no <code>FAIL</code> results.</p></div></li>
+            <li><span>1</span><div><strong>Connect</strong><p>Open <strong>Setup → Connection</strong>. Select <strong>{track === "live" ? "Live" : "Rehearsal"}</strong>, <strong>Standard</strong>, and your agent preset. {track === "live" ? <>Paste <em>your product repository</em> URL. Select <strong>Seed the guided Pocket Cinema starter</strong> for this exercise; leave it clear for your own existing product.</> : <>No GitHub settings are needed.</>} Select <strong>Save and connect</strong>.</p></div></li>
+            <li><span>2</span><div><strong>Create contract</strong><p>Select <strong>Create contract</strong>. The factory detects source folders, tests, verification gates, and conservative operating rules. No coding agent runs.</p></div></li>
+            <li><span>3</span><div><strong>Review and approve</strong><p>Open <strong>Review repository model</strong> and <strong>Review operating policy</strong>. If they match the repository, select <strong>Approve contract and continue</strong>.</p></div></li>
           </ol>
 
-          <Callout type="warning" title="If preflight fails, do not keep clicking it">
-            <p>In <strong>Activity and CLI output</strong>, fix the first <code>[FAIL]</code> before rerunning preflight. The <a href="#preflight-recovery">recovery table</a> gives exact fixes. An optional-adapter, port 5050, or reviewer <code>[WARN]</code> does not block the workshop.</p>
+          <Callout type="note" title="One approval, visible automation">
+            <p>After Step 3, the factory publishes the contract in Live mode, provisions and prepares the environment, checks health and gates, and runs preflight. <strong>Activity and CLI output</strong> shows each substep and stops at the first error.</p>
+          </Callout>
+
+          <Callout type="warning" title="If automatic setup stops, fix the first error">
+            <p>Open <strong>Activity and CLI output</strong>, fix the first <code>[FAIL]</code>, then return to Step 3 and select <strong>Retry automatic setup</strong>. The <a href="#preflight-recovery">recovery table</a> gives exact fixes. An optional-adapter, port 5050, or reviewer <code>[WARN]</code> does not block the workshop.</p>
           </Callout>
 
           <WorkshopPaths
-            click={<>Use <strong>Setup → Connection</strong> and complete the eight numbered actions above.</>}
-            whyStopped={<>The factory will not plan until the Project Contract describes the repository, a person approves the Charter, the development environment is healthy, and preflight passes.</>}
-            inspect={<>Confirm the product repository, default branch, source and test folders, required checks, selected agent preset, and merge authority.</>}
-            continueWhen={<>The Charter is <strong>Approved</strong>, setup completed, and Activity output contains no <code>[FAIL]</code>.</>}
+            click={<>Use <strong>Setup → Connection</strong> and complete the three numbered steps above.</>}
+            whyStopped={<>The factory will not plan until the repository contract is approved and its automatic environment and preflight checks pass.</>}
+            inspect={<>Confirm the product repository, source and test folders, required checks, selected agent preset, and merge authority.</>}
+            continueWhen={<>Step 3 says <strong>Approved and ready</strong> and Activity output contains no <code>[FAIL]</code>.</>}
           >{track === "live" ? `# Run from the software-refactory-control directory.
 ./factory/factory checkout https://github.com/YOUR-NAME/YOUR-REPOSITORY \\
   --workspace-root "$CONTROL/.factory/repositories"
@@ -435,36 +434,20 @@ export TARGET="$CONTROL/.factory/repositories/YOUR-NAME/YOUR-REPOSITORY"`}</Code
 
 ./factory/factory configure --repo "$TARGET" --preset claude-workshop \\
   --github-repository https://github.com/YOUR-NAME/YOUR-REPOSITORY
-./factory/factory approve-charter --repo "$TARGET" --yes
-./factory/factory publish-setup --repo "$TARGET" --yes
-./factory/factory environment provision --repo "$TARGET"
-./factory/factory environment prepare --repo "$TARGET" --yes
-./factory/factory environment health --repo "$TARGET" --gates
-./factory/factory doctor --repo "$TARGET" --full` : `./factory/factory approve-charter --yes
-./factory/factory environment provision
-./factory/factory environment prepare --yes
-./factory/factory environment health --gates
-./factory/factory doctor`}</WorkshopPaths>
+./factory/factory approve-contract --repo "$TARGET" --live --yes` : `# setup_demo.sh already created the local contract.
+./factory/factory approve-contract --yes`}</WorkshopPaths>
           <WorkshopMedia
             src="/screenshots/control-center-connect.jpg"
-            alt="Control Center Setup and Connection screen with essential run settings, repository details, and setup controls"
+            alt="Control Center Setup screen with Connect, Create contract, and Review and approve steps"
             label="Setup → Connection"
-            caption="Choose the settings, approve the rules, provision, prepare, check health, then run preflight."
-            width={1440}
-            height={980}
-          />
-          <WorkshopMedia
-            src="/screenshots/control-center-environment.jpg"
-            alt="Control Center Development environment card with Adapter Protocol capabilities and Provision, Prepare, Check health, and Reset provider state actions"
-            label="Environment lifecycle"
-            caption="Provision, prepare, then check health."
+            caption="Three decisions: connect, create the contract, then review and approve."
             width={1440}
             height={980}
           />
           <Callout type="tip" title="Use Current run as your guide">
             <p><strong>Current phase</strong> explains the state. <strong>Next safe action</strong> opens the one action the factory needs from you.</p>
           </Callout>
-          <Checkpoint><a href="http://127.0.0.1:5050">127.0.0.1:5050</a> is open, the correct repository is shown, the Charter is approved, and preflight reports no failures.</Checkpoint>
+          <Checkpoint><a href="http://127.0.0.1:5050">127.0.0.1:5050</a> is open, the correct repository is shown, Step 3 says <strong>Approved and ready</strong>, and Activity reports no failures.</Checkpoint>
         </StepSection>
 
         <StepSection index={2} id="baseline" title="Check the starting app" goal="Confirm what the factory will change." complete={completed.includes("baseline")} onToggle={() => toggleStep("baseline")}>
@@ -684,22 +667,22 @@ export PLAN_ID=<plan-id-from-output>
           </div>
           <section className="preflight-recovery" id="preflight-recovery" aria-labelledby="preflight-recovery-title">
             <span className="section-kicker">Setup recovery</span>
-            <h3 id="preflight-recovery-title">Preflight failed: fix the first FAIL</h3>
+            <h3 id="preflight-recovery-title">Automatic setup stopped: fix the first FAIL</h3>
             <ol>
               <li>Open <strong>Current run → Activity and CLI output</strong>.</li>
               <li>Scroll to the first <code>[FAIL]</code>. Ignore later failures until this one is fixed.</li>
               <li>Apply the matching fix below. Do not delete work or force-reset a branch.</li>
-              <li>Return to <strong>Setup → Connection</strong> and select <strong>Run preflight</strong> again.</li>
+              <li>Return to <strong>Setup → Connection</strong> and select <strong>Retry automatic setup</strong>.</li>
             </ol>
             <div className="status-key" aria-label="Preflight status meanings"><span className="status-pass">PASS · ready</span><span className="status-warn">WARN · check whether optional</span><span className="status-fail">FAIL · fix before continuing</span></div>
             <div className="fix-table" role="table" aria-label="Common preflight failures and fixes">
               <div className="fix-table-head" role="row"><span role="columnheader">The FAIL says</span><span role="columnheader">Fix it</span></div>
               <div role="row"><code role="cell">default branch<br />branch synchronization</code><span role="cell">Save any local work first. Then run <code>git fetch origin</code>, <code>git switch main</code>, and <code>git pull --ff-only origin main</code> in the product checkout.</span></div>
               <div role="row"><code role="cell">codex/claude adapter not found or not signed in</code><span role="cell">In <strong>Setup → Connection</strong>, choose the preset for the CLI you actually installed and save. Sign in with <code>codex login</code> or <code>claude auth login</code>.</span></div>
-              <div role="row"><code role="cell">No module named pytest<br />gate: api-tests</code><span role="cell">Select <strong>Prepare</strong>, then <strong>Check health</strong>. When the environment is healthy, rerun preflight.</span></div>
-              <div role="row"><code role="cell">GitHub Projects scope</code><span role="cell">Run <code>gh auth refresh -s project</code>, finish the browser authorization, and rerun preflight.</span></div>
+              <div role="row"><code role="cell">No module named pytest<br />gate: api-tests</code><span role="cell">Install the dependency with the repository&apos;s normal setup command, then select <strong>Retry automatic setup</strong>. If the contract omitted that command, correct its setup commands before retrying.</span></div>
+              <div role="row"><code role="cell">GitHub Projects scope</code><span role="cell">Run <code>gh auth refresh -s project</code>, finish the browser authorization, and select <strong>Retry automatic setup</strong>.</span></div>
               <div role="row"><code role="cell">repository target<br />origin remote</code><span role="cell">Paste the full URL of your product repository in <strong>Setup → Connection</strong> and save. Do not paste the workshop repository URL.</span></div>
-              <div role="row"><code role="cell">Project Contract<br />Factory Charter</code><span role="cell">Select <strong>Create contract and Charter</strong>, review the policy, approve it, and—in Live mode—select <strong>Commit and push setup</strong>.</span></div>
+              <div role="row"><code role="cell">Project Contract<br />Factory Charter</code><span role="cell">Select <strong>Create contract</strong>, review both contract sections, then select <strong>Approve contract and continue</strong>.</span></div>
             </div>
             <p className="warning-note"><strong>Usually safe to ignore:</strong> a warning for port 5050 while the Control Center is open, an unused adapter, or the optional second reviewer identity.</p>
           </section>
@@ -707,7 +690,7 @@ export PLAN_ID=<plan-id-from-output>
             src="/screenshots/control-center-preflight-failure.jpg"
             alt="Control Center Current run page with a failed preflight, recovery explanation, exact command, and CLI output"
             label="Failed preflight"
-            caption="Open the activity panel, find the first FAIL, fix it, and rerun preflight."
+            caption="Open the activity panel, find the first FAIL, fix it, and retry automatic setup."
             width={1440}
             height={980}
           />
@@ -718,13 +701,13 @@ export PLAN_ID=<plan-id-from-output>
               <li>Run <code>git status</code>. Commit or stash work you need to keep.</li>
               <li>Run <code>git fetch origin</code>, <code>git switch main</code>, and <code>git pull --ff-only origin main</code>.</li>
               <li>If Claude passes but Codex fails, choose <strong>Claude workshop</strong> in <strong>Setup → Connection</strong> and save. Otherwise sign in with <code>codex login</code>.</li>
-              <li>Select <strong>Prepare</strong> to install <code>pytest</code>, then select <strong>Check health</strong>.</li>
-              <li>Select <strong>Run preflight</strong> again. Continue only when no <code>[FAIL]</code> remains.</li>
+              <li>Install <code>pytest</code> with the repository&apos;s normal setup command.</li>
+              <li>Select <strong>Retry automatic setup</strong>. Continue only when no <code>[FAIL]</code> remains.</li>
             </ol>
           </details>
           <div className="accordion-list">
-            <details><summary>The repository is not connected</summary><p>Open <strong>Setup → Connection</strong>, choose <strong>Live</strong>, enter the full product repository URL, and save. Push its default branch if it already contains code. Then run preflight again.</p></details>
-            <details><summary>An agent asks for the wrong credentials</summary><p>Open <strong>Setup → Connection</strong> and choose the preset for the CLI you use. Save, sign in to that CLI, and run preflight again.</p></details>
+            <details><summary>The repository is not connected</summary><p>Open <strong>Setup → Connection</strong>, choose <strong>Live</strong>, enter the full product repository URL, and select <strong>Save and connect</strong>. Push its default branch first if it already contains code.</p></details>
+            <details><summary>An agent asks for the wrong credentials</summary><p>Open <strong>Setup → Connection</strong> and choose the preset for the CLI you use. Save, sign in to that CLI, then select <strong>Retry automatic setup</strong>.</p></details>
             <details><summary>A planning expert failed</summary><p>Open <strong>Plan → Review plan</strong> and select the failed expert. For an invalid result, select <strong>Apply correction and continue</strong>. For a login or rate-limit error, fix access or choose another agent. If the PRD or repository settings changed, select <strong>Restart planning safely</strong>.</p></details>
             <details><summary>Ticket publication failed</summary><p>Open <strong>Plan → Review plan</strong> and select <strong>Retry ticket publication</strong>. The retry reuses issues already created for this plan. In the CLI, rerun the same <code>factory approve</code> command shown in the error.</p></details>
             <details><summary>A ticket is blocked</summary><p>Open the ticket history and read the last error. Fix that problem, then select <strong>Retry</strong> or run <code>factory retry ISSUE_NUMBER</code>.</p></details>
@@ -749,10 +732,8 @@ export PLAN_ID=<plan-id-from-output>
             <summary>Show the CLI command reference</summary>
             <div className="reference-table">
               <div><code>factory control-center</code><span>Open the web interface.</span></div>
-              <div><code>factory environment provision</code><span>Bind the checkout and contract.</span></div>
-              <div><code>factory environment prepare --yes</code><span>Run reviewed setup commands.</span></div>
-              <div><code>factory environment health --gates</code><span>Prove the development environment.</span></div>
-              <div><code>factory doctor --full</code><span>Check tools, access, and repository settings.</span></div>
+              <div><code>factory init</code><span>Create the repository contract.</span></div>
+              <div><code>factory approve-contract --live</code><span>Approve and complete automatic Live setup.</span></div>
               <div><code>factory plan PRD</code><span>Start planning from a PRD.</span></div>
               <div><code>factory review product PLAN_ID</code><span>Read the product plan.</span></div>
               <div><code>factory approve-product PLAN_ID</code><span>Approve the product plan.</span></div>

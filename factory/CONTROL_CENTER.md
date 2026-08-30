@@ -46,17 +46,25 @@ shows its Adapter Protocol version and declared features. An unavailable
 feature remains visibly unavailable; choosing another adapter does not change
 the role's policy or authority.
 
-The **Development environment** card follows one order:
+Setup has three attendee decisions:
 
-1. **Provision** records the target revision and committed Project Contract.
-2. **Prepare** asks for confirmation, then runs only reviewed setup commands
-   with the operator's local permissions.
-3. **Check health** checks tools, roots, ports, and gates.
-4. Run full preflight only after the provider reports `healthy`.
+1. **Connect** — select the GitHub repository, run mode, Factory Profile, and
+   agent preset, then select **Save and connect**.
+2. **Create contract** — let the factory detect source folders, tests, gates,
+   and a conservative operating policy.
+3. **Review and approve** — inspect the repository model and operating policy,
+   then select **Approve contract and continue** once.
 
-**Reset provider state** stops only a provider-owned preview and clears
-`.factory/environment`. It preserves source and GitHub evidence. It is separate
-from **Reset run**, which controls planning and Ticket history.
+The final approval runs the mechanical work in order: publish the contract in
+Live mode, provision the checkout, run only declared setup commands, check
+health and gates, and run preflight. **Activity and CLI output** names every
+substep and stops at the first error. Fix that error and select **Retry automatic
+setup**; completed governance work is safe to repeat.
+
+The granular `publish-setup`, `environment`, and `doctor` commands remain
+available to operators for diagnosis, but they are not separate attendee
+phases. Provider reset preserves source and GitHub evidence and remains
+separate from **Reset run**, which controls planning and Ticket history.
 
 If a planning expert cannot make a product or technical decision safely, its
 card shows each blocking question with an answer field. Answer every question
@@ -219,11 +227,12 @@ unchecked for an existing project; the factory never replaces repository
 contents.
 
 For a greenfield product, also leave the option unchecked. After the empty
-repository activates, create and review its Project Contract and Charter,
-approve the exact Charter, and select **Commit and push setup**. This creates a
-minimal default branch containing only governance and `.gitignore`. The PRD,
-planning artifacts, GitHub tickets, and worker changes then create the product;
-the factory implementation remains in the separate control checkout.
+repository activates, select **Create contract**, review its repository model
+and operating policy, then select **Approve contract and continue**. The
+automatic setup creates a minimal default branch containing only governance and
+`.gitignore`, prepares the environment, and runs preflight. The PRD, planning
+artifacts, GitHub tickets, and worker changes then create the product; the
+factory implementation remains in the separate control checkout.
 
 ### Listen for new repository issues
 
@@ -258,15 +267,13 @@ instead, pass it when starting the Control Center:
 ./factory/factory control-center --repo /path/to/your-project
 ```
 
-The Project Contract card shows detected source roots, test roots, and gates.
-Select **Create contract and Charter**, review `factory.project.toml` and the
-exact `factory.charter.toml` policy, then select **Approve exact Charter**.
-**Commit and push setup** publishes only those two governance files and
-`.gitignore`; it refuses unrelated working-tree changes. Then select **Run
-setup** only if its commands are correct; review and commit any intentional
-lockfile change. Full
-preflight verifies the committed contract, tools, GitHub target, default branch,
-agent authentication, and gates before a Live run.
+Use the same three steps: **Save and connect**, **Create contract**, then
+**Approve contract and continue**. “Repository contract” is the single review
+concept in the UI. Its technical model is stored in `factory.project.toml`; its
+human-owned operating policy is stored in `factory.charter.toml`. The approval
+publishes only those governance files and `.gitignore`, provisions and prepares
+the declared environment, and runs full preflight. Unrelated working-tree
+changes still make publication stop safely.
 
 The PRD editor accepts any product requirement. Live planning combines its
 scope with this contract and a bounded repository inventory. Rehearsal planning

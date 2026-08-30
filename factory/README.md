@@ -93,37 +93,40 @@ does not need to contain Pocket Cinema or the factory source.
 To use an existing local checkout instead:
 
 ```sh
+./factory/factory configure --repo /path/to/your-project \
+  --preset codex-workshop \
+  --github-repository https://github.com/YOU/YOUR-PROJECT
 ./factory/factory init --repo /path/to/your-project
-# Review factory.project.toml and factory.charter.toml.
-./factory/factory approve-charter --repo /path/to/your-project
-./factory/factory publish-setup --repo /path/to/your-project
+# Review the repository model and operating policy.
+./factory/factory approve-contract --repo /path/to/your-project --live
 ./factory/factory control-center --repo /path/to/your-project
 ```
 
 In **Setup → Connection**, select **Live**, paste that project's GitHub URL,
-choose the role adapters, and save. In the **Development environment** card,
-select **Provision**, review and run **Prepare**, then select **Check health**.
-Run full preflight only after the environment is healthy. In **Plan →
-Requirements**, paste or write the actual
+choose the role adapters, and select **Save and connect**. Select **Create
+contract**, review its repository model and operating policy, then select
+**Approve contract and continue**. The final approval publishes the contract,
+prepares the environment, checks health and gates, and runs full preflight. In
+**Plan → Requirements**, paste or write the actual
 product requirement. The four planning experts use the PRD for scope and the
 Project Contract plus repository inventory for technical context. The approved
 Vertical Slices become GitHub Issues and Project items; no scenario seed is
 involved.
 
-`factory init` detects common repository conventions and writes a Project
-Contract plus a conservative Factory Charter draft. Review and approve the
-exact Charter hash before publishing setup. `publish-setup` commits and pushes
-only `.gitignore`, `factory.project.toml`, and `factory.charter.toml`, and refuses
-unrelated changes. Review the Project Contract before `factory environment
-prepare`: that explicit command runs only the setup commands recorded in the
-contract. The same contract
+`factory init` detects common repository conventions and writes the two files
+behind the repository contract: a technical Project Contract and a conservative
+Factory Charter. `approve-contract` records one exact human approval, commits
+and pushes only `.gitignore`, `factory.project.toml`, and
+`factory.charter.toml`, refuses unrelated changes, and runs only setup commands
+declared in the contract. The same contract
 defines source and test roots, ticket-numbered QA filenames, tools, ports,
 ordered gates, protected paths, default branch, and an optional
 repository-specific reset adapter. Planning records its hash and must be
 repeated if the contract changes. Review and commit any setup-generated lockfile
 change before Live preflight; the default-branch checkout must be clean.
 
-The CLI equivalent makes the environment lifecycle explicit:
+Operators can still run the internal environment lifecycle explicitly for
+diagnosis:
 
 ```sh
 ./factory/factory environment provision --repo /path/to/your-project
@@ -139,9 +142,9 @@ Arbitrary PRDs require Live agents. Rehearsal remains deterministic by design
 and therefore supports only its bundled Pocket Cinema scenarios.
 
 For a greenfield product, create and connect an empty GitHub repository but
-leave **Seed the guided Pocket Cinema starter** unchecked. In **Setup → Connection**, create
-and review the detected Project Contract and Charter, approve the exact Charter,
-then select **Commit and push setup**. That initial commit contains only
+leave **Seed the guided Pocket Cinema starter** unchecked. In **Setup →
+Connection**, use the same three steps: connect, create the contract, then
+review and approve it. The automatic initial commit contains only
 `.gitignore`, `factory.project.toml`, and `factory.charter.toml`. Planning turns
 the PRD into GitHub Issues and the worker roles create the product and tests;
 the local factory implementation is never copied into the product repository.
@@ -553,8 +556,7 @@ gh repo clone YOUR-NAME/YOUR-REPOSITORY ../software-refactory-live
   --repo "$TARGET" \
   --github-repository "https://github.com/YOUR-NAME/YOUR-REPOSITORY" \
   --preset claude-workshop
-./factory/factory approve-charter --repo "$TARGET" --yes
-./factory/factory publish-setup --repo "$TARGET" --yes
+./factory/factory approve-contract --repo "$TARGET" --live --yes
 ./factory/factory plan "$CONTROL/recipe-app-prd.md" --repo "$TARGET"
 ```
 
@@ -832,6 +834,7 @@ factory configure [--preset claude-workshop|codex-workshop]
 factory control-center [--port N] [--no-open]
 factory bootstrap-workshop --repo PATH --source WORKSHOP_CHECKOUT
 factory init [--repo PATH] [--name NAME] [--force]
+factory approve-contract [--repo PATH] [--live] [--yes]
 factory environment provision [--repo PATH]
 factory environment prepare [--repo PATH] [--yes]
 factory environment health [--repo PATH] [--gates]

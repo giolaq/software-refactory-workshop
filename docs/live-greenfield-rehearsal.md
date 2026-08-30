@@ -10,9 +10,7 @@ Last updated: 25 August 2026
 
 - [x] Create an empty GitHub repository.
 - [x] Connect the repository in Live mode.
-- [x] Create and approve the Project Contract and Factory Charter.
-- [x] Publish the initial repository setup.
-- [x] Pass preflight.
+- [x] Create, review, and approve the repository contract; automatic setup passed.
 - [x] Save a new FocusFlow PRD.
 - [x] Run Product Review.
 - [x] Answer the Product Review questions.
@@ -118,9 +116,9 @@ After connection, the Control Center created this managed checkout:
 .factory/repositories/giolaq/focusflow-live-20260825
 ```
 
-## 4. Create the Project Contract and Charter
+## 4. Create and approve the repository contract
 
-In **Setup → Connection**, select **Create contract and Charter**.
+In **Setup → Connection**, select **Create contract**.
 
 Because the repository was empty, the generated Project Contract was
 conservative:
@@ -144,8 +142,8 @@ The generated Factory Charter used these main rules:
 - Tests require human approval
 - Agents cannot modify `factory.charter.toml`
 
-Expand **Review exact policy**, inspect the policy, and select
-**Approve exact Charter**.
+Expand **Review repository model** and **Review operating policy**. Inspect the
+exact content, then select **Approve contract and continue**.
 
 The approved policy hash for this run starts with:
 
@@ -153,9 +151,12 @@ The approved policy hash for this run starts with:
 e06f6b8905f0
 ```
 
-## 5. Publish the initial setup
+The factory then completed the mechanical setup without more attendee actions:
 
-Select **Commit and push setup** and confirm.
+1. It committed and pushed the repository contract.
+2. It provisioned and prepared the declared development environment.
+3. It checked health and gates.
+4. It ran full preflight.
 
 The factory created commit:
 
@@ -174,12 +175,9 @@ factory.charter.toml
 No factory implementation, workshop documentation, starter application, or
 product code was added.
 
-The environment reached **Healthy** without a Prepare action because the empty
-repository had no setup commands. This is expected.
-
-## 6. Run preflight
-
-In **Setup → Connection**, select **Run preflight**.
+The environment reached **Healthy** without installing dependencies because the
+empty repository had no setup commands. This is expected. **Activity and CLI
+output** showed the automatic preflight result:
 
 Result:
 
@@ -202,7 +200,7 @@ Important checks that passed:
 - Codex, Claude, and Cursor adapters were available.
 - The repository-integrity gate passed.
 
-## 7. Save the FocusFlow PRD
+## 5. Save the FocusFlow PRD
 
 Open **Plan → Requirements** and replace the sample document with:
 
@@ -246,7 +244,7 @@ Build a simple personal task board for people who want to organize daily work.
 Wait for the saved indicator, then select **Start Product Review**. The agent
 preset and Live mode already come from **Setup → Connection**.
 
-## 8. Run Product Review
+## 6. Run Product Review
 
 Select **Start Product Review**.
 
@@ -254,7 +252,7 @@ The Product Review expert converted the PRD into requirements, user journeys,
 scope, and success evidence. It stopped because eight product decisions were
 not explicit. This was a normal human checkpoint, not an adapter failure.
 
-## 9. Answer blocked Product Review questions
+## 7. Answer blocked Product Review questions
 
 Open **Answer blocked questions** and enter one answer in each field:
 
@@ -273,7 +271,7 @@ The factory preserved the first artifact, recorded the decisions, and reran
 only Product Review. The revised artifact included every decision and reported
 no remaining blocked questions.
 
-## 10. Approve the product contract
+## 8. Approve the product contract
 
 Review the revised Product Review artifact. Confirm that it describes:
 
@@ -299,7 +297,7 @@ The plan ID is:
 53d001e2d1b2
 ```
 
-## 11. Continue technical planning
+## 9. Continue technical planning
 
 Open **Plan** and select **Run remaining experts**.
 
@@ -325,7 +323,7 @@ Vertical Slices proposed six tickets in five dependency waves:
 
 The Vertical Slices expert then stopped at a Charter-required human decision.
 
-## 12. Approve planned test-file changes
+## 10. Approve planned test-file changes
 
 This is the current step.
 
@@ -359,7 +357,7 @@ tests/board-state.test.mjs
 
 The revised plan contains no open questions.
 
-## 13. Review alignment and create tickets
+## 11. Review alignment and create tickets
 
 This is the current step.
 
@@ -443,7 +441,7 @@ Control Center from the factory checkout and reopen the page:
 The published plan and tickets are loaded from the managed product checkout,
 so refreshing or restarting does not repeat publication.
 
-## 14. Load published tickets into the delivery board
+## 12. Load published tickets into the delivery board
 
 After publication, the six issues were visible in GitHub Project `#15`, but the
 Control Center Tickets board was empty. This was expected lifecycle state but
@@ -476,7 +474,7 @@ load this update, open **Deliver → Tickets**, and select **Run one cycle**. Th
 will load the published issues into the local board and begin the first
 independent QA step.
 
-## 15. Start the factory
+## 13. Start the factory
 
 Select **Run factory** in **Deliver → Tickets**.
 

@@ -5522,10 +5522,9 @@ def initialize_project(repo: Path, name: str | None, force: bool) -> Path:
     print(f"  Test roots: {', '.join(contract.test_roots)}")
     print(f"  Gates: {', '.join(gate['name'] for gate in contract.gates)}")
     print(
-        "Review the Charter, then run `factory approve-charter --yes`. Commit both contracts. "
-        "Run `factory environment provision`, `factory environment prepare --yes`, "
-        "and `factory environment health --gates`, then `factory doctor --full` "
-        "before a Live Run."
+        "Review the repository model and operating policy, then run "
+        "`factory approve-contract --yes` (add `--live` for a connected GitHub "
+        "repository). The command publishes, prepares, checks, and runs preflight."
     )
     return path
 
@@ -5551,6 +5550,69 @@ def approve_charter(repo: Path, *, assume_yes: bool) -> Path:
     print(f"Factory Charter approved: {approved.path}")
     print(f"Approved policy sha256: {approved.approved_policy_sha256}")
     return approved.path or repo / "factory.charter.toml"
+
+
+def approve_repository_contract(
+    repo: Path, *, assume_yes: bool, live: bool, session: dict,
+) -> None:
+    """Approve one repository contract and complete its mechanical setup."""
+    project = ProjectContract.load(repo, require=True)
+    charter = FactoryCharter.load(repo)
+    print("Repository Contract review:")
+    print(f"  Repository: {project.name}")
+    print(f"  Source roots: {', '.join(project.source_roots)}")
+    print(f"  Test roots: {', '.join(project.test_roots)}")
+    print(f"  Gates: {', '.join(gate['name'] for gate in project.gates)}")
+    print(f"  Required tools: {', '.join(project.required_tools) or 'none'}")
+    print(f"  Setup commands: {', '.join(project.setup_commands) or 'none'}")
+    print(f"  Merge authority: {charter.merge_authority}")
+    print(f"  Policy hash: {charter.policy_sha256()}")
+    if live and not session.get("github_repository"):
+        raise ValueError(
+            "Live contract approval requires a saved GitHub repository. Run "
+            "`factory configure --github-repository URL` first."
+        )
+    if not assume_yes:
+        try:
+            answer = input("Approve this exact repository contract? Type APPROVE CONTRACT: ")
+        except EOFError as exc:
+            raise ValueError(
+                "Repository Contract approval required; rerun in a terminal or pass --yes"
+            ) from exc
+        if answer != "APPROVE CONTRACT":
+            raise ValueError("Repository Contract approval cancelled")
+
+    print("\n[1/4] Record the exact policy approval")
+    approve_charter(repo, assume_yes=True)
+    if live:
+        print("\n[2/4] Commit and push the repository contract")
+        publish_repository_setup(repo, assume_yes=True)
+    else:
+        print("\n[2/4] Keep the Rehearsal contract local")
+
+    provider = LocalEnvironmentProvider(repo)
+    print("\n[3/4] Provision, prepare, and check the development environment")
+    provider.execute("provision")
+    provider.execute("prepare", approved=True)
+    provider.execute("health", run_gates=True)
+
+    print("\n[4/4] Run factory preflight")
+    result = run_doctor(
+        repo, load_config(repo), full=live,
+        implementation_agent=session.get("agent", "codex"),
+        qa_agent=session.get("qa_agent"),
+        supervisor_agent=session.get("supervisor_agent"),
+        review_agent=session.get("review_agent"),
+        planning_agent=session.get("planning_agent", "codex"),
+        profile_name=session.get("profile", "standard"),
+        github_repository=session.get("github_repository"),
+    )
+    if result:
+        raise RuntimeError(
+            "Repository Contract was approved, but preflight found a blocking failure. "
+            "Fix the first FAIL and run approve-contract again."
+        )
+    print("\nRepository approved and ready for planning.")
 
 
 def publish_repository_setup(repo: Path, *, assume_yes: bool) -> str:
@@ -6486,6 +6548,13 @@ def parser():
     )
     approve_charter_p.add_argument("--repo", default=".")
     approve_charter_p.add_argument("--yes", action="store_true")
+    approve_contract = sub.add_parser(
+        "approve-contract",
+        help="approve the repository contract and complete automatic setup",
+    )
+    approve_contract.add_argument("--repo", default=".")
+    approve_contract.add_argument("--live", action="store_true")
+    approve_contract.add_argument("--yes", action="store_true")
     publish_setup = sub.add_parser(
         "publish-setup",
         help="commit and push the approved Project Contract and Factory Charter",
@@ -6831,7 +6900,7 @@ def parser():
 
 CLI_COMMAND_GROUPS = {
     **dict.fromkeys({
-        "init", "approve-charter", "publish-setup", "prepare",
+        "init", "approve-contract", "approve-charter", "publish-setup", "prepare",
         "control-center", "configure", "checkout", "bootstrap-workshop",
         "profiles", "adapter-check",
     }, "_repository_commands"),
@@ -6870,6 +6939,10 @@ class FactoryCLI:
         args, repo, session = self.args, self.repo, self.session
         if args.command == "init":
             initialize_project(repo, args.name, args.force)
+        elif args.command == "approve-contract":
+            approve_repository_contract(
+                repo, assume_yes=args.yes, live=args.live, session=session,
+            )
         elif args.command == "approve-charter":
             approve_charter(repo, assume_yes=args.yes)
         elif args.command == "publish-setup":
@@ -6900,7 +6973,11 @@ class FactoryCLI:
                     f"(origin {connected_repository['origin']})"
                 )
             print(f"\nSaved attendee defaults: {path}")
-            print("Next: ./factory/factory doctor")
+            if (repo / CONTRACT_PATH).is_file():
+                live_flag = " --live" if configured.get("github_repository") else ""
+                print(f"Next: review the contract, then run ./factory/factory approve-contract{live_flag}")
+            else:
+                print("Next: ./factory/factory init")
         elif args.command == "checkout":
             connected = checkout_github_repository(
                 Path(args.workspace_root), args.github_repository,

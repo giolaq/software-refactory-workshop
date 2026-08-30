@@ -124,6 +124,7 @@ function setMode(value) {
   if ($("#bootstrap-workshop-option")) $("#bootstrap-workshop-option").hidden = next !== "live";
   const listen = $('[data-action="listen"]');
   if (listen) listen.disabled = next !== "live";
+  if (app.snapshot) renderSnapshot(app.snapshot);
 }
 
 function formatTime(value) {
@@ -144,6 +145,17 @@ function formatDateTime(value) {
       hour: "2-digit",
       minute: "2-digit",
     });
+}
+
+function setSetupStep(selector, state, status) {
+  const step = $(selector);
+  if (!step) return;
+  step.classList.remove("waiting", "active", "complete", "blocked");
+  step.classList.add(state);
+  if (state === "active" || state === "blocked") step.setAttribute("aria-current", "step");
+  else step.removeAttribute("aria-current");
+  const label = $(`${selector}-status`);
+  if (label) label.textContent = status;
 }
 
 function setSignal(selector, text, tone = "") {
@@ -277,61 +289,74 @@ function renderSnapshot(data) {
   $("#sidebar-profile").textContent = config.profile || data.factory?.profile || "standard";
   $("#sidebar-mode").textContent = data.planning?.plan_id ? (data.planning.mode || "live") : mode();
   $("#connect-project").textContent = config.project_number ? `#${config.project_number}` : "Automatic";
+  const configSaved = Object.keys(config).length > 0;
+  const connectionReady = configSaved && (mode() !== "live" || repo.github_connected);
   const project = data.project || {};
   $("#contract-status").textContent = project.error
-    ? "Contract needs correction"
-    : project.configured ? `${project.name} · configured` : `${project.name || "Repository"} · detected`;
+    ? "Needs correction"
+    : project.configured ? "Created" : connectionReady ? "Ready" : "Waiting";
   $("#contract-guidance").textContent = project.error
     ? project.error
     : project.configured
-      ? `Review ${project.path} whenever the repository structure or verification commands change.`
-    : "Create the contract, review it, then prove the development environment.";
+      ? `Review the detected model below. The factory will use it for ${project.name || "this repository"}.`
+      : connectionReady
+        ? "Create one reviewable contract from the repository structure. No agent runs yet."
+        : "Save the repository and settings in Step 1 first.";
   $("#contract-sources").textContent = (project.source_roots || []).join(", ") || "—";
   $("#contract-tests").textContent = (project.test_roots || []).join(", ") || "—";
   $("#contract-gates").textContent = (project.gates || []).join(", ") || "—";
-  $("#initialize-project").disabled = Boolean(project.configured);
-  $("#initialize-project").textContent = project.configured ? "Contract created" : "Create contract and Charter";
+  $("#project-contract-policy").textContent = project.text || "Create the contract first.";
+  $("#initialize-project").disabled = Boolean(project.configured) || !connectionReady;
+  $("#initialize-project").textContent = project.configured ? "Contract created" : "Create contract";
   const environment = data.environment || {};
   const environmentChecks = environment.checks || [];
-  $("#environment-status").textContent = String(environment.status || "not-provisioned").replaceAll("-", " ");
-  $("#environment-provider").textContent = environment.provider || "local";
-  $("#environment-guidance").textContent = environment.error
-    || (environment.status === "healthy"
-      ? "The named revision, Project Contract, required tools, roots, ports, and selected gates are healthy."
-      : environment.status === "blocked"
-        ? "Fix the first failed environment check before retrying an Agent Adapter."
-        : "Provision from the committed Project Contract, approve setup, then check health.");
-  $("#environment-revision").textContent = String(environment.revision || "—").slice(0, 12);
-  $("#environment-contract").textContent = String(environment.contract_sha256 || "—").slice(0, 12);
-  $("#environment-checks").textContent = environmentChecks.length
-    ? `${environmentChecks.filter((item) => item.status === "PASS").length}/${environmentChecks.length} passed`
-    : "Not run";
-  const preflightButton = $('[data-action="doctor"]');
-  preflightButton.disabled = environment.status !== "healthy";
-  preflightButton.title = preflightButton.disabled
-    ? "Provision, prepare, and check the development environment first."
-    : "Run the complete factory preflight.";
-  $$('[data-action^="environment-"]').forEach((button) => {
-    button.disabled = !project.configured || !project.valid;
-  });
   const charter = data.charter || {};
-  $("#charter-status").textContent = !charter.configured
-    ? "Not created"
-    : !charter.valid
-      ? "Needs correction"
-      : charter.approved ? "Approved" : "Awaiting your approval";
   $("#charter-guidance").textContent = charter.error
-    || (charter.approved
-      ? `Approval is bound to policy ${String(charter.policy_sha256 || "").slice(0, 12)}.`
-      : "Review the exact policy below. Approval is invalidated if any policy field changes.");
+    || (!project.configured
+      ? "Create the contract in Step 2 before reviewing it."
+      : charter.approved
+        ? `Approval is bound to policy ${String(charter.policy_sha256 || "").slice(0, 12)}.`
+        : "Review the repository model and operating policy. Any later policy edit requires approval again.");
   $("#charter-tier").textContent = charter.consequence_tier || "—";
   $("#charter-merge").textContent = charter.merge_authority || "—";
   $("#charter-gates").textContent = charter.gate_level || "—";
-  $("#charter-policy").textContent = charter.text || "Create the Charter draft first.";
-  $("#approve-charter").disabled = !charter.configured || !charter.valid || charter.approved;
-  $("#approve-charter").textContent = charter.approved ? "Charter approved" : "Approve exact Charter";
-  $("#publish-setup").disabled = !charter.approved || project.committed;
-  $("#publish-setup").textContent = project.committed ? "Setup published" : "Commit and push setup";
+  $("#charter-policy").textContent = charter.text || "Create the contract first.";
+  const operation = data.operation || {};
+  const setupRunning = operation.action === "approve-contract" && ["running", "stopping"].includes(operation.status);
+  const publishReady = mode() !== "live" || project.committed;
+  const environmentReady = environment.status === "healthy";
+  const setupAttemptIncomplete = operation.action === "approve-contract" && operation.status !== "succeeded";
+  const setupComplete = Boolean(charter.approved && publishReady && environmentReady && !setupAttemptIncomplete);
+  $("#approval-status").textContent = setupRunning
+    ? "Running"
+    : setupComplete
+      ? "Approved"
+      : environment.status === "blocked" || (operation.action === "approve-contract" && operation.status === "failed")
+        ? "Needs attention"
+        : project.configured ? "Ready for review" : "Waiting";
+  $("#automatic-publish").querySelector("span").textContent = mode() === "live"
+    ? "Commit and push the contract"
+    : "Keep the rehearsal contract local";
+  $("#automatic-publish-status").textContent = mode() !== "live"
+    ? "No push"
+    : project.committed ? "Published" : setupRunning ? "In sequence" : "Waiting";
+  $("#automatic-environment-status").textContent = environmentReady
+    ? `${environmentChecks.filter((item) => item.status === "PASS").length}/${environmentChecks.length} checks passed`
+    : environment.status === "blocked" ? "Stopped at a failed check" : setupRunning ? "In sequence" : "Waiting";
+  $("#automatic-preflight-status").textContent = setupComplete
+    ? "Passed"
+    : operation.action === "approve-contract" && operation.status === "failed"
+      ? "Stopped — open Activity"
+      : setupRunning ? "Runs last" : "Runs automatically";
+  $("#approve-contract").disabled = !connectionReady || !project.configured || !project.valid || !charter.configured || !charter.valid || setupRunning || setupComplete;
+  $("#approve-contract").textContent = setupRunning
+    ? "Preparing repository…"
+    : setupComplete
+      ? "Approved and ready"
+      : charter.approved ? "Retry automatic setup" : "Approve contract and continue";
+  setSetupStep("#setup-step-connect", connectionReady ? "complete" : "active", connectionReady ? "Repository and settings saved" : "Select repository and settings");
+  setSetupStep("#setup-step-contract", project.configured && project.valid ? "complete" : connectionReady ? "active" : "waiting", project.configured && project.valid ? "Contract created" : connectionReady ? "Ready to create" : "Waiting for connection");
+  setSetupStep("#setup-step-approve", setupComplete ? "complete" : project.configured ? (environment.status === "blocked" ? "blocked" : "active") : "waiting", setupComplete ? "Approved and ready" : environment.status === "blocked" ? "Fix the first Activity error, then retry" : project.configured ? "Review and approve" : "Waiting for contract");
   populateAgentSelects(data.adapters || [], config);
   hydrateConfigForm(config);
   renderAdapterCapabilities(data.adapter_details || {}, config);
@@ -892,6 +917,7 @@ function basePayload(extra = {}) {
 async function action(name, extra = {}) {
   try {
     if (name === "init-project" && !window.confirm("Create factory.project.toml and a conservative factory.charter.toml draft from the detected repository structure?")) return;
+    if (name === "approve-contract" && !window.confirm("Approve the exact repository contract shown in Connect? The factory will publish the setup in Live mode, provision and prepare the environment, check its gates, and run preflight. It stops at the first error and shows every command in Activity.")) return;
     if (name === "approve-charter" && !window.confirm("Approve the exact Factory Charter policy shown in Connect? Any policy edit will invalidate this approval.")) return;
     if (name === "publish-setup" && !window.confirm("Commit and push only .gitignore, factory.project.toml, and the approved factory.charter.toml to the default branch?")) return;
     if (name === "merge" && !window.confirm("Merge only the exact approved revision shown for this Ticket? This records your human shipping decision.")) return;

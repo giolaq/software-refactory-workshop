@@ -146,28 +146,23 @@ Wait for `Factory Control Center: http://127.0.0.1:5050`. The browser should
 open automatically; otherwise open that address yourself. Press `Ctrl+C` only
 when you want to stop the Control Center.
 
-Complete the browser setup in this order:
+Complete the browser setup in three steps:
 
-1. Open **Setup → Connection**.
-2. Select **Rehearsal** or **Live**, the **Standard** Factory Profile, and the
-   preset that matches the agent CLI you actually signed in to. Rehearsal does
-   not call that CLI.
-3. For Live, paste the full URL of the attendee's product repository. Select
-   **Seed the guided Pocket Cinema starter** only for the guided exercise. Save
-   the configuration.
-4. If offered, select **Create contract and Charter**. Read **Review exact
-   policy**, select **Approve exact Charter**, and, for Live, select **Commit
-   and push setup**.
-5. In **Development environment**, select **Provision** to bind the checkout,
-   revision, and Project Contract hash.
-6. Select **Prepare** and confirm the reviewed setup commands. This installs
-   declared dependencies with the operator's local permissions.
-7. Select **Check health** to prove tools, roots, ports, and gates.
-8. Select **Run preflight**. Open **Current run → Activity and CLI output** and
-   continue only when it reports no `[FAIL]` entries.
+1. **Connect.** Open **Setup → Connection**. Select **Rehearsal** or **Live**,
+   the **Standard** Factory Profile, and the preset matching the signed-in CLI.
+   For Live, paste the attendee's product repository URL. Select the Pocket
+   Cinema starter only for the guided exercise, then select **Save and
+   connect**.
+2. **Create contract.** Select **Create contract**. Explain that the factory
+   detects source folders, tests, gates, and conservative operating limits; it
+   does not run a coding agent.
+3. **Review and approve.** Inspect **Review repository model** and **Review
+   operating policy**, then select **Approve contract and continue**. Activity
+   shows the automatic publish, environment preparation, health, gates, and
+   preflight work.
 
-In Rehearsal, no GitHub URL, GitHub write, or agent login is required. Do not
-select **Commit and push setup**.
+In Rehearsal, no GitHub URL, GitHub write, or agent login is required. The
+automatic workflow keeps its contract local.
 
 **Check:** <http://127.0.0.1:5050> loads, shows the correct repository, and
 preflight reports no failures.
@@ -178,18 +173,18 @@ trace separates completed, current, and pending stages.
 
 #### If preflight fails
 
-Do not repeat preflight without changing anything. Expand **Activity and CLI
-output**, scroll to the first `[FAIL]`, apply the matching fix, then run
-preflight again.
+Do not repeat setup without changing anything. Expand **Activity and CLI
+output**, scroll to the first `[FAIL]`, apply the matching fix, then select
+**Retry automatic setup**.
 
 | Failure | Meaning | Recovery |
 | --- | --- | --- |
 | `default branch` or `branch synchronization` | The product checkout is not on the remote default revision. | Save local work. Run `git fetch origin`, `git switch main`, and `git pull --ff-only origin main` in the product checkout. Never force-reset attendee work. |
 | `codex adapter` or `claude adapter` | The selected preset does not match an installed, signed-in CLI. | In **Setup → Connection**, choose the preset for the available CLI and save. Run `codex login` or `claude auth login` when required. |
-| `No module named pytest` or another gate dependency | Development-environment preparation has not completed. | Select **Prepare**, then **Check health** and run preflight again. |
+| `No module named pytest` or another gate dependency | A declared dependency is missing. | Run the repository's normal dependency setup, correct the contract if it omitted that command, then select **Retry automatic setup**. |
 | `GitHub Projects scope` | GitHub CLI cannot manage Projects. | Run `gh auth refresh -s project` and finish browser authorization. |
 | `repository target` or `origin remote` | The saved product URL and checkout do not identify the same repository. | Paste the attendee's full product repository URL in **Setup → Connection** and save. Do not use the facilitator or workshop repository URL. |
-| `Project Contract` or `Factory Charter` | Repository behavior or human-owned policy is missing. | Create the contract and Charter, review the exact policy, approve it, and publish setup in Live mode. |
+| `Project Contract` or `Factory Charter` | Repository behavior or human-owned policy is missing. | Select **Create contract**, review both sections, then select **Approve contract and continue**. |
 
 `[WARN]` is not a failure. Port 5050 while the Control Center is open, an
 unused adapter, and the optional second reviewer identity are expected warnings
@@ -204,8 +199,8 @@ this exact order:
    `git pull --ff-only origin main`.
 3. Select **Claude workshop** in **Setup → Connection** and save, or sign in to
    Codex if Codex is the intended adapter.
-4. Select **Prepare** to install the declared dependencies, then **Check health**.
-5. Select **Run preflight** again and continue only when no `[FAIL]` remains.
+4. Install the declared dependencies with the repository's normal setup command.
+5. Select **Retry automatic setup** and continue only when no `[FAIL]` remains.
 
 ### 2. Inspect the app
 

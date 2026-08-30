@@ -127,7 +127,9 @@ Every operation reports the governed revision and Project Contract hash.
 - `destroy` removes provider-owned local state. It never deletes the remote
   repository, Issues, Project, pull requests, or review evidence.
 
-Use the **Development environment** card in **Setup → Connection**, or run:
+The Control Center runs `provision`, `prepare`, and `health` automatically after
+**Approve contract and continue** and reports each result in Activity. Operators
+can run the individual interface commands for diagnosis:
 
 ```bash
 ./factory/factory environment provision --repo /path/to/product

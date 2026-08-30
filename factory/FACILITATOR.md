@@ -70,11 +70,7 @@ node --version
 git --version
 ./factory/factory init
 # Review factory.project.toml and factory.charter.toml.
-./factory/factory approve-charter --yes
-./factory/factory environment provision
-./factory/factory environment prepare --yes
-./factory/factory environment health --gates
-./factory/factory doctor
+./factory/factory approve-contract --yes
 ```
 
 Prepare the live checkout only if you plan to demonstrate real agents:
@@ -87,10 +83,7 @@ git push origin main
 ./factory/factory configure \
   --github-repository "$(gh repo view --json url --jq .url)" \
   --preset claude-workshop
-./factory/factory environment provision
-./factory/factory environment prepare --yes
-./factory/factory environment health --gates
-./factory/factory doctor --full
+./factory/factory approve-contract --live --yes
 ```
 
 Continue only when the doctor reports zero failures. A warning is acceptable
@@ -303,10 +296,10 @@ approval needs a distinct reviewer identity supplied through the uncommitted
 | Live merge shows Rehearsal evidence | Do not merge it as Live. In Ticket Summary, either **Finish Rehearsal** or select **Open Reset**, clear only local run state, and rerun the published GitHub ticket. Source files and remote artifacts are preserved. |
 | An attendee reset the wrong scope | Open **Reset**, verify the checkpoint timestamp and plan, then choose **Recover latest state**. With no checkpoint, a connected Live repository reconstructs from GitHub. Do not claim that deleted local receipts were restored. |
 | Preflight reports `default branch` or `branch synchronization` | In the product checkout, save local work, then run `git fetch origin`, `git switch main`, and `git pull --ff-only origin main`. Do not force-reset attendee work. |
-| Preflight reports an unavailable Codex or Claude adapter | Open **Setup → Connection**, select the preset for the CLI the attendee actually installed, save, sign in to that CLI, and rerun preflight. |
-| Preflight reports `No module named pytest` | Select **Prepare**, then **Check health** in the Development environment card before rerunning preflight. Explain that preflight checks dependencies; it does not install them. |
-| Preflight reports missing GitHub Projects scope | Run `gh auth refresh -s project`, finish authorization, and rerun preflight. |
-| Branch, Codex, and `pytest` failures appear together | Fix them in order: preserve local work; fetch, switch to `main`, and fast-forward it; select the passing Claude preset or sign in to Codex; select **Prepare**, then **Check health**; then rerun preflight. Do not ask the attendee to repeat the same failed check between fixes. |
+| Preflight reports an unavailable Codex or Claude adapter | Open **Setup → Connection**, select the preset for the CLI the attendee actually installed, save, sign in to that CLI, and select **Retry automatic setup**. |
+| Preflight reports `No module named pytest` | Install the dependency with the repository's declared setup command, correct the contract if that command is missing, then select **Retry automatic setup**. |
+| Preflight reports missing GitHub Projects scope | Run `gh auth refresh -s project`, finish authorization, and select **Retry automatic setup**. |
+| Branch, Codex, and `pytest` failures appear together | Fix them in order: preserve local work; fetch, switch to `main`, and fast-forward it; select the passing Claude preset or sign in to Codex; install the declared dependencies; then select **Retry automatic setup**. Do not ask the attendee to repeat the same failed operation between fixes. |
 | Live restart says the checkout is not on `main` | Run local reset again. A clean checkout preserves divergent local `main` under `recovery/pre-reset-main-*`, then aligns `main` exactly with `origin/main`. A dirty checkout must be committed or stashed by its owner first. |
 | A port is occupied | Stop the old process or use a fresh checkout. |
 | The state is stale | Use **Reset current run** in the Control Center after confirming demo changes can be discarded. |

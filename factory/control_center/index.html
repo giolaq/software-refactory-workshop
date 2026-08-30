@@ -129,7 +129,7 @@
     </section>
 
     <section class="view" data-view="connect" aria-labelledby="connect-title" hidden>
-      <div class="page-heading"><div><span class="eyebrow">Setup</span><h1 id="connect-title">Connect the factory</h1><p>Choose a preset and confirm that this repository is ready.</p></div></div>
+      <div class="page-heading"><div><span class="eyebrow">Setup</span><h1 id="connect-title">Set up the factory in three steps</h1><p>Select a repository, generate its contract, then approve the exact setup.</p></div></div>
       <section class="layer-strip" aria-label="Factory layers">
         <div><span>1</span><b>Compute</b><small>Your laptop or runner</small></div><i>→</i>
         <div><span>2</span><b>Development environment</b><small>Checkout, tools, services, gates</small></div><i>→</i>
@@ -137,9 +137,15 @@
         <div><span>4</span><b>Outer harness</b><small>Roles, policy, QA, review</small></div><i>→</i>
         <div><span>5</span><b>Control plane</b><small>This UI, orchestrator, GitHub</small></div>
       </section>
+      <ol class="setup-flow" aria-label="Factory setup progress">
+        <li id="setup-step-connect"><span class="setup-step-number">1</span><div><b>Connect</b><small id="setup-step-connect-status">Select repository and settings</small></div></li>
+        <li id="setup-step-contract"><span class="setup-step-number">2</span><div><b>Create contract</b><small id="setup-step-contract-status">Waiting for connection</small></div></li>
+        <li id="setup-step-approve"><span class="setup-step-number">3</span><div><b>Review and approve</b><small id="setup-step-approve-status">Waiting for contract</small></div></li>
+      </ol>
       <div class="two-column">
         <section class="surface form-surface">
-          <div class="surface-heading"><div><span class="section-label">Configuration</span><h2>Agent roles</h2></div></div>
+          <div class="surface-heading"><div><span class="section-label">Step 1</span><h2>Select repository and settings</h2></div></div>
+          <p class="setup-intro">Tell the factory where to work and which agents to use. Saving verifies the GitHub repository and opens its isolated checkout.</p>
           <form id="config-form">
             <div class="form-grid essential-settings">
               <label>Agent preset<select name="preset"><option value="claude-workshop">Claude workshop</option><option value="codex-workshop">Codex workshop</option><option value="bedrock-aws">Amazon Bedrock on AWS</option><option value="">Custom roles</option></select></label>
@@ -162,7 +168,7 @@
               <label class="check-row"><input name="review_qa_tests" type="checkbox" checked><span><b>Require human QA approval</b><small>Implementation waits until a person approves the acceptance tests.</small></span></label>
               <label class="check-row safety-note" id="autonomous-merge-warning" hidden><input id="autonomous-merge-opt-in" type="checkbox"><span><b>Delegate final merge accountability for this demonstration</b><small>This delegates final merge accountability: the Supervisor recommends and the orchestrator executes an exact-revision merge. This is a workshop contrast, not the normal shipping path. The choice is not saved and must be made again after a reload.</small></span></label>
             </details>
-            <div class="form-actions"><button class="button button-primary" type="submit">Save configuration</button><button class="button" type="button" data-action="doctor">Run preflight</button></div>
+            <div class="form-actions"><button class="button button-primary" type="submit">Save and connect</button></div>
           </form>
           <section class="adapter-capabilities" aria-labelledby="adapter-capabilities-title">
             <div class="surface-heading"><div><span class="section-label">Adapter Protocol v1</span><h2 id="adapter-capabilities-title">Selected harness capabilities</h2></div></div>
@@ -171,26 +177,30 @@
           </section>
         </section>
         <aside class="surface readiness-surface">
-          <div class="surface-heading"><div><span class="section-label">Repository</span><h2 id="connect-repo">—</h2></div></div>
+          <div class="surface-heading"><div><span class="section-label">Selected repository</span><h2 id="connect-repo">—</h2></div></div>
           <dl class="facts"><div><dt>Branch</dt><dd id="connect-branch">—</dd></div><div><dt>Origin</dt><dd id="connect-remote">—</dd></div><div><dt>GitHub target</dt><dd id="connect-github">Not connected</dd></div><div><dt>Working tree</dt><dd id="connect-dirty">—</dd></div><div><dt>Project</dt><dd id="connect-project">Automatic</dd></div></dl>
-          <div class="contract-summary">
-            <div class="surface-heading"><div><span class="section-label">Project Contract</span><h3 id="contract-status">Inspecting repository</h3></div></div>
-            <p id="contract-guidance">The factory detects this repository before planning.</p>
+          <div class="contract-summary setup-step-card" id="contract-step-card">
+            <div class="surface-heading"><div><span class="section-label">Step 2</span><h3>Create the repository contract</h3></div><span class="setup-state" id="contract-status">Waiting</span></div>
+            <p id="contract-guidance">The factory detects source folders, tests, verification gates, and safe operating limits.</p>
             <dl class="facts compact-facts"><div><dt>Source</dt><dd id="contract-sources">—</dd></div><div><dt>Tests</dt><dd id="contract-tests">—</dd></div><div><dt>Gates</dt><dd id="contract-gates">—</dd></div></dl>
-            <div class="form-actions"><button class="button" id="initialize-project" type="button" data-action="init-project">Create contract and Charter</button></div>
+            <div class="form-actions"><button class="button button-primary" id="initialize-project" type="button" data-action="init-project">Create contract</button></div>
           </div>
-          <div class="contract-summary environment-summary">
-            <div class="surface-heading"><div><span class="section-label">Development environment</span><h3 id="environment-status">Not provisioned</h3></div><span class="updated" id="environment-provider">local</span></div>
-            <p id="environment-guidance">Provision the local provider from the committed Project Contract. Setup commands always require your approval.</p>
-            <dl class="facts compact-facts"><div><dt>Revision</dt><dd id="environment-revision">—</dd></div><div><dt>Contract</dt><dd id="environment-contract">—</dd></div><div><dt>Checks</dt><dd id="environment-checks">Not run</dd></div></dl>
-            <div class="form-actions environment-actions"><button class="button" type="button" data-action="environment-provision">Provision</button><button class="button" type="button" data-action="environment-prepare">Prepare</button><button class="button" type="button" data-action="environment-health">Check health</button><button class="text-button" type="button" data-action="environment-reset">Reset provider state</button></div>
-          </div>
-          <div class="contract-summary">
-            <div class="surface-heading"><div><span class="section-label">Factory Charter</span><h3 id="charter-status">Not created</h3></div></div>
-            <p id="charter-guidance">The Charter defines authority, gates, limits, protected paths, and stop conditions.</p>
+          <div class="contract-summary setup-step-card" id="approval-step-card">
+            <div class="surface-heading"><div><span class="section-label">Step 3</span><h3>Review and approve</h3></div><span class="setup-state" id="approval-status">Waiting</span></div>
+            <p id="charter-guidance">Check what the factory detected and the authority it will have. Approval is bound to the exact policy shown here.</p>
             <dl class="facts compact-facts"><div><dt>Tier</dt><dd id="charter-tier">—</dd></div><div><dt>Merge</dt><dd id="charter-merge">—</dd></div><div><dt>Gates</dt><dd id="charter-gates">—</dd></div></dl>
-            <details><summary>Review exact policy</summary><pre class="charter-policy" id="charter-policy">Create the Charter draft first.</pre></details>
-            <div class="form-actions"><button class="button button-primary" id="approve-charter" type="button" data-action="approve-charter">Approve exact Charter</button><button class="button" id="publish-setup" type="button" data-action="publish-setup">Commit and push setup</button></div>
+            <details><summary>Review repository model</summary><pre class="charter-policy" id="project-contract-policy">Create the contract first.</pre></details>
+            <details><summary>Review operating policy</summary><pre class="charter-policy" id="charter-policy">Create the contract first.</pre></details>
+            <div class="automatic-setup">
+              <b>What happens after approval</b>
+              <ol>
+                <li id="automatic-publish"><span>Publish the contract</span><small id="automatic-publish-status">Waiting</small></li>
+                <li><span>Provision and prepare the environment</span><small id="automatic-environment-status">Waiting</small></li>
+                <li><span>Check health, gates, and agent readiness</span><small id="automatic-preflight-status">Waiting</small></li>
+              </ol>
+              <p>The Activity panel shows every command and stops at the first error.</p>
+            </div>
+            <div class="form-actions"><button class="button button-primary" id="approve-contract" type="button" data-action="approve-contract">Approve contract and continue</button></div>
           </div>
           <div class="safety-note"><b>Local by design</b><p>The server listens on your machine. Agent credentials remain in their CLI stores.</p></div>
         </aside>

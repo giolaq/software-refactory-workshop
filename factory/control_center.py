@@ -80,7 +80,7 @@ MAX_BODY = 256_000
 MAX_ARTIFACT = 512_000
 MAX_PLANNING_FEEDBACK = 12_000
 ACTION_REGISTRY = frozenset({
-    "doctor", "init-project", "approve-charter", "publish-setup",
+    "doctor", "init-project", "approve-contract", "approve-charter", "publish-setup",
     "configure", "plan", "restart-plan", "revise-product", "revise-stage",
     "approve-product", "approve-stage", "continue-plan", "publish-plan",
     "approve-tests", "request-test-changes", "merge",
@@ -95,7 +95,7 @@ ACTION_REGISTRY = frozenset({
 })
 ACTION_BUILDERS = {
     **dict.fromkeys({
-        "doctor", "init-project", "approve-charter", "publish-setup",
+        "doctor", "init-project", "approve-contract", "approve-charter", "publish-setup",
         "start-app", "environment-provision", "environment-prepare",
         "environment-health", "environment-reset", "improve-report",
         "workspace-check", "approve-intake", "steward-sync",
@@ -386,6 +386,10 @@ class ControlCenter:
             "committed": committed,
             "error": error,
             "path": str(CONTRACT_PATH),
+            "text": (
+                (self.repo / CONTRACT_PATH).read_text()[:64_000]
+                if configured else ""
+            ),
             "name": contract.name,
             "source_roots": list(contract.source_roots),
             "test_roots": list(contract.test_roots),
@@ -919,47 +923,31 @@ class ControlCenter:
         if not connected:
             return guidance(
                 0, "Connect this repository",
-                "Choose the adapter for each role, then run preflight before planning.",
-                "Open Connect", "Save a preset and fix any blocking preflight result.",
+                "Choose the GitHub repository, run mode, profile, and agent preset.",
+                "Open Connect", "Save the repository and factory settings.",
                 "connect",
             )
         if not project_ready:
             return guidance(
-                0, "Define how this repository is built and verified",
-                "Create and review the Project Contract before any planning expert reads the repository.",
-                "Create Project Contract",
-                "Open Connect and create the detected contract and Charter draft.",
+                0, "Create the repository contract",
+                "The factory will detect source folders, tests, gates, and operating limits for your review.",
+                "Create contract",
+                "Open Connect and generate the repository contract from the selected repository.",
                 "connect", state="attention",
             )
-        if not charter_ready:
-            return guidance(
-                0, "The Factory Charter needs your approval",
-                "Review merge authority, gates, limits, protected paths, and stop conditions before adapters can run.",
-                "Review Factory Charter",
-                "Open Connect, inspect the Charter policy, and approve its exact hash.",
-                "connect", state="attention",
-            )
-        if not setup_published:
-            return guidance(
-                0, "Publish the approved repository setup",
-                "Commit and push only the Project Contract, Factory Charter, and runtime ignore before planning begins.",
-                "Publish repository setup",
-                "Open Connect and publish the reviewed governance files to the default branch.",
-                "connect", state="attention",
-            )
-        if not environment_ready:
+        if not (charter_ready and setup_published and environment_ready):
             environment_status = (environment or {}).get("status", "not-provisioned")
             detail = (
-                "Provision the named repository revision, approve the Project Contract setup, "
-                "then check tools, roots, ports, and gates."
+                "Review the detected repository model and operating policy. One approval publishes "
+                "the setup, prepares the environment, checks health, and runs preflight."
                 if environment_status != "blocked" else
-                "The development environment is blocked. Fix its first failed check before "
-                "retrying an Agent Adapter."
+                "Automatic preparation stopped at a failed check. Read the first failure, correct "
+                "it, then approve again to retry the remaining setup."
             )
             return guidance(
-                0, "Prove the development environment contract", detail,
-                "Open environment setup",
-                "Use Provision, Prepare, and Check health in Connect.",
+                0, "Review and approve the repository contract", detail,
+                "Review and approve",
+                "Open Connect, inspect the contract, and approve the automatic setup sequence.",
                 "connect", state="attention",
             )
         if not prd_ready:
@@ -1109,12 +1097,20 @@ class ControlCenter:
         setup_published = (
             project is None
             or bool(project.get("committed"))
+            or not bool((config or {}).get("github_repository"))
             or bool(planning)
             or bool(tickets)
         )
+        setup_attempt_incomplete = (
+            operation.get("action") == "approve-contract"
+            and operation.get("status") in {"running", "stopping", "failed"}
+        )
         environment_ready = (
             environment is None
-            or environment.get("status") == "healthy"
+            or (
+                environment.get("status") == "healthy"
+                and not setup_attempt_incomplete
+            )
             or bool(planning)
             or bool(tickets)
         )
@@ -1199,7 +1195,7 @@ class ControlCenter:
 
         operation_phase = {
             "doctor": 0, "configure": 0, "plan": 2, "restart-plan": 2, "revise-product": 2, "revise-stage": 2,
-            "approve-charter": 0, "publish-setup": 0, "approve-product": 2, "continue-plan": 2, "publish-plan": 3,
+            "approve-contract": 0, "approve-charter": 0, "publish-setup": 0, "approve-product": 2, "continue-plan": 2, "publish-plan": 3,
             "approve-tests": 4, "merge": 4, "run": 4, "listen": 4, "run-once": 4, "dry-run": 4,
             "retry": 4, "evidence": 5, "reset-run": 4, "reset-all": 0,
             "release-claim": 4,
@@ -1230,6 +1226,18 @@ class ControlCenter:
                 next_label = planning_journey["next"]["label"]
                 next_detail = planning_journey["next"]["detail"]
                 next_view = planning_journey["next"]["view"]
+            elif operation.get("action") == "approve-contract":
+                phase_index = 0
+                headline = "Automatic repository setup stopped"
+                detail = operation.get("error") or (
+                    "Read the first failed check, correct it, then retry Step 3."
+                )
+                next_label = "Fix and retry setup"
+                next_detail = (
+                    "Open Connect. Step 3 remains active and retries the same "
+                    "reviewed contract after you fix the first error."
+                )
+                next_view = "connect"
             else:
                 phase_index = operation_phase
                 headline = f"{operation.get('title') or 'The last operation'} failed"
@@ -1626,6 +1634,28 @@ class ControlCenter:
             if (self.repo / CONTRACT_PATH).is_file():
                 raise InputError("This repository already has a Project Contract.")
             return "Initialize Project Contract", [base + ["init", "--repo", str(self.repo)]]
+        if action == "approve-contract":
+            project = self.project_contract()
+            if not project.get("configured") or not project.get("valid"):
+                raise InputError(
+                    project.get("error") or "Create a valid repository contract first."
+                )
+            charter = self.factory_charter()
+            if not charter.get("configured") or not charter.get("valid"):
+                raise InputError(
+                    charter.get("error") or "Create a valid repository contract first."
+                )
+            live = mode == "live"
+            if live and not self.session_config().get("github_repository"):
+                raise InputError(
+                    "Select and save a GitHub repository before approving Live setup."
+                )
+            command = base + [
+                "approve-contract", "--repo", str(self.repo), "--yes",
+            ]
+            if live:
+                command.append("--live")
+            return "Approve and prepare repository", [command]
         if action == "approve-charter":
             charter = self.factory_charter()
             if not charter.get("configured") or not charter.get("valid"):

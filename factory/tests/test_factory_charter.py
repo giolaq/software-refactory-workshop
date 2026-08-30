@@ -3,13 +3,14 @@ import unittest
 from dataclasses import replace
 from pathlib import Path
 import subprocess
+from unittest.mock import call, patch
 
 import sys
 
 sys.path.insert(0, str(Path(__file__).parents[1]))
 
 from factory_charter import FactoryCharter, FactoryCharterError
-from orchestrator import approve_charter, initialize_project
+from orchestrator import approve_charter, approve_repository_contract, initialize_project
 from planning_pipeline import plan_prd
 from project_contract import ProjectContract
 
@@ -31,6 +32,35 @@ class FactoryCharterTests(unittest.TestCase):
             approve_charter(repo, assume_yes=True)
 
             self.assertTrue(FactoryCharter.load(repo, require_approved=True).approved)
+
+    def test_repository_contract_approval_runs_automatic_setup_in_order(self):
+        with tempfile.TemporaryDirectory() as directory:
+            repo = Path(directory)
+            subprocess.run(["git", "init", "-q", "-b", "main"], cwd=repo, check=True)
+            (repo / "README.md").write_text("# Target\n")
+            initialize_project(repo, None, False)
+
+            with (
+                patch("orchestrator.LocalEnvironmentProvider") as provider_class,
+                patch("orchestrator.run_doctor", return_value=0) as doctor,
+            ):
+                approve_repository_contract(
+                    repo,
+                    assume_yes=True,
+                    live=False,
+                    session={"profile": "standard", "planning_agent": "codex"},
+                )
+
+            self.assertTrue(FactoryCharter.load(repo, require_approved=True).approved)
+            self.assertEqual(
+                provider_class.return_value.execute.call_args_list,
+                [
+                    call("provision"),
+                    call("prepare", approved=True),
+                    call("health", run_gates=True),
+                ],
+            )
+            self.assertFalse(doctor.call_args.kwargs["full"])
 
     def test_approval_is_bound_to_the_exact_human_owned_policy(self):
         with tempfile.TemporaryDirectory() as directory:

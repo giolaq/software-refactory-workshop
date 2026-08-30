@@ -16,15 +16,14 @@ normal **Setup** checks first:
    ```
 
 2. Open <http://127.0.0.1:5050/>.
-3. Open **Setup → Connection** and select **Live**.
-4. Enter the GitHub repository URL and save the configuration.
-5. Select the required Factory Profile and role adapters.
-6. Create or review the Project Contract and Factory Charter.
-7. Approve the exact Charter.
-8. Commit and push the repository setup.
-9. In **Development environment**, select **Provision**, **Prepare**, then
-   **Check health**.
-10. Run the full preflight and confirm that it has no failures.
+3. Open **Setup → Connection**, select **Live**, enter the GitHub repository
+   URL, choose the Factory Profile and role adapters, then select **Save and
+   connect**.
+4. Select **Create contract** and review the detected repository model and
+   operating policy.
+5. Select **Approve contract and continue**. Confirm that the automatic publish,
+   environment preparation, health, gates, and preflight operation has no
+   failures.
 
 The GitHub repository must have Issues enabled. The selected GitHub identity
 must be able to edit issues, create labels, add Project items, and create pull

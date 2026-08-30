@@ -313,31 +313,24 @@ Show `http://127.0.0.1:5050` and point out:
 
 Each attendee:
 
-1. Opens **Setup → Connection**.
-2. Selects **Live** and the **Standard** Factory Profile.
-3. Selects the preset matching the CLI they installed and authenticated.
-4. Pastes the full URL of their personal product repository.
-5. Leaves the Pocket Cinema starter selected only for the guided exercise.
-6. Saves the configuration.
-7. Creates the Project Contract and Factory Charter when offered.
-8. Reviews the exact Charter policy.
-9. Approves the exact Charter.
-10. Commits and pushes setup to the Live repository.
-11. In **Development environment**, selects **Provision** to record the exact
-    checkout revision and Project Contract hash.
-12. Selects **Prepare**, reviews the confirmation, and runs only the declared
-    setup commands.
-13. Selects **Check health** to prove tools, roots, ports, and gates.
-14. Selects **Run preflight**.
-15. Opens **Activity and CLI output** and reads the first `[FAIL]`, if any.
+1. **Connects.** Opens **Setup → Connection**, selects **Live**, **Standard**,
+   the authenticated agent preset, and their personal product repository URL,
+   then selects **Save and connect**. The Pocket Cinema starter remains selected
+   only for the guided exercise.
+2. **Creates the contract.** Selects **Create contract** and checks the detected
+   source folders, tests, and gates.
+3. **Reviews and approves.** Opens the repository model and operating policy,
+   then selects **Approve contract and continue**. The attendee watches
+   **Activity and CLI output** as the factory publishes, prepares, checks, and
+   runs preflight automatically.
 
 Explain the distinction:
 
-- `environment provision` records the governed revision and contract.
-- `environment prepare` or **Prepare** performs reviewed setup commands.
-- `environment health` or **Check health** proves the repository environment.
-- `doctor --full` or **Run preflight** checks the complete factory boundary.
-- Repeating preflight without changing the failed condition cannot repair it.
+- The three steps are human decisions.
+- Publish, provision, prepare, health, gates, and preflight are visible
+  mechanical substeps after approval.
+- The operation stops at the first failure and keeps its output.
+- Repeating automatic setup without changing the failed condition cannot repair it.
 
 ### Points to touch
 
@@ -859,7 +852,7 @@ session, an attendee activity, or inspected evidence.
 - [ ] Factory Profile
 - [ ] Agent Role versus Agent Adapter
 - [ ] Configuration precedence
-- [ ] Provision versus Prepare versus Check health versus preflight
+- [ ] Three-step setup versus its visible automatic substeps
 - [ ] First-`FAIL` recovery
 - [ ] Worktree limitations and production isolation
 

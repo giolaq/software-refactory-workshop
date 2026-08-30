@@ -46,6 +46,16 @@ class ControlCenterTests(unittest.TestCase):
         self.assertEqual(args.port, 5050)
         self.assertTrue(args.no_open)
 
+    def test_parser_exposes_single_repository_contract_approval(self):
+        args = parser().parse_args([
+            "approve-contract", "--repo", "/tmp/product", "--live", "--yes",
+        ])
+
+        self.assertEqual(args.command, "approve-contract")
+        self.assertEqual(args.repo, "/tmp/product")
+        self.assertTrue(args.live)
+        self.assertTrue(args.yes)
+
     def test_parser_exposes_live_repository_issue_listener(self):
         args = parser().parse_args([
             "run", "--repo", "/tmp/workshop", "--listen",
@@ -330,9 +340,13 @@ class ControlCenterTests(unittest.TestCase):
             self.assertEqual(snapshot["project"]["source_roots"], ["src"])
             self.assertFalse(snapshot["project"]["configured"])
 
-    def test_charter_is_a_visible_explicit_human_gate_before_planning(self):
+    def test_repository_contract_is_one_visible_human_gate_before_planning(self):
         with tempfile.TemporaryDirectory() as directory:
             center = ControlCenter(self.make_repo(directory))
+            (center.repo / ".factory").mkdir(exist_ok=True)
+            (center.repo / ".factory/local.toml").write_text(
+                'preset = "codex-workshop"\nprofile = "standard"\n'
+            )
             project = ProjectContract.detect(center.repo)
             project.write()
             FactoryCharter.draft(center.repo, project).write()
@@ -342,7 +356,7 @@ class ControlCenterTests(unittest.TestCase):
 
             self.assertTrue(draft["charter"]["configured"])
             self.assertFalse(draft["charter"]["approved"])
-            self.assertEqual(draft["journey"]["next"]["label"], "Review Factory Charter")
+            self.assertEqual(draft["journey"]["next"]["label"], "Review and approve")
             self.assertEqual(title, "Approve Factory Charter")
             self.assertIn("approve-charter", commands[0])
             self.assertIn("--yes", commands[0])
@@ -356,6 +370,58 @@ class ControlCenterTests(unittest.TestCase):
             self.assertEqual(publish_title, "Publish repository setup")
             self.assertIn("publish-setup", publish_commands[0])
             self.assertIn("--yes", publish_commands[0])
+
+    def test_contract_approval_runs_the_hidden_setup_sequence(self):
+        with tempfile.TemporaryDirectory() as directory:
+            center = ControlCenter(self.make_repo(directory))
+            (center.repo / ".factory").mkdir(exist_ok=True)
+            (center.repo / ".factory/local.toml").write_text(
+                'preset = "codex-workshop"\n'
+                'profile = "standard"\n'
+                'github_repository = "https://github.com/example/product"\n'
+            )
+            project = ProjectContract.detect(center.repo)
+            project.write()
+            FactoryCharter.draft(center.repo, project).write()
+
+            title, commands = center.build_commands(
+                "approve-contract", {"mode": "live"},
+            )
+
+            self.assertEqual(title, "Approve and prepare repository")
+            self.assertEqual(commands[0][1], "approve-contract")
+            self.assertIn("--yes", commands[0])
+            self.assertIn("--live", commands[0])
+
+    def test_failed_automatic_preflight_keeps_setup_as_the_next_safe_action(self):
+        with tempfile.TemporaryDirectory() as directory:
+            center = ControlCenter(self.make_repo(directory))
+            (center.repo / ".factory").mkdir(exist_ok=True)
+            (center.repo / ".factory/local.toml").write_text(
+                'preset = "codex-workshop"\nprofile = "standard"\n'
+            )
+            project = ProjectContract.detect(center.repo)
+            project.write()
+            FactoryCharter.draft(center.repo, project).write()
+            FactoryCharter.load(center.repo).approve()
+            environment = center.repo / ".factory/environment"
+            environment.mkdir(parents=True)
+            (environment / "state.json").write_text(json.dumps({
+                "provider": "local",
+                "status": "healthy",
+                "checks": [],
+            }))
+            center.operation = {
+                "action": "approve-contract",
+                "status": "failed",
+                "exit_code": 1,
+            }
+
+            snapshot = center.snapshot()
+
+            self.assertEqual(snapshot["journey"]["next"]["label"], "Fix and retry setup")
+            self.assertEqual(snapshot["journey"]["next"]["view"], "connect")
+            self.assertNotEqual(snapshot["journey"]["next"]["label"], "Open the PRD")
 
     def test_environment_lifecycle_is_visible_and_allowlisted(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -1993,7 +2059,7 @@ class ControlCenterTests(unittest.TestCase):
         backend = (Path(__file__).parents[1] / "control_center.py").read_text()
 
         for label in (
-            "Connect the factory",
+            "Set up the factory in three steps",
             "Define the outcome",
             "Review the plan",
             "Operate the factory",
@@ -2112,7 +2178,17 @@ class ControlCenterTests(unittest.TestCase):
         self.assertIn("Advanced role settings", source)
         self.assertNotIn("Run setup", source)
         self.assertNotIn('data-action="prepare-project"', source)
-        self.assertIn('environment.status !== "healthy"', javascript)
+        self.assertIn("Set up the factory in three steps", source)
+        self.assertEqual(source.count('class="setup-step-number"'), 3)
+        self.assertIn('data-action="approve-contract"', source)
+        for action in (
+            'data-action="doctor"', 'data-action="approve-charter"',
+            'data-action="publish-setup"', 'data-action="environment-provision"',
+            'data-action="environment-prepare"', 'data-action="environment-health"',
+        ):
+            self.assertNotIn(action, source)
+        self.assertIn('operation.action === "approve-contract"', javascript)
+        self.assertIn("The Activity panel shows every command", source)
         self.assertIn("Your draft saves automatically", source)
         self.assertNotIn('id="global-next"', source)
         self.assertNotIn('id="open-reset-overview"', source)

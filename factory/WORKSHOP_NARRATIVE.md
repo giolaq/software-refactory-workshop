@@ -259,16 +259,16 @@ Use one sentence to distinguish them:
 
 ### Attendee activity: establish the boundary
 
-Attendees connect their disposable repository, create and review the contracts,
-approve the Charter, provision the development environment, prepare declared
-dependencies, check health, and run preflight.
+Attendees make three decisions: connect their disposable repository, create its
+repository contract, then review and approve that exact contract.
 
-While they work, repeat this progression:
+Explain that the final approval starts a visible mechanical progression:
 
 ```text
 Provision → Prepare → Check health → Run preflight
 ```
 
+- The UI shows this as automatic work, not four more attendee phases.
 - Provision binds the repository revision and Project Contract.
 - Prepare runs reviewed setup commands.
 - Health proves the development environment.
