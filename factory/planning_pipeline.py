@@ -30,6 +30,7 @@ from planner import dependency_waves, issue_body, render_review, validate_plan
 from sensitive_data import redact_credentials
 from adapter_capabilities import role_environment
 from codex_cli import codex_environment
+from pi_cli import pi_environment
 from triage import classify_controls
 
 
@@ -54,7 +55,7 @@ REVISION_STAGES = {
     "slices": "vertical_slices",
 }
 ID_PATTERN = re.compile(r"[A-Z][A-Z0-9_-]{0,31}")
-SUPPORTED_PLANNING_AGENTS = {"bedrock", "claude", "codex"}
+SUPPORTED_PLANNING_AGENTS = {"bedrock", "claude", "codex", "pi"}
 BEDROCK_ENVIRONMENT = (
     "AWS_REGION", "AWS_DEFAULT_REGION", "AWS_CONTAINER_CREDENTIALS_RELATIVE_URI",
     "AWS_CONTAINER_CREDENTIALS_FULL_URI", "AWS_CONTAINER_AUTHORIZATION_TOKEN",
@@ -112,6 +113,33 @@ def claude_json_schema(path: Path) -> str:
     schema = read_json(path)
     schema.pop("$schema", None)
     return json.dumps(schema)
+
+
+def pi_final_text(output: str) -> str:
+    """Return the last assistant text from a Pi JSON event stream."""
+    final = ""
+    for line in output.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            event = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if event.get("type") != "message_end":
+            continue
+        message = event.get("message", {})
+        if message.get("role") != "assistant":
+            continue
+        parts = [
+            block.get("text", "")
+            for block in message.get("content", [])
+            if isinstance(block, dict) and block.get("type") == "text"
+        ]
+        text = "\n".join(parts).strip()
+        if text:
+            final = text
+    return final
 
 
 def _run_claude_agent(
@@ -932,6 +960,29 @@ def _run_stage_agent_impl(
             log.write_text(result.stderr)
             if result.returncode == 0:
                 raw.write_text(result.stdout)
+        elif planning_agent == "pi":
+            schema_text = json.dumps(read_json(schema))
+            command = [
+                agent_bin, "-p", "--no-session", "--mode", "json",
+                "--tools", "read",
+                prompt + (
+                    "\n\n## Output schema\n\n"
+                    "Return exactly one JSON object that conforms to this schema and nothing else:\n\n"
+                    f"```json\n{schema_text}\n```\n"
+                ),
+            ]
+            result = subprocess.run(
+                command, cwd=repo, text=True, capture_output=True,
+                env=pi_environment("LANG", "LC_ALL", "TERM"),
+            )
+            log.write_text(result.stdout + result.stderr)
+            if result.returncode == 0:
+                text = pi_final_text(result.stdout)
+                if not text:
+                    raise RuntimeError(
+                        f"{stage.replace('_', ' ')} expert returned no JSON artifact; see {log}"
+                    )
+                raw.write_text(text)
         else:
             raise ValueError(f"unsupported planning adapter: {planning_agent}")
         if planning_agent == "codex":
@@ -1563,7 +1614,7 @@ def continue_plan(
         raise ValueError("this planning run uses deterministic fixtures; rerun with --mock")
     elif planning_agent_override:
         if planning_agent_override not in SUPPORTED_PLANNING_AGENTS:
-            raise ValueError("planning retry agent must be bedrock, claude, or codex")
+            raise ValueError("planning retry agent must be bedrock, claude, codex, or pi")
         if planning_agent_override != planning_agent:
             manifest.setdefault("planning_agent_history", []).append({
                 "from": planning_agent,

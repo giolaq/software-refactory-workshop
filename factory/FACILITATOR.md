@@ -43,7 +43,7 @@ A Live Run also requires:
 - [ ] GitHub authentication includes the `project` scope.
 - [ ] The repository owner can create issues, Projects, branches, and pull requests.
 - [ ] The repository URL is saved in **Setup → Connection** and the repository card says **connected**.
-- [ ] A current Claude or Codex planning CLI is authenticated.
+- [ ] A current Bedrock, Claude, Codex, or Pi planning CLI is authenticated.
 - [ ] The selected supervision, implementation, QA, and code-review adapters are registered and their
       noninteractive commands have been smoke-tested. Claude is only the worked
       example; attendees may use their own agent.
@@ -105,7 +105,7 @@ exercise to an unfamiliar repository during the three-hour session.
 
 If the group uses another implementation or QA adapter, register it under
 `[agents]` in `factory/factory.toml`, then save the attendee defaults with
-`factory configure`. Keep Claude or Codex as the structured planning adapter.
+`factory configure`. Keep Bedrock, Claude, Codex, or Pi as the structured planning adapter.
 The exact contract and wrapper requirements are in `factory/CONFIGURATION.md`.
 Run `./factory/factory adapter-check` and show its declared capabilities in
 **Setup → Connection** before using a custom adapter live.

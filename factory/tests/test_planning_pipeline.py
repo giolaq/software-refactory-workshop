@@ -18,6 +18,7 @@ from planning_pipeline import (
     approve_product,
     continue_plan,
     load_manifest,
+    pi_final_text,
     plan_prd,
     prepare_publication,
     revise_plan,
@@ -64,6 +65,21 @@ class PlanningPipelineTests(unittest.TestCase):
         approve_product(self.repo, run.name, assume_yes=True)
         continue_plan(self.repo, run.name, "codex", mock=True)
         return run
+
+    def test_pi_final_text_extracts_last_assistant_json(self):
+        events = "\n".join([
+            json.dumps({"type": "session", "id": "x"}),
+            json.dumps({"type": "agent_start"}),
+            json.dumps({"type": "message_end", "message": {
+                "role": "assistant", "content": [{"type": "text", "text": "thinking aloud"}],
+            }}),
+            json.dumps({"type": "message_end", "message": {
+                "role": "assistant", "content": [{"type": "text", "text": '{"product": 1}'}],
+            }}),
+            json.dumps({"type": "agent_end", "messages": []}),
+        ])
+        self.assertEqual(pi_final_text(events), '{"product": 1}')
+        self.assertEqual(pi_final_text("not json at all"), "")
 
     def test_plan_stops_at_product_approval_gate(self):
         run = self.start()

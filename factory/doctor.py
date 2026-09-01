@@ -19,6 +19,7 @@ from codex_cli import (
     codex_region_environment,
     codex_uses_managed_bedrock,
 )
+from pi_cli import pi_auth_ready, pi_default_provider
 from github_repository import (
     GitHubRepositoryError,
     parse_github_repository,
@@ -335,6 +336,7 @@ class DiagnosticSuite:
             "codex": self._probe_codex,
             "claude": self._probe_claude,
             "cursor": self._probe_cursor,
+            "pi": self._probe_pi,
         }
         if "bedrock" in required_agents:
             probes["bedrock"] = self._probe_bedrock
@@ -382,6 +384,19 @@ class DiagnosticSuite:
         if self.planning_agent == "claude" and not structured:
             return False, "update Claude Code; --json-schema is required for planning"
         return True, found
+
+    @staticmethod
+    def _probe_pi() -> tuple[bool, str]:
+        found = shutil.which("pi")
+        if not found:
+            return False, "not installed"
+        provider = pi_default_provider()
+        if not provider:
+            return False, (
+                "no default provider configured; set defaultProvider in "
+                "~/.pi/agent/settings.json or export a provider API key"
+            )
+        return pi_auth_ready(found)
 
     @staticmethod
     def _probe_cursor() -> tuple[bool, str]:

@@ -530,6 +530,33 @@ class ControlCenterTests(unittest.TestCase):
             with self.assertRaisesRegex(InputError, "Unknown agent adapter"):
                 center.build_commands("configure", {"agent": "codex; rm -rf repo"})
 
+    def test_pi_adapter_can_be_selected_at_connection(self):
+        with tempfile.TemporaryDirectory() as directory:
+            center = ControlCenter(self.make_repo(directory))
+
+            self.assertIn("pi", center.adapters())
+            _, commands = center.build_commands("configure", {
+                "mode": "live",
+                "preset": "pi-workshop",
+                "github_repository": "https://github.com/attendee/workshop",
+            })
+            self.assertIn("--preset", commands[-1])
+            self.assertIn("pi-workshop", commands[-1])
+
+            _, commands = center.build_commands("configure", {
+                "planning_agent": "pi",
+                "agent": "pi",
+                "qa_agent": "pi",
+                "supervisor_agent": "pi",
+                "review_agent": "pi",
+            })
+            self.assertIn("--planning-agent", commands[0])
+            self.assertEqual(commands[0][commands[0].index("--planning-agent") + 1], "pi")
+            self.assertIn("--agent", commands[0])
+            self.assertIn("--qa-agent", commands[0])
+            self.assertIn("--supervisor-agent", commands[0])
+            self.assertIn("--review-agent", commands[0])
+
     def test_live_configuration_requires_and_connects_an_explicit_repository_url(self):
         with tempfile.TemporaryDirectory() as directory:
             center = ControlCenter(self.make_repo(directory))
@@ -1005,7 +1032,7 @@ class ControlCenterTests(unittest.TestCase):
 
             self.assertEqual(title, "Run architecture and delivery planning")
             self.assertEqual(commands[0][-2:], ["--planning-agent", "codex"])
-            with self.assertRaisesRegex(InputError, "Claude or Codex"):
+            with self.assertRaisesRegex(InputError, "Bedrock, Claude, Codex, or Pi"):
                 center.build_commands("continue-plan", {
                     "plan_id": plan,
                     "planning_agent": "cursor",
@@ -2207,8 +2234,13 @@ class ControlCenterTests(unittest.TestCase):
 
         self.assertIn('value="bedrock-aws">Amazon Bedrock on AWS', source)
         self.assertIn('Bedrock, Claude, Codex, Cursor, or custom', source)
-        self.assertIn('["bedrock", "claude", "codex"].includes(item)', javascript)
-        self.assertIn('["bedrock", "claude", "codex"].includes(agent)', javascript)
+        self.assertIn('["bedrock", "claude", "codex", "pi"].includes(item)', javascript)
+        self.assertIn('["bedrock", "claude", "codex", "pi"].includes(agent)', javascript)
+
+    def test_control_center_frontend_offers_the_pi_workshop_preset(self):
+        frontend = Path(__file__).parents[1] / "control_center"
+        source = (frontend / "index.html").read_text()
+        self.assertIn('value="pi-workshop">Pi workshop', source)
 
     def test_factory_progress_pulses_only_the_current_running_phase(self):
         frontend = Path(__file__).parents[1] / "control_center"

@@ -290,7 +290,7 @@ class FactoryContractTests(unittest.TestCase):
             capture_output=True,
             check=True,
         )
-        self.assertIn("--live-agent {bedrock,claude,codex}", result.stdout)
+        self.assertIn("--live-agent {bedrock,claude,codex,pi}", result.stdout)
 
     def test_live_smoke_brief_records_protected_acceptance_test_approval(self):
         class StopAfterProductReview(Exception):

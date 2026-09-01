@@ -35,6 +35,7 @@ from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
 
 from doctor import run_doctor
+from pi_cli import pi_auth_ready
 from codex_cli import (
     codex_auth_ready,
     codex_region_environment,
@@ -155,6 +156,7 @@ RECOVERY_PLANNING_STAGES = (
 DEFAULT_AGENTS = {
     "claude": 'claude -p "$(cat {prompt})" --permission-mode acceptEdits',
     "codex": '{codex} exec --sandbox workspace-write --ephemeral "$(cat {prompt})"',
+    "pi": 'pi -p --no-session "$(cat {prompt})"',
     "cursor": 'cursor-agent -p "$(cat {prompt})"',
     "mock": "{python} {factory_dir}/mock_agent.py {ticket} --scenario {scenario} --attempt {attempt} < {prompt}",
     "mock-qa": "{python} {factory_dir}/mock_qa_agent.py {ticket} --scenario {scenario} < {prompt}",
@@ -1400,6 +1402,16 @@ def resolve_codex_cli() -> str:
 def resolve_planning_cli(agent: str) -> str:
     if agent == "codex":
         return resolve_codex_cli()
+    if agent == "pi":
+        binary = os.environ.get("FACTORY_PI_BIN") or shutil.which("pi")
+        if not binary:
+            raise RuntimeError(
+                "Pi CLI not found. Install @earendil-works/pi-coding-agent, then retry."
+            )
+        ready, detail = pi_auth_ready(binary)
+        if not ready:
+            raise RuntimeError(f"Pi CLI is not ready: {detail}")
+        return binary
     if agent == "bedrock":
         if not (os.environ.get("AWS_REGION") or os.environ.get("AWS_DEFAULT_REGION")):
             raise RuntimeError("Bedrock planning requires AWS_REGION or AWS_DEFAULT_REGION.")

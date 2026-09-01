@@ -58,7 +58,7 @@ Receipt with revision hashes, verification, risks, artifacts, and policy hashes.
 
 Claude is the worked example below. Use `codex-workshop` for an all-Codex run,
 or configure any registered supervision, implementation, QA, and code-review adapters before planning.
-Planning itself currently uses Claude or Codex because it requires structured
+Planning itself currently uses Bedrock, Claude, Codex, or Pi because it requires structured
 output against the stage schemas. See `CONFIGURATION.md`.
 
 ```sh

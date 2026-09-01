@@ -37,6 +37,17 @@ class SessionConfigTests(unittest.TestCase):
             self.assertEqual(value["project_number"], 7)
             self.assertEqual(load_session_config(repo), value)
 
+    def test_pi_preset_selects_pi_for_every_role(self):
+        with tempfile.TemporaryDirectory() as directory:
+            repo = Path(directory)
+            _, value = configure_session(repo, "pi-workshop")
+
+        self.assertEqual(value["planning_agent"], "pi")
+        self.assertEqual(value["agent"], "pi")
+        self.assertEqual(value["qa_agent"], "pi")
+        self.assertEqual(value["supervisor_agent"], "pi")
+        self.assertEqual(value["review_agent"], "pi")
+
     def test_run_uses_saved_defaults_and_cli_flags_override_them(self):
         with tempfile.TemporaryDirectory() as directory:
             repo = Path(directory)

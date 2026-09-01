@@ -211,7 +211,7 @@ The Control Center exposes local engine-room evidence. GitHub Projects remains t
 shared backlog and dependency view; the two interfaces are deliberately not
 presented as the same system.
 
-The four planning stages currently use Claude or Codex because their adapters
+The four planning stages currently use Bedrock, Claude, Codex, or Pi because their adapters
 enforce the planning JSON schemas. Supervision, implementation, QA, and code review accept any lowercase
 adapter name registered under `[agents]` in `factory/factory.toml`. This keeps
 the control flow stable while teams swap models, CLIs, wrappers, or execution

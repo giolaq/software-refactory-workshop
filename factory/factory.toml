@@ -8,6 +8,7 @@ gate_timeout = 300
 bedrock = '{python} {factory_dir}/bedrock_adapter.py run --prompt {prompt} --workspace {worktree}'
 claude = 'claude -p "$(cat {prompt})" --permission-mode acceptEdits'
 codex = '{codex} exec --sandbox workspace-write --ephemeral "$(cat {prompt})"'
+pi = 'pi -p --no-session "$(cat {prompt})"'
 cursor = 'cursor-agent -p "$(cat {prompt})"'
 mock = '{python} {factory_dir}/mock_agent.py {ticket} --scenario {scenario} --attempt {attempt} < {prompt}'
 mock-qa = '{python} {factory_dir}/mock_qa_agent.py {ticket} --scenario {scenario} < {prompt}'
@@ -46,6 +47,17 @@ network_expectation = "provider-only"
 environment_allowlist = ["PATH", "HOME", "TMPDIR", "LANG", "TERM", "CODEX_HOME", "AWS_REGION", "AWS_DEFAULT_REGION"]
 credential_names = []
 read_only_template = '{codex} exec --sandbox read-only --ephemeral "$(cat {prompt})"'
+
+[agent_capabilities.pi]
+protocol_version = 1
+features = ["structured-planning", "native-read-only"]
+execution_environment = "local"
+filesystem_mode = "workspace-write"
+allowed_working_roots = ["worktree"]
+network_expectation = "provider-only"
+environment_allowlist = ["PATH", "HOME", "TMPDIR", "LANG", "LC_ALL", "TERM", "PI_API_KEY", "PI_OFFLINE", "GOOGLE_API_KEY", "ANTHROPIC_API_KEY", "OPENAI_API_KEY", "GROQ_API_KEY", "MISTRAL_API_KEY", "OPENROUTER_API_KEY", "XAI_API_KEY", "ZAI_API_KEY"]
+credential_names = []
+read_only_template = 'pi -p --no-session --tools read "$(cat {prompt})"'
 
 [agent_capabilities.cursor]
 protocol_version = 1

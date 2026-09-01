@@ -210,6 +210,12 @@ Or use Codex for planning, supervision, QA, implementation, and code review:
 ./factory/factory configure --preset codex-workshop
 ```
 
+Or use the Pi coding agent (`pi`) for every role:
+
+```sh
+./factory/factory configure --preset pi-workshop
+```
+
 Both presets select the Standard Factory Profile, require human review of
 Acceptance Tests, and run one ticket at a time. Standard also uses the Code
 Review Agent and Supervisor recommendation loop described below. Compare executable role sets or
@@ -233,9 +239,9 @@ You can also assign different built-in adapters to each role:
   --max-parallel 1
 ```
 
-Only the planning role is limited to Claude or Codex. Those integrations
-provide the structured JSON output required by the four planning schemas.
-The supervisor, implementation, independent QA, and code-review roles can use any adapter registered in
+Only the planning role is limited to Bedrock, Claude, Codex, or Pi. Those
+integrations provide the structured JSON output required by the four planning
+schemas. The supervisor, implementation, independent QA, and code-review roles can use any adapter registered in
 `factory/factory.toml`.
 
 `factory/roles.json` defines each Agent Role's ownership, exclusions,
@@ -451,7 +457,7 @@ require_human_approval = true
 ```
 
 `agent_timeout` prevents a broken deterministic rehearsal adapter from hanging
-the exercise. Live Claude, Codex, Cursor, and custom adapters have no
+the exercise. Live Claude, Codex, Pi, Cursor, and custom adapters have no
 presentation timeout; their process remains observable until it exits or the
 operator intervenes. Gate timeouts still apply in both modes.
 

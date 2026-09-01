@@ -263,7 +263,7 @@ built-in adapters or register your own supervision, implementation, QA, and code
   --max-parallel 1
 ```
 
-Planning currently uses Claude or Codex because those integrations enforce the
+Planning currently uses Bedrock, Claude, Codex, or Pi because those integrations enforce the
 four structured planning schemas. Supervision, implementation, QA, and code review can use any lowercase
 adapter registered in `factory.toml`. Follow `CONFIGURATION.md` to connect a
 different CLI, model wrapper, container, or remote runner.
