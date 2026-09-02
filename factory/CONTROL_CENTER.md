@@ -86,7 +86,7 @@ replacement remains available as evidence.
 
 Agent-process failures are classified separately. A session or rate limit does
 not expose a same-adapter retry because that would repeat the same failure;
-choose another configured Claude or Codex adapter, or wait for the provider to
+choose another configured Bedrock, Claude, Codex, or Cursor adapter, or wait for the provider to
 become available. Authentication and missing-tool failures point to preflight.
 Only an unclassified, potentially transient process failure offers **Retry same
 adapter**. Adapter changes are recorded in the manifest, valid upstream

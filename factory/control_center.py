@@ -1798,7 +1798,7 @@ class ControlCenter:
             planning = self._string(payload, "planning_agent")
             if planning:
                 if planning not in PLANNING_AGENTS:
-                    raise InputError("Planning must use Bedrock, Claude, or Codex.")
+                    raise InputError("Planning must use Bedrock, Claude, Codex, or Cursor.")
                 command += ["--planning-agent", planning]
             parallel = self._positive_int(payload, "max_parallel")
             project = self._positive_int(payload, "project_number")
@@ -1920,7 +1920,7 @@ class ControlCenter:
                 planning_agent = self._string(payload, "planning_agent")
                 if planning_agent:
                     if planning_agent not in PLANNING_AGENTS:
-                        raise InputError("Planning retry must use Claude or Codex.")
+                        raise InputError("Planning retry must use Bedrock, Claude, Codex, or Cursor.")
                     command += ["--planning-agent", planning_agent]
             return "Run architecture and delivery planning", [command]
         if action == "publish-plan":

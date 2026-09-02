@@ -57,9 +57,10 @@ Receipt with revision hashes, verification, risks, artifacts, and policy hashes.
 ## Human workflow
 
 Claude is the worked example below. Use `codex-workshop` for an all-Codex run,
-or configure any registered supervision, implementation, QA, and code-review adapters before planning.
-Planning itself currently uses Claude or Codex because it requires structured
-output against the stage schemas. See `CONFIGURATION.md`.
+`cursor-workshop` for an all-Cursor run, or configure registered adapters per
+role before planning. Built-in Bedrock, Claude, Codex, and Cursor planning
+adapters produce structured output for the stage schemas. See
+`CONFIGURATION.md` and `CURSOR.md`.
 
 ```sh
 ./factory/factory configure \

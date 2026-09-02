@@ -53,6 +53,8 @@ commands so workshop infrastructure does not need to run continuously.
 - Use the [configuration guide](factory/CONFIGURATION.md) to select Claude,
   Codex, Cursor, or register your own Supervisor, Implementation, QA, and Code Review adapters,
   model wrapper, and execution environment.
+- Use the [Cursor CLI guide](factory/CURSOR.md) to install Cursor, select the
+  one-click preset, understand Ask versus Agent mode, and configure permissions.
 - Use the [Control Center guide](factory/CONTROL_CENTER.md) to inspect how worker
   Handoff Receipts become validated supervisor dispatch commands and how a
   separate Code Review role requests repairs or approves an exact candidate

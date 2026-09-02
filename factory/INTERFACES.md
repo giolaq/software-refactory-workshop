@@ -86,6 +86,11 @@ Run the conformance report for every configured adapter:
 ./factory/factory adapter-check
 ```
 
+The built-in Cursor compatibility adapter declares structured planning and
+native read-only execution. It normalizes Cursor's JSON/stream-JSON envelopes
+but remains a legacy command adapter rather than a protocol-v1 result emitter.
+See [CURSOR.md](CURSOR.md) for the exact boundary.
+
 See `factory/examples/custom-adapter.toml` and
 `factory/examples/custom_protocol_adapter.py` for a minimal protocol-aware
 adapter.

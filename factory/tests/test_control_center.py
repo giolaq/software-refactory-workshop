@@ -1005,11 +1005,12 @@ class ControlCenterTests(unittest.TestCase):
 
             self.assertEqual(title, "Run architecture and delivery planning")
             self.assertEqual(commands[0][-2:], ["--planning-agent", "codex"])
-            with self.assertRaisesRegex(InputError, "Claude or Codex"):
-                center.build_commands("continue-plan", {
-                    "plan_id": plan,
-                    "planning_agent": "cursor",
-                })
+            title, commands = center.build_commands("continue-plan", {
+                "plan_id": plan,
+                "planning_agent": "cursor",
+            })
+            self.assertEqual(title, "Run architecture and delivery planning")
+            self.assertEqual(commands[0][-2:], ["--planning-agent", "cursor"])
 
     def test_blocked_expert_decisions_revise_the_stage_then_resume_planning(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -2206,9 +2207,10 @@ class ControlCenterTests(unittest.TestCase):
         javascript = (frontend / "app.js").read_text()
 
         self.assertIn('value="bedrock-aws">Amazon Bedrock on AWS', source)
+        self.assertIn('value="cursor-workshop">Cursor workshop', source)
         self.assertIn('Bedrock, Claude, Codex, Cursor, or custom', source)
-        self.assertIn('["bedrock", "claude", "codex"].includes(item)', javascript)
-        self.assertIn('["bedrock", "claude", "codex"].includes(agent)', javascript)
+        self.assertIn('["bedrock", "claude", "codex", "cursor"].includes(item)', javascript)
+        self.assertIn('["bedrock", "claude", "codex", "cursor"].includes(agent)', javascript)
 
     def test_factory_progress_pulses_only_the_current_running_phase(self):
         frontend = Path(__file__).parents[1] / "control_center"

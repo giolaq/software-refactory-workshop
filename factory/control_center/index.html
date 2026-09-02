@@ -148,7 +148,7 @@
           <p class="setup-intro">Tell the factory where to work and which agents to use. Saving verifies the GitHub repository and opens its isolated checkout.</p>
           <form id="config-form">
             <div class="form-grid essential-settings">
-              <label>Agent preset<select name="preset"><option value="claude-workshop">Claude workshop</option><option value="codex-workshop">Codex workshop</option><option value="bedrock-aws">Amazon Bedrock on AWS</option><option value="">Custom roles</option></select></label>
+              <label>Agent preset<select name="preset"><option value="claude-workshop">Claude workshop</option><option value="codex-workshop">Codex workshop</option><option value="cursor-workshop">Cursor workshop</option><option value="bedrock-aws">Amazon Bedrock on AWS</option><option value="">Custom roles</option></select></label>
               <label>Run mode<select id="connect-mode"><option value="rehearsal">Rehearsal</option><option value="live">Live</option></select></label>
               <label>Profile<select name="profile"><option value="standard">Standard</option><option value="lean">Lean</option><option value="assured">Assured</option><option value="autonomous-demo">Autonomous Demo</option></select></label>
               <label class="wide-field" data-live-setting>GitHub repository URL<input name="github_repository" type="url" inputmode="url" placeholder="https://github.com/you/workshop-repo"><small>Saving verifies access and opens an isolated managed checkout. The factory never repoints another repository's <code>origin</code>.</small></label>

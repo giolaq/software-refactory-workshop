@@ -12,6 +12,9 @@ keeps production-only interfaces in optional reference sections.
 
 The guide supports deterministic rehearsal and live GitHub paths. Claude is
 the worked example, but attendees can use Codex, Cursor, or a custom CLI.
+For Cursor, install the `agent` executable, run `agent login`, and select
+**Cursor workshop** in the Control Center. The full operator contract is in
+[`factory/CURSOR.md`](../factory/CURSOR.md).
 The hosted guide provides instructions; the repository's Control Center runs
 locally because it operates the attendee's agents, Git worktrees, and files.
 

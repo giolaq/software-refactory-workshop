@@ -5,8 +5,8 @@ tied to one coding agent, model, or execution environment. Use a built-in
 adapter, combine different adapters by role, or register a noninteractive
 command that invokes your own agent.
 
-The `bedrock-aws` preset is the hosted counterpart to the local Claude and
-Codex presets. It selects the built-in Amazon Bedrock adapter for planning,
+The `bedrock-aws` preset is the hosted counterpart to the local Claude, Codex,
+and Cursor presets. It selects the built-in Amazon Bedrock adapter for planning,
 supervision, QA, implementation, and code review:
 
 ```sh
@@ -210,7 +210,13 @@ Or use Codex for planning, supervision, QA, implementation, and code review:
 ./factory/factory configure --preset codex-workshop
 ```
 
-Both presets select the Standard Factory Profile, require human review of
+Or use Cursor for every role:
+
+```sh
+./factory/factory configure --preset cursor-workshop
+```
+
+All workshop presets select the Standard Factory Profile, require human review of
 Acceptance Tests, and run one ticket at a time. Standard also uses the Code
 Review Agent and Supervisor recommendation loop described below. Compare executable role sets or
 change profile explicitly:
@@ -233,10 +239,15 @@ You can also assign different built-in adapters to each role:
   --max-parallel 1
 ```
 
-Only the planning role is limited to Claude or Codex. Those integrations
-provide the structured JSON output required by the four planning schemas.
+The built-in Bedrock, Claude, Codex, and Cursor integrations provide the
+structured JSON output required by the four planning schemas.
 The supervisor, implementation, independent QA, and code-review roles can use any adapter registered in
 `factory/factory.toml`.
+
+Cursor's current executable is `agent`. Install it, run `agent login`, and
+confirm `agent status` before selecting the preset. The Factory also recognizes
+the older `cursor-agent` name. See [CURSOR.md](CURSOR.md) for its read-only and
+write modes, permissions, environment variables, and verification boundary.
 
 `factory/roles.json` defines each Agent Role's ownership, exclusions,
 verification responsibility, and Handoff Receipt. `factory/policy.json`

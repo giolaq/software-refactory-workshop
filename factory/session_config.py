@@ -17,7 +17,7 @@ from github_repository import parse_github_repository
 
 
 CONFIG_PATH = Path(".factory/local.toml")
-PLANNING_AGENTS = {"bedrock", "claude", "codex"}
+PLANNING_AGENTS = {"bedrock", "claude", "codex", "cursor"}
 FACTORY_PROFILES = set(PROFILES)
 AGENT_NAME = re.compile(r"[a-z][a-z0-9_-]{0,31}")
 PRESETS = {
@@ -38,6 +38,16 @@ PRESETS = {
         "supervisor_agent": "codex",
         "review_agent": "codex",
         "planning_agent": "codex",
+        "review_qa_tests": True,
+        "max_parallel": 1,
+    },
+    "cursor-workshop": {
+        "profile": "standard",
+        "agent": "cursor",
+        "qa_agent": "cursor",
+        "supervisor_agent": "cursor",
+        "review_agent": "cursor",
+        "planning_agent": "cursor",
         "review_qa_tests": True,
         "max_parallel": 1,
     },
@@ -72,7 +82,7 @@ def validate_session_config(value: dict) -> dict:
         ):
             raise ValueError(f"{key} must be a lowercase registered adapter name")
     if "planning_agent" in value and value["planning_agent"] not in PLANNING_AGENTS:
-        raise ValueError("planning_agent must be bedrock, claude, or codex")
+        raise ValueError("planning_agent must be bedrock, claude, codex, or cursor")
     if "review_qa_tests" in value and not isinstance(value["review_qa_tests"], bool):
         raise ValueError("review_qa_tests must be true or false")
     if "github_repository" in value:
