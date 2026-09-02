@@ -1,6 +1,6 @@
 # Software (re)-Factory workshop guide
 
-Release: `workshop-v1.2.0`
+Release: `workshop-v1.2.1`
 
 The attendee-facing, self-guided website for the Software (re)-Factory
 workshop. It follows the Control Center's **Setup → Plan → Deliver → Review**

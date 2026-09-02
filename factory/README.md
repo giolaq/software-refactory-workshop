@@ -1,6 +1,6 @@
 # Software (re)-Factory
 
-Release: `workshop-v1.2.0`
+Release: `workshop-v1.2.1`
 
 Software (re)-Factory is a legible control layer for running several coding
 agents against a dependency-mapped backlog. GitHub Issues are tickets, Projects

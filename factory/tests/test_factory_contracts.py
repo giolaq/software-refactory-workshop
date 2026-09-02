@@ -10,7 +10,7 @@ from unittest.mock import Mock, patch
 FACTORY = Path(__file__).parents[1] / "orchestrator.py"
 sys.path.insert(0, str(Path(__file__).parents[1]))
 
-from factory_contracts import handoff_receipt, validate_handoff_receipt
+from factory_contracts import WORKSHOP_VERSION, handoff_receipt, validate_handoff_receipt
 from release_check import audit_release, run_live_github_smoke, validate_standard_rehearsal
 
 
@@ -50,17 +50,19 @@ class FactoryContractTests(unittest.TestCase):
             capture_output=True,
             check=True,
         )
-        self.assertEqual(result.stdout.strip(), "factory workshop-v1.2.0")
+        self.assertEqual(result.stdout.strip(), "factory workshop-v1.2.1")
 
     def test_release_check_audits_clean_versioned_tree(self):
         with tempfile.TemporaryDirectory() as directory:
             repo = Path(directory)
             (repo / "factory").mkdir()
             (repo / "workshop-guide/app").mkdir(parents=True)
-            (repo / "factory/factory_contracts.py").write_text('WORKSHOP_VERSION = "workshop-v1.2.0"\n')
-            (repo / "factory/WORKSHOP_OUTLINE.md").write_text("# workshop-v1.2.0\n")
-            (repo / "factory/FACILITATOR.md").write_text("# workshop-v1.2.0\n")
-            (repo / "workshop-guide/app/page.tsx").write_text("workshop-v1.2.0\n")
+            (repo / "factory/factory_contracts.py").write_text(
+                f'WORKSHOP_VERSION = "{WORKSHOP_VERSION}"\n',
+            )
+            (repo / "factory/WORKSHOP_OUTLINE.md").write_text(f"# {WORKSHOP_VERSION}\n")
+            (repo / "factory/FACILITATOR.md").write_text(f"# {WORKSHOP_VERSION}\n")
+            (repo / "workshop-guide/app/page.tsx").write_text(f"{WORKSHOP_VERSION}\n")
             subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
             subprocess.run(["git", "add", "."], cwd=repo, check=True)
             subprocess.run(

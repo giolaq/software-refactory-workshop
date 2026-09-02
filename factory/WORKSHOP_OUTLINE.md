@@ -1,6 +1,6 @@
 # Software (re)-Factory workshop
 
-Release: `workshop-v1.2.0`
+Release: `workshop-v1.2.1`
 
 Use this outline to present the workshop. The attendee website contains the commands and checkpoints; keep the live explanation focused on why each decision matters.
 

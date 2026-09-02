@@ -1,6 +1,6 @@
 # Software (re)-Factory Workshop
 
-Release: `workshop-v1.2.0`
+Release: `workshop-v1.2.1`
 
 This repository contains the reference factory orchestrator and the Pocket
 Cinema refactoring workpiece. A four-expert planning pipeline turns each PRD

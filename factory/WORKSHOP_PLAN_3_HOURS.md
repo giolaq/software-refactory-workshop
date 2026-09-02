@@ -1,6 +1,6 @@
 # Software (re)-Factory: three-hour workshop plan
 
-Release baseline: `workshop-v1.2.0`  
+Release baseline: `workshop-v1.2.1`
 Duration: 180 minutes, including one 10-minute break  
 Audience: software developers and technical leads  
 Format: individual repository, paired review, facilitator-led checkpoints

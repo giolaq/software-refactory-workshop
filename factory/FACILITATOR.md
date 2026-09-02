@@ -1,6 +1,6 @@
 # Facilitator runbook
 
-Release: `workshop-v1.2.0`
+Release: `workshop-v1.2.1`
 
 Use [WORKSHOP_NARRATIVE.md](WORKSHOP_NARRATIVE.md) for the spoken story,
 [WORKSHOP_OUTLINE.md](WORKSHOP_OUTLINE.md) for the presentation path, and
@@ -32,7 +32,7 @@ Complete this checklist before attendees arrive:
 - [ ] A colleague has recovered one failed preflight by using the website without verbal help.
 - [ ] The attendee website is open at the prerequisites section.
 - [ ] The frozen source, CLI, website, and Git tag all identify
-      `workshop-v1.2.0`.
+      `workshop-v1.2.1`.
 - [ ] Every attendee will create and own a separate repository. Rehearsal may
       stay local; Live uses GitHub. The facilitator uses a different repository.
 - [ ] Peer-review pairs are assigned without sharing repository state.
@@ -391,6 +391,6 @@ The command creates a unique smoke endpoint and Project on every invocation so
 an explicitly disposable repository can be retested without invalidating RED
 proof. It still merges a real change; do not point it at an attendee repository.
 
-After all checks pass, tag `workshop-v1.2.0`, make the repository public, and
+After all checks pass, tag `workshop-v1.2.1`, make the repository public, and
 enable GitHub template mode. Those external owner actions are intentionally not
 automated by the factory.
