@@ -299,7 +299,7 @@ export default function Home() {
             <div className="capability-table">
               <div><b>Adapter</b><b>Protocol v1 declaration</b></div>
               <div><span>Codex</span><span>Structured planning, native read-only, subagents</span></div>
-              <div><span>Cursor</span><span>Optional features not declared</span></div>
+              <div><span>Cursor</span><span>Structured planning, native read-only</span></div>
             </div>
             <p><strong>Unavailable stays unavailable.</strong> The same Agent Role keeps its policy, gates, and authority when you swap adapters.</p>
           </details>
@@ -343,7 +343,17 @@ gh auth refresh -s project
 
 # Run the check for the agent you will select later:
 claude auth status --text
-# or: codex login status` : ""}`}</CodeBlock>
+# or: codex login status
+# or: agent status` : ""}`}</CodeBlock>
+          <details>
+            <summary>Use Cursor CLI</summary>
+            <p>Install Cursor&apos;s current <code>agent</code> command, sign in, then select <strong>Cursor workshop</strong> during Setup. The Factory uses read-only Ask mode for planning and review, and Agent mode for implementation and QA.</p>
+            <CodeBlock label="Install and verify Cursor">{`curl https://cursor.com/install -fsS | bash
+agent --version
+agent login
+agent status`}</CodeBlock>
+            <p><a href="https://cursor.com/docs/cli/installation">Cursor installation</a> · <a href="https://cursor.com/docs/cli/reference/permissions">Cursor permissions</a></p>
+          </details>
           <Callout type="warning" title="Use your own repository">
             <p>For Live mode, use a personal GitHub repository. Do not use the facilitator&apos;s repository. Rehearsal mode stays on your computer and does not need GitHub or an agent login.</p>
           </Callout>
@@ -432,10 +442,14 @@ export TARGET="$CONTROL/.factory/repositories/YOUR-NAME/YOUR-REPOSITORY"`}</Code
 # For a new or existing product, skip bootstrap-workshop and run:
 # ./factory/factory init --repo "$TARGET"
 
-./factory/factory configure --repo "$TARGET" --preset claude-workshop \\
+AGENT_PRESET=claude-workshop # or codex-workshop or cursor-workshop
+./factory/factory configure --repo "$TARGET" --preset "$AGENT_PRESET" \\
   --github-repository https://github.com/YOUR-NAME/YOUR-REPOSITORY
 ./factory/factory approve-contract --repo "$TARGET" --live --yes` : `# setup_demo.sh already created the local contract.
 ./factory/factory approve-contract --yes`}</WorkshopPaths>
+          {track === "live" && <Callout type="note" title="Choose one agent preset">
+            <p>The command defaults to Claude. Set <code>AGENT_PRESET</code> to <code>codex-workshop</code> or <code>cursor-workshop</code> when you use one of those CLIs. In the Control Center, select the matching name from <strong>Agent preset</strong>.</p>
+          </Callout>}
           <WorkshopMedia
             src="/screenshots/control-center-connect.jpg"
             alt="Control Center Setup screen with Connect, Create contract, and Review and approve steps"

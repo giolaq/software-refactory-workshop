@@ -374,6 +374,25 @@ class PlanningPipelineTests(unittest.TestCase):
         self.assertEqual(manifest["planning_agent"], "claude")
         self.assertEqual(manifest["stages"]["product_review"]["agent"], "claude")
 
+    def test_cursor_planner_uses_read_only_mode_and_records_agent(self):
+        product = json.loads((FIXTURES / "01-product-review.json").read_text())
+        response = subprocess.CompletedProcess(
+            ["agent"], 0, f"```json\n{json.dumps(product)}\n```", "",
+        )
+        with patch("planning_pipeline.invoke_cursor", return_value=response) as invoked:
+            run = plan_prd(
+                self.repo, self.prd, None, "cursor", 3, 12,
+                "cursor", "agent", mock=False,
+            )
+
+        self.assertTrue(invoked.call_args.kwargs["read_only"])
+        self.assertIn("You are the Product Review expert", invoked.call_args.args[2])
+        self.assertIn("## Required JSON Schema", invoked.call_args.args[2])
+        self.assertIn('"blocking_questions"', invoked.call_args.args[2])
+        manifest = load_manifest(run)
+        self.assertEqual(manifest["planning_agent"], "cursor")
+        self.assertEqual(manifest["stages"]["product_review"]["agent"], "cursor")
+
     def test_bedrock_planner_uses_the_schema_adapter_without_github_credentials(self):
         product = (FIXTURES / "01-product-review.json").read_text()
         result = subprocess.CompletedProcess(["python", "bedrock"], 0, product, "Bedrock usage recorded\n")

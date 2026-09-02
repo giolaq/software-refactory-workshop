@@ -30,6 +30,7 @@ test("server-renders the concise self-guided workshop", async () => {
   }
   assert.match(html, /Review capacity is the limit/);
   assert.match(html, /Selected adapter capabilities/);
+  assert.match(html, /Structured planning, native read-only/);
   assert.match(html, /Protocol v1/);
   assert.match(html, /Unavailable stays unavailable/);
   assert.match(html, /prototype/i);
@@ -39,6 +40,9 @@ test("server-renders the concise self-guided workshop", async () => {
   assert.match(html, /Python 3\.11/);
   assert.match(html, /Node\.js 20/);
   assert.match(html, /One personal GitHub product repository/);
+  assert.match(html, /Use Cursor CLI/);
+  assert.match(html, /agent login/);
+  assert.match(html, /Cursor workshop/);
   assert.match(html, /Do not use the facilitator/);
   assert.match(html, /Rehearsal/);
   assert.match(html, /Live/);
@@ -141,6 +145,7 @@ test("attendee page stays within its copy budget", async () => {
   const words = visible.trim().split(/\s+/).filter(Boolean).length;
   assert.ok(words < 2400, `attendee page renders ${words} visible words; expected fewer than 2400`);
   assert.match(source, /factory approve-contract --repo "\$TARGET" --live --yes/);
+  assert.match(source, /cursor-workshop/);
   assert.match(source, /factory run --repo "\$TARGET"/);
   assert.match(source, /approve-tests ISSUE_NUMBER --repo "\$TARGET"/);
   assert.match(source, /gh project view <project-number>/);

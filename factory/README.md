@@ -249,7 +249,9 @@ implementation, and code review,
 requires human QA-test approval, selects the Standard profile, and limits
 execution to one ticket at a time for a legible workshop trace.
 Use `codex-workshop` to make the same choices with Codex. Explicit command-line
-flags still override saved defaults for one invocation. You can also combine
+flags still override saved defaults for one invocation. Use `cursor-workshop`
+to make the same choices with Cursor after `agent status` confirms its login.
+You can also combine
 built-in adapters or register your own supervision, implementation, QA, and code-review command:
 
 ```sh
@@ -263,10 +265,11 @@ built-in adapters or register your own supervision, implementation, QA, and code
   --max-parallel 1
 ```
 
-Planning currently uses Claude or Codex because those integrations enforce the
-four structured planning schemas. Supervision, implementation, QA, and code review can use any lowercase
+Built-in Bedrock, Claude, Codex, and Cursor planning adapters enforce the four
+structured planning schemas. Supervision, implementation, QA, and code review can use any lowercase
 adapter registered in `factory.toml`. Follow `CONFIGURATION.md` to connect a
-different CLI, model wrapper, container, or remote runner.
+different CLI, model wrapper, container, or remote runner. Cursor users should
+also read [CURSOR.md](CURSOR.md).
 
 If the GitHub Project already exists, save its number at the same time:
 
@@ -816,7 +819,8 @@ merges the repaired Ticket, and verifies its Evidence Packet links:
   --confirm-disposable-repo
 ```
 
-`--live-agent` accepts `claude` or `codex` and defaults to `claude`.
+`--live-agent` accepts `bedrock`, `claude`, `codex`, or `cursor` and defaults
+to `claude`.
 
 The unique endpoint preserves causal RED proof when the same explicitly
 disposable repository is reused. Every invocation still creates and merges a
@@ -825,10 +829,10 @@ real change, so never run this command against an attendee or product repository
 ## Operator reference
 
 ```text
-factory configure [--preset claude-workshop|codex-workshop]
+factory configure [--preset claude-workshop|codex-workshop|cursor-workshop|bedrock-aws]
                   [--profile lean|standard|assured|autonomous-demo]
                   [--agent NAME] [--qa-agent NAME]
-                  [--planning-agent claude|codex]
+                  [--planning-agent bedrock|claude|codex|cursor]
                   [--review-qa-tests|--no-review-qa-tests]
                   [--max-parallel N] [--project-number N]
 factory control-center [--port N] [--no-open]
@@ -850,7 +854,7 @@ factory run [--repo PATH] [--profile lean|standard|assured|autonomous-demo]
             [--project-number N] [--once] [--dry-run] [--listen] [--mock]
 factory plan PRD.md [--output RUN_DIRECTORY] [--default-agent NAME]
                     [--profile lean|standard|assured|autonomous-demo]
-                    [--planning-agent claude|codex]
+                    [--planning-agent bedrock|claude|codex|cursor]
                     [--min-tickets N] [--max-tickets N] [--mock]
 factory review product|architecture|program|alignment PLAN_ID
 factory approve-product PLAN_ID [--yes]
@@ -877,7 +881,7 @@ factory evidence PLAN_ID --canvas PATH [--ticket ISSUE] [--output DIRECTORY]
 factory release-check [--repo PATH] [--rehearsal]
                       [--live-smoke --confirm-disposable-repo]
 factory doctor [--repo PATH] [--full] [--agent NAME] [--qa-agent NAME]
-               [--planning-agent claude|codex]
+               [--planning-agent bedrock|claude|codex|cursor]
 ```
 
 Runtime artifacts are under `.factory/`: `planning-state.json`, planning runs,

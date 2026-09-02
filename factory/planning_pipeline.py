@@ -30,6 +30,7 @@ from planner import dependency_waves, issue_body, render_review, validate_plan
 from sensitive_data import redact_credentials
 from adapter_capabilities import role_environment
 from codex_cli import codex_environment
+from cursor_cli import invoke_cursor
 from triage import classify_controls
 
 
@@ -54,7 +55,7 @@ REVISION_STAGES = {
     "slices": "vertical_slices",
 }
 ID_PATTERN = re.compile(r"[A-Z][A-Z0-9_-]{0,31}")
-SUPPORTED_PLANNING_AGENTS = {"bedrock", "claude", "codex"}
+SUPPORTED_PLANNING_AGENTS = {"bedrock", "claude", "codex", "cursor"}
 BEDROCK_ENVIRONMENT = (
     "AWS_REGION", "AWS_DEFAULT_REGION", "AWS_CONTAINER_CREDENTIALS_RELATIVE_URI",
     "AWS_CONTAINER_CREDENTIALS_FULL_URI", "AWS_CONTAINER_AUTHORIZATION_TOKEN",
@@ -79,6 +80,23 @@ def sha_file(path: Path) -> str:
 
 def read_json(path: Path) -> dict:
     return json.loads(path.read_text())
+
+
+def _extract_json_object(output: str) -> str:
+    """Accept Cursor's requested bare JSON or one conventional JSON code fence."""
+    stripped = output.strip()
+    candidates = [stripped]
+    fenced = re.fullmatch(r"```(?:json)?\s*(.*?)\s*```", stripped, flags=re.DOTALL | re.IGNORECASE)
+    if fenced:
+        candidates.insert(0, fenced.group(1).strip())
+    for candidate in candidates:
+        try:
+            value = json.loads(candidate)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(value, dict):
+            return json.dumps(value, indent=2) + "\n"
+    raise ValueError("Cursor planning response was not one JSON object")
 
 
 def write_json(path: Path, value: dict):
@@ -923,6 +941,28 @@ def _run_stage_agent_impl(
             result, structured = _run_claude_agent(command, repo, prompt, log, stage)
             if result.returncode == 0 and structured is not None:
                 write_json(raw, structured)
+        elif planning_agent == "cursor":
+            cursor_prompt = (
+                prompt
+                + "\n## Required JSON Schema\n\n```json\n"
+                + schema.read_text()
+                + "\n```\n"
+            )
+            prompt_path.write_text(cursor_prompt)
+            result = invoke_cursor(
+                agent_bin,
+                repo,
+                cursor_prompt,
+                read_only=True,
+            )
+            log.write_text(result.stderr)
+            if result.returncode == 0:
+                try:
+                    raw.write_text(_extract_json_object(result.stdout))
+                except ValueError as exc:
+                    append_log(log, f"Structured output error: {exc}")
+                    raise
+                append_log(log, "Cursor returned a structured planning artifact.")
         elif planning_agent == "bedrock":
             command = [sys.executable, agent_bin, "plan", "--schema", str(schema)]
             result = subprocess.run(
@@ -1563,7 +1603,7 @@ def continue_plan(
         raise ValueError("this planning run uses deterministic fixtures; rerun with --mock")
     elif planning_agent_override:
         if planning_agent_override not in SUPPORTED_PLANNING_AGENTS:
-            raise ValueError("planning retry agent must be bedrock, claude, or codex")
+            raise ValueError("planning retry agent must be bedrock, claude, codex, or cursor")
         if planning_agent_override != planning_agent:
             manifest.setdefault("planning_agent_history", []).append({
                 "from": planning_agent,

@@ -11,6 +11,17 @@ from session_config import configure_session, load_session_config, remember_proj
 
 
 class SessionConfigTests(unittest.TestCase):
+    def test_cursor_preset_selects_cursor_for_every_agent_role(self):
+        with tempfile.TemporaryDirectory() as directory:
+            _, value = configure_session(Path(directory), "cursor-workshop", 12)
+
+        self.assertEqual(value["planning_agent"], "cursor")
+        self.assertEqual(value["agent"], "cursor")
+        self.assertEqual(value["qa_agent"], "cursor")
+        self.assertEqual(value["supervisor_agent"], "cursor")
+        self.assertEqual(value["review_agent"], "cursor")
+        self.assertEqual(value["project_number"], 12)
+
     def test_bedrock_aws_preset_selects_one_cloud_adapter_for_all_roles(self):
         with tempfile.TemporaryDirectory() as directory:
             repo = Path(directory)
@@ -113,6 +124,12 @@ class SessionConfigTests(unittest.TestCase):
         self.assertEqual(
             parser().parse_args(["plan", "PRD.md", "--planning-agent", "bedrock"]).planning_agent,
             "bedrock",
+        )
+
+    def test_parser_accepts_cursor_for_structured_planning(self):
+        self.assertEqual(
+            parser().parse_args(["plan", "PRD.md", "--planning-agent", "cursor"]).planning_agent,
+            "cursor",
         )
 
     def test_github_repository_is_saved_as_a_canonical_url(self):

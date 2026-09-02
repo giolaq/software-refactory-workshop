@@ -19,6 +19,7 @@ from codex_cli import (
     codex_region_environment,
     codex_uses_managed_bedrock,
 )
+from cursor_cli import cursor_candidates, probe_cursor_cli
 from github_repository import (
     GitHubRepositoryError,
     parse_github_repository,
@@ -383,10 +384,17 @@ class DiagnosticSuite:
             return False, "update Claude Code; --json-schema is required for planning"
         return True, found
 
-    @staticmethod
-    def _probe_cursor() -> tuple[bool, str]:
-        found = shutil.which("cursor-agent")
-        return bool(found), found or "not installed"
+    def _probe_cursor(self) -> tuple[bool, str]:
+        details = []
+        candidates = cursor_candidates()
+        for candidate in candidates:
+            ready, detail = probe_cursor_cli(candidate, self.repo)
+            if ready:
+                return True, detail
+            details.append(detail)
+        if details:
+            return False, details[-1]
+        return False, "not installed; install Cursor CLI, then run `agent login`"
 
     @staticmethod
     def _probe_bedrock() -> tuple[bool, str]:

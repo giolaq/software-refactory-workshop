@@ -40,6 +40,7 @@ from codex_cli import (
     codex_region_environment,
     codex_uses_managed_bedrock,
 )
+from cursor_cli import CursorCLIError, resolve_cursor_cli
 from acceptance_evidence import classify_focused_result, focused_test_command
 from adapter_capabilities import load_capabilities
 from adapter_protocol import (
@@ -155,7 +156,7 @@ RECOVERY_PLANNING_STAGES = (
 DEFAULT_AGENTS = {
     "claude": 'claude -p "$(cat {prompt})" --permission-mode acceptEdits',
     "codex": '{codex} exec --sandbox workspace-write --ephemeral "$(cat {prompt})"',
-    "cursor": 'cursor-agent -p "$(cat {prompt})"',
+    "cursor": '{python} {factory_dir}/cursor_cli.py run --prompt {prompt}',
     "mock": "{python} {factory_dir}/mock_agent.py {ticket} --scenario {scenario} --attempt {attempt} < {prompt}",
     "mock-qa": "{python} {factory_dir}/mock_qa_agent.py {ticket} --scenario {scenario} < {prompt}",
     "mock-supervisor": "{python} {factory_dir}/mock_supervisor.py {prompt}",
@@ -1400,6 +1401,11 @@ def resolve_codex_cli() -> str:
 def resolve_planning_cli(agent: str) -> str:
     if agent == "codex":
         return resolve_codex_cli()
+    if agent == "cursor":
+        try:
+            return resolve_cursor_cli(Path.cwd())
+        except CursorCLIError as exc:
+            raise RuntimeError(str(exc)) from exc
     if agent == "bedrock":
         if not (os.environ.get("AWS_REGION") or os.environ.get("AWS_DEFAULT_REGION")):
             raise RuntimeError("Bedrock planning requires AWS_REGION or AWS_DEFAULT_REGION.")
@@ -4527,10 +4533,14 @@ class Factory:
             self.codex_bin = resolve_codex_cli()
             print(f"Codex adapter: {self.codex_bin}", flush=True)
         if self.supervisor_agent:
+            supervisor_capability = self.capabilities[self.supervisor_agent]
             self.supervisor = AgentSupervisor(
                 self.repo,
                 agent=self.supervisor_agent,
-                template=self.cfg["agents"][self.supervisor_agent],
+                template=(
+                    supervisor_capability.read_only_template
+                    or self.cfg["agents"][self.supervisor_agent]
+                ),
                 python=self.python,
                 codex_bin=self.codex_bin or "",
                 scenario=self.args.scenario,

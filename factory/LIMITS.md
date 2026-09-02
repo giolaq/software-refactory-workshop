@@ -55,6 +55,10 @@ state and previews; they do not roll back source or delete GitHub evidence.
   approval, especially when the PR author and reviewer identity are the same.
 - Claude, Codex, Cursor, and custom providers retain their own account,
   telemetry, model-log, rate-limit, and data-handling policies.
+- The built-in Cursor adapter uses headless Agent mode with `--force` for
+  Implementation and QA, and read-only Ask mode for planning, supervision, and
+  review. Cursor permissions and sandbox settings remain a separate provider
+  boundary; review them before a Live Run.
 - Live agents intentionally have no presentation timeout. The operator owns
   provider cost and may stop a run from the Control Center.
 - Hidden chain-of-thought is neither requested nor exported. The UI shows tool
