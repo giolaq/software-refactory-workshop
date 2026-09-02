@@ -299,10 +299,6 @@ export default function Home() {
             <article><span>04</span><b>Outer harness</b><small>Rules around it: roles, tests, retries, review</small></article><i>→</i>
             <article><span>05</span><b>Control plane</b><small>What runs it all: Control Center, GitHub</small></article>
           </div>
-          <div className="factory-principles">
-            <article><strong>Agents are cheap. Review is not.</strong><p>Parallel tickets land on your desk. Only parallelize work you can review.</p></article>
-            <article><strong>A prototype is not a Vertical Slice.</strong><p>A prototype is an experiment you delete once it answers your question. A Vertical Slice is a small change to the real product, tested and reviewed before it merges.</p></article>
-          </div>
           <details className="capability-compare">
             <summary>What each agent CLI provides</summary>
             <div className="capability-table">

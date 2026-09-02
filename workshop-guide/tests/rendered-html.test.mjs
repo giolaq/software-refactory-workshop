@@ -29,12 +29,13 @@ test("server-renders the concise self-guided workshop", async () => {
   for (const layer of ["Compute", "Development environment", "Inner harness", "Outer harness", "Control plane"]) {
     assert.match(html, new RegExp(layer));
   }
-  assert.match(html, /Agents are cheap\. Review is not\./);
+  assert.doesNotMatch(html, /Agents are cheap/);
   assert.match(html, /What each agent CLI provides/);
   assert.match(html, /Returns structured plans, runs read-only/);
   assert.match(html, /the role goes without it/);
-  assert.match(html, /prototype/i);
-  assert.match(html, /Vertical Slice/);
+  assert.doesNotMatch(html, /Agents are cheap/);
+  assert.doesNotMatch(html, /prototype/i);
+  assert.match(html, /Vertical Slices become ordered tickets/);
 
   assert.match(html, /Install and sign in/);
   assert.match(html, /Python 3\.11/);
@@ -126,7 +127,7 @@ test("server-renders the concise self-guided workshop", async () => {
   assert.match(html, /screenshots\/control-center-preflight-failure\.jpg/);
 
   assert.doesNotMatch(html, /Start with one responsible delivery loop/);
-  assert.match(html, /Only parallelize work you can review/);
+  assert.doesNotMatch(html, /Only parallelize work/);
   assert.doesNotMatch(html, /The supervisor coordinates work\. It does not own delivery/);
   assert.doesNotMatch(html, /The Code Review role closes the feedback loop/);
   assert.doesNotMatch(html, /Turn product intent into contracts and small vertical slices/);

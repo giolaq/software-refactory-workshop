@@ -318,9 +318,6 @@ main {
 .layer-chain article b { margin: 8px 0 6px; font-size: 14px; line-height: 1.25; }
 .layer-chain article small { color: var(--muted); font-size: 11px; line-height: 1.4; }
 .layer-chain > i { align-self: center; color: var(--quiet); font-style: normal; text-align: center; }
-.factory-principles { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-.factory-principles article { padding: 17px 19px; border-left: 4px solid var(--blue); background: var(--blue-pale); }
-.factory-principles p { margin: 4px 0 0; color: var(--muted); font-size: 13px; }
 .capability-compare { margin-top: 14px; padding: 16px 19px; border: 1px solid var(--line); border-radius: 6px; background: #fff; }
 .capability-table { margin-top: 14px; border-top: 1px solid var(--line); }
 .capability-table > div { display: grid; grid-template-columns: minmax(120px, .4fr) 1fr; gap: 18px; padding: 10px 4px; border-bottom: 1px solid var(--line-soft); font-size: 13px; }
@@ -619,7 +616,7 @@ footer button { border: 0; background: none; color: var(--blue-dark); cursor: po
   .factory-map { max-width: 100%; padding: 18px 12px; }
   .map-row { min-width: 0; gap: 3px; }
   .map-node { min-width: 0; padding: 8px 3px; overflow-wrap: anywhere; font-size: 9px; white-space: normal; }
-  .concept-grid, .supervisor-role-flow, .supervisor-boundaries, .why-grid, .benefit-grid, .story-line, .outcome-grid, .use-case-grid, .prerequisites-grid, .path-grid, .evidence-grid, .verification-grid, .workshop-figure-grid, .instruction-paths, .next-links, .factory-principles, .transfer-section, .checkout-map { grid-template-columns: 1fr; gap: 14px; }
+  .concept-grid, .supervisor-role-flow, .supervisor-boundaries, .why-grid, .benefit-grid, .story-line, .outcome-grid, .use-case-grid, .prerequisites-grid, .path-grid, .evidence-grid, .verification-grid, .workshop-figure-grid, .instruction-paths, .next-links, .transfer-section, .checkout-map { grid-template-columns: 1fr; gap: 14px; }
   .checkout-arrow { transform: rotate(90deg); justify-self: center; }
   .terminal-grid { grid-template-columns: 1fr 1fr; }
   .concept-section, .supervisor-section, .why-section, .story-section, .prerequisites-section, .path-section, .apply-section, .support-section, .reference-section, .lesson { padding: 48px 0; }
