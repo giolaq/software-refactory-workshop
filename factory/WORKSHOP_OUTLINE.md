@@ -36,7 +36,7 @@ Ask attendees to complete setup before the session.
 Everyone needs:
 
 - macOS, Linux, or Windows with WSL2.
-- Python 3.11+, Node.js 20+, Git, and a modern browser.
+- Python 3.11+, Node.js 22.13+, Git, and a modern browser.
 - Ports 5000 and 5050 available.
 - A personal local Git repository for Rehearsal. Every attendee works in their
   own repository; the facilitator uses a different repository on screen.
@@ -59,6 +59,17 @@ node --version
 git --version
 gh --version
 ```
+
+For a Live Run, distinguish the two checkouts before showing any command:
+
+```text
+Factory checkout                          Product checkout
+workshop + Control Center   controls →   application + tickets + PR branches
+run factory commands here                changed only through --repo $TARGET
+```
+
+The workshop and factory are one control checkout, not separate repositories.
+A Rehearsal Run uses only that checkout.
 
 ## Choose a path
 
@@ -180,7 +191,7 @@ output**, scroll to the first `[FAIL]`, apply the matching fix, then select
 | Failure | Meaning | Recovery |
 | --- | --- | --- |
 | `default branch` or `branch synchronization` | The product checkout is not on the remote default revision. | Save local work. Run `git fetch origin`, `git switch main`, and `git pull --ff-only origin main` in the product checkout. Never force-reset attendee work. |
-| `codex adapter` or `claude adapter` | The selected preset does not match an installed, signed-in CLI. | In **Setup → Connection**, choose the preset for the available CLI and save. Run `codex login` or `claude auth login` when required. |
+| `codex adapter`, `claude adapter`, or `cursor adapter` | The selected preset does not match an installed, signed-in CLI. | In **Setup → Connection**, choose the preset for the available CLI and save. Run `codex login`, `claude auth login`, or `agent login` followed by `agent status`, then retry. |
 | `No module named pytest` or another gate dependency | A declared dependency is missing. | Run the repository's normal dependency setup, correct the contract if it omitted that command, then select **Retry automatic setup**. |
 | `GitHub Projects scope` | GitHub CLI cannot manage Projects. | Run `gh auth refresh -s project` and finish browser authorization. |
 | `repository target` or `origin remote` | The saved product URL and checkout do not identify the same repository. | Paste the attendee's full product repository URL in **Setup → Connection** and save. Do not use the facilitator or workshop repository URL. |

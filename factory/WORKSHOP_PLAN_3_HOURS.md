@@ -67,7 +67,7 @@ Send the prerequisite checklist at least one day before the session.
 
 - macOS, Linux, or Windows with WSL2;
 - Python 3.11 or later with `venv` support;
-- Node.js 20 or later;
+- Node.js 22.13 or later;
 - Git and a modern browser;
 - GitHub CLI;
 - access to the workshop repository;

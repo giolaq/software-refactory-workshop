@@ -73,12 +73,16 @@ function WorkshopPaths({
   whyStopped,
   inspect,
   continueWhen,
+  cliPurpose,
+  cliDirectory,
   children,
 }: {
   click: ReactNode;
   whyStopped?: ReactNode;
   inspect: ReactNode;
   continueWhen: ReactNode;
+  cliPurpose: ReactNode;
+  cliDirectory: ReactNode;
   children: string;
 }) {
   return (
@@ -95,6 +99,11 @@ function WorkshopPaths({
       </section>
       <details className="instruction-card cli-card" aria-label="CLI path">
         <summary><span className="path-label">CLI</span><strong>Use the CLI</strong></summary>
+        <dl className="cli-context">
+          <div><dt>Purpose</dt><dd>{cliPurpose}</dd></div>
+          <div><dt>Run from</dt><dd>{cliDirectory}</dd></div>
+          <div><dt>Success looks like</dt><dd>{continueWhen}</dd></div>
+        </dl>
         <CodeBlock label="CLI">{children}</CodeBlock>
       </details>
     </div>
@@ -259,7 +268,7 @@ export default function Home() {
             <span className="eyebrow">Hands-on developer workshop</span>
             <h1>Software (re)-Factory workshop</h1>
             <p className="hero-lede">
-              Follow Setup, Plan, Deliver, and Review to turn a PRD into tickets, code, tests, and a reviewed change. The Control Center tells you when to act and why it stopped.
+              Follow Setup, Plan, Deliver, and Review. Turn one PRD into reviewed tickets, code, tests, and evidence.
             </p>
             <div className="hero-meta">
               <span><b>Duration:</b> 3 hours</span>
@@ -318,7 +327,7 @@ export default function Home() {
               <ul>
                 <li>macOS, Linux, or Windows with WSL2</li>
                 <li>Python 3.11+ with virtual environments</li>
-                <li>Node.js 20+, Git, and a modern browser</li>
+                <li>Node.js 22.13+, Git, and a modern browser</li>
                 <li>Ports 5000 and 5050 available</li>
               </ul>
             </article>
@@ -355,38 +364,43 @@ agent status`}</CodeBlock>
             <p><a href="https://cursor.com/docs/cli/installation">Cursor installation</a> · <a href="https://cursor.com/docs/cli/reference/permissions">Cursor permissions</a></p>
           </details>
           <Callout type="warning" title="Use your own repository">
-            <p>For Live mode, use a personal GitHub repository. Do not use the facilitator&apos;s repository. Rehearsal mode stays on your computer and does not need GitHub or an agent login.</p>
+            <p>Live uses your personal repository. Do not use the facilitator&apos;s. Rehearsal starts from a read-only clone and pushes nothing to GitHub.</p>
           </Callout>
-          {track === "live" && <Callout type="note" title="Live mode uses two repositories">
-            <p>The <strong>factory checkout</strong> contains this workshop and starts the Control Center. Your separate <strong>product repository</strong> receives the issues, branches, pull requests, and application changes. Keep the two URLs separate.</p>
-          </Callout>}
+          <section className="checkout-orientation" aria-labelledby="checkout-orientation-title">
+            <h3 id="checkout-orientation-title">Know your two checkouts</h3>
+            <div className="checkout-map">
+              <article><span>CONTROL</span><strong>Factory checkout</strong><code>software-refactory-control</code></article>
+              <div className="checkout-arrow" aria-hidden="true">controls →</div>
+              <article><span>TARGET</span><strong>Product checkout</strong><code>.factory/repositories/you/product</code></article>
+            </div>
+            <p>{track === "live" ? "Run Factory commands in CONTROL; agents change TARGET." : "Rehearsal uses only the Factory checkout."}</p>
+          </section>
         </section>
 
         <section id="path" className="path-section">
           <div className="section-heading">
             <span className="section-kicker">Choose once</span>
             <h2>Select your path</h2>
-            <p>Commands match your choice.</p>
           </div>
           <div className="path-grid">
             <button type="button" className={`path-card${track === "rehearsal" ? " path-selected" : ""}`} onClick={() => chooseTrack("rehearsal")}>
-              <span className="recommended">Recommended first</span>
+              <span className="recommended">Start here on your first run</span>
               <span className="path-icon rehearsal-icon">R</span>
               <strong>Rehearsal</strong>
-              <span>Runs locally with built-in workshop agents. It does not change GitHub.</span>
-              <small>Use this to learn the steps.</small>
+              <span>Built-in agents; nothing is pushed to GitHub.</span>
+              <small>Learn first.</small>
             </button>
             <button type="button" className={`path-card${track === "live" ? " path-selected" : ""}`} onClick={() => chooseTrack("live")}>
               <span className="path-icon live-icon">L</span>
               <strong>Live</strong>
-              <span>Uses your GitHub repository and signed-in coding agents.</span>
-              <small>Use this for a real run.</small>
+              <span>Your repository plus a signed-in Claude, Codex, or Cursor CLI.</span>
+              <small>Run agents.</small>
             </button>
           </div>
         </section>
 
         <StepSection index={1} id="setup" title="Finish Setup" goal="Open the Control Center, connect the correct repository, and pass preflight." complete={completed.includes("setup")} onToggle={() => toggleStep("setup")}>
-          <p>{track === "live" ? "The workshop checkout controls a separate managed checkout of your product repository." : "Rehearsal is local, disposable, and credential-free."}</p>
+          <p>{track === "live" ? "CONTROL operates the separate TARGET checkout." : "Rehearsal is local and credential-free."}</p>
           <CodeBlock label="Terminal 1 — do this once">{track === "rehearsal" ? `git clone https://github.com/giolaq/software-refactory-workshop.git software-refactory-rehearsal
 cd software-refactory-rehearsal
 ./setup_demo.sh --scenario recipe-rebrand
@@ -418,13 +432,17 @@ export TARGET="$CONTROL/.factory/repositories/YOUR-NAME/YOUR-REPOSITORY"`}</Code
             <li><span>2</span><div><strong>Create contract</strong><p>Select <strong>Create contract</strong>. The factory detects source folders, tests, verification gates, and conservative operating rules. No coding agent runs.</p></div></li>
             <li><span>3</span><div><strong>Review and approve</strong><p>Open <strong>Review repository model</strong> and <strong>Review operating policy</strong>. If they match the repository, select <strong>Approve contract and continue</strong>.</p></div></li>
           </ol>
+          <details className="optional-detail setup-terms">
+            <summary>What Tier, Merge, and Gates mean</summary>
+            <p><strong>Tier</strong> describes the consequence of a wrong change. <strong>Merge</strong> says who makes the final merge decision. <strong>Gates</strong> sets how much verification evidence is required.</p>
+          </details>
 
           <Callout type="note" title="One approval, visible automation">
             <p>After Step 3, the factory publishes the contract in Live mode, provisions and prepares the environment, checks health and gates, and runs preflight. <strong>Activity and CLI output</strong> shows each substep and stops at the first error.</p>
           </Callout>
 
           <Callout type="warning" title="If automatic setup stops, fix the first error">
-            <p>Open <strong>Activity and CLI output</strong>, fix the first <code>[FAIL]</code>, then return to Step 3 and select <strong>Retry automatic setup</strong>. The <a href="#preflight-recovery">recovery table</a> gives exact fixes. An optional-adapter, port 5050, or reviewer <code>[WARN]</code> does not block the workshop.</p>
+            <p>Open <strong>Activity and CLI output</strong>, fix the first <code>[FAIL]</code> with the <a href="#preflight-recovery">recovery table</a>, then retry. A <code>[WARN]</code> does not block the workshop.</p>
           </Callout>
 
           <WorkshopPaths
@@ -432,6 +450,8 @@ export TARGET="$CONTROL/.factory/repositories/YOUR-NAME/YOUR-REPOSITORY"`}</Code
             whyStopped={<>The factory will not plan until the repository contract is approved and its automatic environment and preflight checks pass.</>}
             inspect={<>Confirm the product repository, source and test folders, required checks, selected agent preset, and merge authority.</>}
             continueWhen={<>Step 3 says <strong>Approved and ready</strong> and Activity output contains no <code>[FAIL]</code>.</>}
+            cliPurpose={<>Connect the product repository and approve the exact repository contract.</>}
+            cliDirectory={track === "live" ? <><code>software-refactory-control</code> (the Factory checkout)</> : <><code>software-refactory-rehearsal</code></>}
           >{track === "live" ? `# Run from the software-refactory-control directory.
 ./factory/factory checkout https://github.com/YOUR-NAME/YOUR-REPOSITORY \\
   --workspace-root "$CONTROL/.factory/repositories"
@@ -471,6 +491,8 @@ AGENT_PRESET=claude-workshop # or codex-workshop or cursor-workshop
             whyStopped={<>No ticket starts before you save and approve a plan. For the guided exercise, the starter app runs as a separate process.</>}
             inspect={<>For the guided exercise, open Pocket Cinema. For a new product, confirm that the repository contains only <code>.gitignore</code> and the two factory settings files.</>}
             continueWhen={<>The starting repository is correct and the Control Center points to <strong>Plan → Requirements</strong>.</>}
+            cliPurpose={<>Open the starter application or inspect the empty product baseline.</>}
+            cliDirectory={track === "live" ? <><code>software-refactory-control</code> with <code>CONTROL</code> and <code>TARGET</code> set</> : <><code>software-refactory-rehearsal</code></>}
           >{track === "live"
             ? `# Guided exercise:
 "$CONTROL/.factory/venv/bin/python" "$TARGET/demo-app/app.py"
@@ -495,6 +517,8 @@ git -C "$TARGET" ls-tree -r --name-only HEAD`
             whyStopped={<>No planning role runs until you select <strong>Start Product Review</strong>.</>}
             inspect={<>Check the target users, required behavior, limits, and proof of success.</>}
             continueWhen={<>The save indicator is current and you can describe the requested product change.</>}
+            cliPurpose={<>Open the workshop PRD in your local editor.</>}
+            cliDirectory={track === "live" ? <><code>software-refactory-control</code></> : <><code>software-refactory-rehearsal</code></>}
           >{track === "live"
             ? `open "$CONTROL/recipe-app-prd.md"`
             : `open recipe-app-prd.md`}</WorkshopPaths>
@@ -515,6 +539,8 @@ git -C "$TARGET" ls-tree -r --name-only HEAD`
             whyStopped={<>A person must approve the product plan before technical planning starts.</>}
             inspect={<>Check the users, problem, required behavior, success checks, and any questions. Request a revision when the plan is unclear.</>}
             continueWhen={<>The product plan is clear, testable, and approved.</>}
+            cliPurpose={<>Generate, inspect, revise if needed, and approve Product Review.</>}
+            cliDirectory={track === "live" ? <><code>software-refactory-control</code>; commands target <code>$TARGET</code></> : <><code>software-refactory-rehearsal</code></>}
           >{track === "live" ? `./factory/factory plan "$CONTROL/recipe-app-prd.md" --repo "$TARGET"
 export PLAN_ID=<plan-id-from-output>
 ./factory/factory review product "$PLAN_ID" --repo "$TARGET"
@@ -546,6 +572,8 @@ export PLAN_ID=<plan-id-from-output>
             whyStopped={<>The factory waits for answers when an expert cannot make a safe assumption. It also waits for your final approval before it creates tickets.</>}
             inspect={<>Check the planned components, code changes, ticket acceptance criteria, order, and dependencies.</>}
             continueWhen={track === "live" ? <>The GitHub Project contains the planned issues.</> : <>The Tickets page contains the planned work.</>}
+            cliPurpose={<>Complete technical planning and publish the approved Vertical Slices as tickets.</>}
+            cliDirectory={track === "live" ? <><code>software-refactory-control</code>; commands target <code>$TARGET</code></> : <><code>software-refactory-rehearsal</code></>}
           >{track === "rehearsal" ? `./factory/factory continue-plan "$PLAN_ID" --mock
 ./factory/factory review alignment "$PLAN_ID"
 ./factory/factory approve-rehearsal "$PLAN_ID" --scenario recipe-rebrand
@@ -565,6 +593,8 @@ export PLAN_ID=<plan-id-from-output>
             whyStopped={<>The factory runs the new test before implementation. <strong>RED PROVED</strong> means the test failed because the requested behavior is still missing.</>}
             inspect={<>Check the test file, command, and failure. Do not approve a test that fails because of setup, syntax, or an unrelated error.</>}
             continueWhen={<>The failure proves the behavior is missing and you approve the test.</>}
+            cliPurpose={<>Run one ticket through QA RED evidence, then approve its acceptance tests.</>}
+            cliDirectory={track === "live" ? <><code>software-refactory-control</code>; commands target <code>$TARGET</code></> : <><code>software-refactory-rehearsal</code></>}
           >{track === "live" ? `./factory/factory run --repo "$TARGET" --review-qa-tests --once
 ./factory/factory approve-tests ISSUE_NUMBER --repo "$TARGET"` : `./factory/factory run --mock --scenario recipe-rebrand --review-qa-tests --once
 ./factory/factory approve-tests ISSUE_NUMBER`}</WorkshopPaths>
@@ -585,6 +615,8 @@ export PLAN_ID=<plan-id-from-output>
             whyStopped={<>For each ticket, the factory assigns work, runs tests and required checks, and asks a separate agent to review the change. It stops when a check fails or a person must decide.</>}
             inspect={<>Open the ticket tabs to read the task, live log, changed files, tests, checks, and code review. Before merge, confirm that the approved commit matches the pull request.</>}
             continueWhen={<>Code review approves the commit and you select <strong>Merge exact revision</strong>. The ticket then moves to Done.</>}
+            cliPurpose={<>Run eligible tickets and follow their GitHub Project state.</>}
+            cliDirectory={track === "live" ? <><code>software-refactory-control</code>; commands target <code>$TARGET</code></> : <><code>software-refactory-rehearsal</code></>}
           >{track === "live" ? `gh project view <project-number> --owner "@me" --web
 ./factory/factory run --repo "$TARGET"` : `./factory/factory run --mock --scenario recipe-rebrand`}</WorkshopPaths>
           <WorkshopMedia
@@ -649,6 +681,8 @@ export PLAN_ID=<plan-id-from-output>
             whyStopped={<>The page becomes available when every ticket is Done.</>}
             inspect={<>Open <code>http://127.0.0.1:5000/</code> for mobile and desktop, or <code>http://127.0.0.1:5000/?mode=tv</code> for television.</>}
             continueWhen={<>TableStory loads in the browser. Keep the terminal running while you use it, then press <code>Ctrl+C</code> to stop the server.</>}
+            cliPurpose={<>Start the completed application from the product revision produced by the factory.</>}
+            cliDirectory={track === "live" ? <><code>$TARGET</code> (the Product checkout)</> : <><code>software-refactory-rehearsal</code></>}
           >{track === "live" ? `cd "$TARGET"
 "$CONTROL/.factory/venv/bin/python" demo-app/app.py` : `.factory/venv/bin/python demo-app/app.py`}</WorkshopPaths>
           <WorkshopMedia
@@ -691,8 +725,9 @@ export PLAN_ID=<plan-id-from-output>
             <div className="status-key" aria-label="Preflight status meanings"><span className="status-pass">PASS · ready</span><span className="status-warn">WARN · check whether optional</span><span className="status-fail">FAIL · fix before continuing</span></div>
             <div className="fix-table" role="table" aria-label="Common preflight failures and fixes">
               <div className="fix-table-head" role="row"><span role="columnheader">The FAIL says</span><span role="columnheader">Fix it</span></div>
+              <div role="row"><code role="cell">tool: node<br />requires &gt;= 22.13.0</code><span role="cell">Install Node.js 22.13+, verify with <code>node --version</code>, then retry.</span></div>
               <div role="row"><code role="cell">default branch<br />branch synchronization</code><span role="cell">Save any local work first. Then run <code>git fetch origin</code>, <code>git switch main</code>, and <code>git pull --ff-only origin main</code> in the product checkout.</span></div>
-              <div role="row"><code role="cell">codex/claude adapter not found or not signed in</code><span role="cell">In <strong>Setup → Connection</strong>, choose the preset for the CLI you actually installed and save. Sign in with <code>codex login</code> or <code>claude auth login</code>.</span></div>
+              <div role="row"><code role="cell">codex/claude/cursor adapter not found or not signed in</code><span role="cell">Choose the matching preset in <strong>Setup → Connection</strong>. Then run <code>codex login</code>, <code>claude auth login</code>, or <code>agent login</code> followed by <code>agent status</code>. Retry automatic setup.</span></div>
               <div role="row"><code role="cell">No module named pytest<br />gate: api-tests</code><span role="cell">Install the dependency with the repository&apos;s normal setup command, then select <strong>Retry automatic setup</strong>. If the contract omitted that command, correct its setup commands before retrying.</span></div>
               <div role="row"><code role="cell">GitHub Projects scope</code><span role="cell">Run <code>gh auth refresh -s project</code>, finish the browser authorization, and select <strong>Retry automatic setup</strong>.</span></div>
               <div role="row"><code role="cell">repository target<br />origin remote</code><span role="cell">Paste the full URL of your product repository in <strong>Setup → Connection</strong> and save. Do not paste the workshop repository URL.</span></div>
@@ -730,7 +765,7 @@ export PLAN_ID=<plan-id-from-output>
             <details><summary>A remote claim belongs to an old run</summary><p>Confirm that the old run has stopped. Open the blocked ticket and select <strong>Release abandoned claim</strong>.</p></details>
             <details><summary>The Control Center reports a dependency cycle</summary><p>Two or more tickets depend on each other. Edit the issue dependencies so one ticket can start, then run the factory again.</p></details>
             <details><summary>The issue listener does not import an existing issue</summary><p>This is expected. Its first start records the existing backlog and watches only for issues created afterward. Create a new issue, or stop the listener and follow the normal PRD planning path.</p></details>
-            <details><summary>Live planning is slow or inconsistent</summary><p>Use Rehearsal mode to learn the steps. Return to Live mode after agent access and the PRD are stable.</p></details>
+            <details><summary>Live planning is slow or inconsistent</summary><p>Use a Rehearsal Run to learn the steps. Return to a Live Run after agent access and the PRD are stable.</p></details>
             <details><summary>A port or worktree is already in use</summary><p>Stop the old process. Use <code>git worktree list</code> to inspect worktrees before removing one.</p></details>
             <details><summary>I want to repeat the workshop</summary><p>Select <strong>Reset run</strong> in the lower-left navigation. Reset ticket work to keep the approved plan, or enter <code>START OVER</code> to clear local planning history. Use a new repository when you also need a new Live GitHub Project.</p></details>
           </div>

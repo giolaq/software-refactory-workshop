@@ -5,6 +5,7 @@ from __future__ import annotations
 import importlib.util
 import json
 import os
+import re
 import shutil
 import socket
 import subprocess
@@ -52,6 +53,56 @@ def version_tuple(raw: str) -> tuple[int, ...]:
             break
         digits.append(int(number))
     return tuple(digits)
+
+
+def node_engine_requirement(
+    repo: Path, source_roots: tuple[str, ...],
+) -> tuple[tuple[int, ...], str, str] | None:
+    """Return the strongest explicit Node lower bound in project manifests."""
+    manifests = [repo / "package.json"]
+    manifests.extend(
+        repo / root / "package.json" for root in source_roots if root != "."
+    )
+    requirements = []
+    for manifest in dict.fromkeys(manifests):
+        if not manifest.is_file():
+            continue
+        try:
+            value = json.loads(manifest.read_text())
+        except (OSError, json.JSONDecodeError):
+            continue
+        raw = (value.get("engines") or {}).get("node")
+        if not isinstance(raw, str):
+            continue
+        match = re.search(r">=\s*v?(\d+(?:\.\d+){0,2})", raw)
+        if not match:
+            continue
+        parsed = version_tuple(match.group(1))
+        if parsed:
+            requirements.append((parsed, match.group(1), manifest.relative_to(repo).as_posix()))
+    return max(requirements, key=lambda item: item[0]) if requirements else None
+
+
+def node_tool_check(repo: Path, source_roots: tuple[str, ...], executable: str | None) -> Check:
+    requirement = node_engine_requirement(repo, source_roots)
+    required_text = f" >= {requirement[1]}" if requirement else ""
+    if not executable:
+        return Check("FAIL", "tool: node", f"not found; install Node.js{required_text}")
+    result = command([executable, "--version"], repo)
+    actual_text = (result.stdout or result.stderr).strip()
+    actual = version_tuple(actual_text)
+    if result.returncode != 0 or not actual:
+        return Check("FAIL", "tool: node", f"cannot read version from {executable}: {actual_text or 'no output'}")
+    if requirement and actual < requirement[0]:
+        return Check(
+            "FAIL", "tool: node",
+            f"{actual_text}; requires >= {requirement[1]} from {requirement[2]}. "
+            "Install the required Node.js version, then retry automatic setup",
+        )
+    detail = f"{executable} ({actual_text})"
+    if requirement:
+        detail += f"; satisfies >= {requirement[1]} from {requirement[2]}"
+    return Check("PASS", "tool: node", detail)
 
 
 def port_check(port: int) -> Check:
@@ -254,9 +305,14 @@ class DiagnosticSuite:
             "PASS", "execution Python",
             str(self.venv_python) if self.venv_python.is_file() else sys.executable,
         ))
-        if self.full:
-            for tool in self.project.required_tools:
-                found = sys.executable if tool in {"python", "python3"} else shutil.which(tool)
+        tools = self.project.required_tools if self.full else tuple(
+            tool for tool in self.project.required_tools if tool == "node"
+        )
+        for tool in tools:
+            found = sys.executable if tool in {"python", "python3"} else shutil.which(tool)
+            if tool == "node":
+                self.checks.append(node_tool_check(self.repo, self.project.source_roots, found))
+            else:
                 self.checks.append(Check("PASS" if found else "FAIL", f"tool: {tool}", found or "not found"))
 
     def _collect_github(self) -> None:
@@ -356,7 +412,7 @@ class DiagnosticSuite:
         self._collect_execution_boundaries(required_agents)
 
     def _probe_codex(self) -> tuple[bool, str]:
-        detail = "not found or not signed in"
+        detail = "not installed or not signed in; install Codex CLI if needed, then run `codex login`"
         for candidate in codex_candidates():
             status = command([candidate, "login", "status"], self.repo)
             help_result = command([candidate, "exec", "--help"], self.repo)

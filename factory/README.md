@@ -21,7 +21,7 @@ provider, intake source, trigger, or workspace integration.
 
 ## One-minute rehearsal quickstart
 
-A Rehearsal Run needs Python 3.11+, Git, Node 20+, and no credentials or agent tokens.
+A Rehearsal Run needs Python 3.11+, Git, Node 22.13+, and no credentials or agent tokens.
 
 ```sh
 ./setup_demo.sh --scenario recipe-rebrand
