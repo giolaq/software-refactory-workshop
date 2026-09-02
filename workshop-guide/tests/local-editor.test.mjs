@@ -25,7 +25,7 @@ test("custom component titles and body copy can be selected in the preview", asy
     (entry) => entry.value === "Use your own repository",
   );
   const body = snapshot.entries.find(
-    (entry) => entry.value.startsWith("For Live mode, use a personal GitHub repository"),
+    (entry) => entry.value.startsWith("Live uses your personal repository"),
   );
 
   assert.ok(title);
@@ -43,7 +43,7 @@ test("a custom component body edit remains valid TSX", async () => {
   const source = await readFile(pagePath, "utf8");
   const snapshot = buildSnapshot(source);
   const entry = snapshot.entries.find(
-    (candidate) => candidate.value.startsWith("For Live mode, use a personal GitHub repository"),
+    (candidate) => candidate.value.startsWith("Live uses your personal repository"),
   );
   assert.ok(entry);
 
@@ -55,7 +55,7 @@ test("a custom component body edit remains valid TSX", async () => {
   });
 
   assert.match(result.source, new RegExp(replacement));
-  assert.doesNotMatch(result.source, /For Live mode, use a personal GitHub repository/);
+  assert.doesNotMatch(result.source, /Live uses your personal repository/);
   const parsed = ts.createSourceFile("page.tsx", result.source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
   assert.equal(parsed.parseDiagnostics.length, 0);
 });

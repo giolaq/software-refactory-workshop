@@ -116,6 +116,80 @@ ACTION_BUILDERS = {
         "recover-latest", "reset-run", "reset-all",
     }, "_build_operations_command"),
 }
+
+
+def _first_fail(output: str) -> str:
+    for line in output.splitlines():
+        stripped = line.strip()
+        if re.match(r"^\[FAIL\s*\]", stripped, re.IGNORECASE):
+            return stripped
+    return ""
+
+
+def _default_branch_from_failure(diagnostic: str) -> str:
+    match = re.search(r"(?:GitHub|remote)\s+`([^`]+)`", diagnostic)
+    return match.group(1) if match else "main"
+
+
+def _readiness_recovery(diagnostic: str) -> tuple[str, str]:
+    """Map one Doctor failure to the smallest safe operator action."""
+    lowered = diagnostic.lower()
+    if "codex adapter" in lowered:
+        return (
+            "Inner harness",
+            "Install Codex CLI if it is missing, run `codex login`, then retry automatic setup.",
+        )
+    if "claude adapter" in lowered:
+        return (
+            "Inner harness",
+            "Install Claude Code if it is missing, run `claude auth login`, then retry automatic setup.",
+        )
+    if "cursor adapter" in lowered:
+        return (
+            "Inner harness",
+            "Install the current Cursor CLI if it is missing, run `agent login` and `agent status`, then retry automatic setup.",
+        )
+    if "default branch" in lowered or "branch synchronization" in lowered:
+        branch = _default_branch_from_failure(diagnostic)
+        return (
+            "Development environment",
+            "Save work you need to keep. In the product checkout run `git fetch origin`, "
+            f"`git switch {branch}`, and `git pull --ff-only origin {branch}`, then retry automatic setup.",
+        )
+    if "clean checkout" in lowered:
+        return (
+            "Development environment",
+            "Commit or stash work you need to keep in the product checkout. Do not discard it, then retry automatic setup.",
+        )
+    if "github repository target" in lowered or "origin remote" in lowered:
+        return (
+            "Control plane",
+            "In Setup → Connection, paste the full product repository URL and select Save and connect, then retry automatic setup.",
+        )
+    if "github projects scope" in lowered:
+        return (
+            "Control plane",
+            "Run `gh auth refresh -s project`, finish browser authorization, then retry automatic setup.",
+        )
+    if "project contract" in lowered or "factory charter" in lowered:
+        return (
+            "Outer harness",
+            "Return to Setup → Connection, create the repository contract, review the repository model and operating policy, then approve it.",
+        )
+    if "tool: node" in lowered or "node.js" in lowered:
+        return (
+            "Development environment",
+            "Install the Node.js version reported by Doctor, confirm it with `node --version`, then retry automatic setup.",
+        )
+    if "no module named pytest" in lowered or "gate: api-tests" in lowered:
+        return (
+            "Development environment",
+            "Run the setup command recorded in the Project Contract to install test dependencies, then retry automatic setup.",
+        )
+    return (
+        "Development environment",
+        "Correct the reported repository, tool, dependency, service, or gate failure, then retry automatic setup.",
+    )
 COMPANION_ACTIONS = frozenset({
     "approve-tests", "request-test-changes", "merge", "retry",
     "save-ticket-and-retry", "approve-intake", "steward-sync",
@@ -853,7 +927,8 @@ class ControlCenter:
             for line in plain.splitlines()
             if line.strip() and not line.lstrip().startswith("$ ")
         ]
-        diagnostic = next(
+        first_fail = _first_fail(plain)
+        diagnostic = first_fail or next(
             (
                 line for line in reversed(lines)
                 if any(
@@ -863,6 +938,12 @@ class ControlCenter:
             ),
             lines[-1] if lines else "",
         )
+        if first_fail:
+            layer, recovery = _readiness_recovery(first_fail)
+            return {
+                "cause": f"{layer} readiness failure. First reported failure: {first_fail[:300]}",
+                "recovery": recovery,
+            }
         layer = "Control plane"
         recovery_prefix = "Repair the Control Center or GitHub connection."
         if action.startswith("environment-") or any(

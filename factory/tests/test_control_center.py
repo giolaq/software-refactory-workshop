@@ -322,6 +322,50 @@ class ControlCenterTests(unittest.TestCase):
             self.assertIn("Choose Start app again", operation["failure"]["recovery"])
             self.assertIn(operation["failure"]["cause"], operation["error"])
 
+    def test_failed_readiness_uses_the_first_fail_and_its_exact_recovery(self):
+        with tempfile.TemporaryDirectory() as directory:
+            center = ControlCenter(self.make_repo(directory))
+            log = center.repo / ".factory/logs/doctor.log"
+            log.parent.mkdir(parents=True, exist_ok=True)
+            log.write_text(
+                "[PASS] Project Contract branch  contract `main`; GitHub `main`\n"
+                "[FAIL] default branch            local `review/anisha`; GitHub `main`\n"
+                "[FAIL] codex adapter             not found or not signed in\n"
+                "[FAIL] gate: api-tests           No module named pytest\n"
+            )
+            center.operation = {
+                "action": "doctor",
+                "status": "failed",
+                "exit_code": 1,
+                "command": "./factory/factory doctor --full",
+                "log": str(log),
+            }
+
+            failure = center.operation_snapshot()["failure"]
+
+            self.assertIn("default branch", failure["cause"])
+            self.assertNotIn("codex adapter", failure["cause"])
+            self.assertIn("git switch main", failure["recovery"])
+            self.assertNotIn("codex login", failure["recovery"])
+
+    def test_failed_readiness_explains_each_supported_agent_login(self):
+        cases = {
+            "codex": "codex login",
+            "claude": "claude auth login",
+            "cursor": "agent login",
+        }
+        for adapter, login in cases.items():
+            with self.subTest(adapter=adapter):
+                failure = ControlCenter._operation_failure_guidance(
+                    "doctor",
+                    1,
+                    f"[FAIL] {adapter} adapter  not found or not signed in\n",
+                    "./factory/factory doctor --full",
+                )
+
+                self.assertIn(adapter, failure["cause"].lower())
+                self.assertIn(login, failure["recovery"])
+
     def test_external_repository_uses_the_bundled_control_plane_and_can_be_initialized(self):
         with tempfile.TemporaryDirectory() as directory:
             repo = Path(directory)
@@ -2085,6 +2129,7 @@ class ControlCenterTests(unittest.TestCase):
             "Read-only by contract",
             "Needs review",
             "Seed the guided Pocket Cinema starter",
+            "What Tier, Merge, and Gates mean",
         ):
             self.assertIn(label, source)
 

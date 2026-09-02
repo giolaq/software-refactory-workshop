@@ -23,7 +23,7 @@ Complete this checklist before attendees arrive:
 
 - [ ] macOS, Linux, or WSL 2 is available.
 - [ ] Python 3.11 or later includes the `venv` module.
-- [ ] Node.js 20 or later and Git are on `PATH`.
+- [ ] Node.js 22.13 or later and Git are on `PATH`.
 - [ ] Ports 5000 and 5050 are free.
 - [ ] The presentation browser can open localhost pages.
 - [ ] The workshop repository is clean and synchronized with its default branch.
@@ -112,6 +112,11 @@ Run `./factory/factory adapter-check` and show its declared capabilities in
 **Setup → Connection** before using a custom adapter live.
 
 ## Arrange the presentation workspace
+
+Draw the checkout boundary before opening a terminal. The workshop and factory
+share one control checkout. A Live Run adds one isolated product checkout under
+`.factory/repositories/`; that checkout tracks the attendee's GitHub repository.
+Prefix CLI demonstrations with **Factory checkout** or **Product checkout**.
 
 Use two terminals:
 
@@ -297,7 +302,7 @@ approval needs a distinct reviewer identity supplied through the uncommitted
 | Live merge shows Rehearsal evidence | Do not merge it as Live. In Ticket Summary, either **Finish Rehearsal** or select **Open Reset**, clear only local run state, and rerun the published GitHub ticket. Source files and remote artifacts are preserved. |
 | An attendee reset the wrong scope | Open **Reset**, verify the checkpoint timestamp and plan, then choose **Recover latest state**. With no checkpoint, a connected Live repository reconstructs from GitHub. Do not claim that deleted local receipts were restored. |
 | Preflight reports `default branch` or `branch synchronization` | In the product checkout, save local work, then run `git fetch origin`, `git switch main`, and `git pull --ff-only origin main`. Do not force-reset attendee work. |
-| Preflight reports an unavailable Codex or Claude adapter | Open **Setup → Connection**, select the preset for the CLI the attendee actually installed, save, sign in to that CLI, and select **Retry automatic setup**. |
+| Preflight reports an unavailable Codex, Claude, or Cursor adapter | Open **Setup → Connection**, select the preset for the CLI the attendee installed, and save. Run `codex login`, `claude auth login`, or `agent login` followed by `agent status`, then select **Retry automatic setup**. |
 | Preflight reports `No module named pytest` | Install the dependency with the repository's declared setup command, correct the contract if that command is missing, then select **Retry automatic setup**. |
 | Preflight reports missing GitHub Projects scope | Run `gh auth refresh -s project`, finish authorization, and select **Retry automatic setup**. |
 | Branch, Codex, and `pytest` failures appear together | Fix them in order: preserve local work; fetch, switch to `main`, and fast-forward it; select the passing Claude preset or sign in to Codex; install the declared dependencies; then select **Retry automatic setup**. Do not ask the attendee to repeat the same failed operation between fixes. |

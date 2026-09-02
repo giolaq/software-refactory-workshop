@@ -23,7 +23,7 @@ test("server-renders the concise self-guided workshop", async () => {
   assert.match(html, /<title>Software \(re\)-Factory Workshop<\/title>/i);
   assert.match(html, /Software \(re\)-Factory workshop/);
   assert.match(html, /Follow Setup, Plan, Deliver, and Review/);
-  assert.match(html, /tells you when to act and why it stopped/);
+  assert.match(html, /Turn one PRD into reviewed tickets, code, tests, and evidence/);
   assert.match(html, /A coding agent makes a change\. A software factory makes delivery repeatable/);
   for (const layer of ["Compute", "Development environment", "Inner harness", "Outer harness", "Control plane"]) {
     assert.match(html, new RegExp(layer));
@@ -38,7 +38,7 @@ test("server-renders the concise self-guided workshop", async () => {
 
   assert.match(html, /Install and sign in/);
   assert.match(html, /Python 3\.11/);
-  assert.match(html, /Node\.js 20/);
+  assert.match(html, /Node\.js 22\.13/);
   assert.match(html, /One personal GitHub product repository/);
   assert.match(html, /Use Cursor CLI/);
   assert.match(html, /agent login/);
@@ -55,6 +55,9 @@ test("server-renders the concise self-guided workshop", async () => {
   assert.match(html, /Retry automatic setup/);
   assert.match(html, /Project Contract/);
   assert.match(html, /Terminal 2 — keep this running/);
+  assert.match(html, /Know your two checkouts/);
+  assert.match(html, /Factory checkout/);
+  assert.match(html, /Product checkout/);
   assert.match(html, /Factory Control Center: http:\/\/127\.0\.0\.1:5050/);
   assert.match(html, /browser should open automatically/i);
   assert.match(html, /Ctrl\+C/);
@@ -65,6 +68,8 @@ test("server-renders the concise self-guided workshop", async () => {
   assert.match(html, /What happens/);
   assert.match(html, /Check/);
   assert.match(html, /Continue when/);
+  assert.match(html, /Run from/);
+  assert.match(html, /Success looks like/);
 
   for (const heading of [
     "Finish Setup",
@@ -97,6 +102,8 @@ test("server-renders the concise self-guided workshop", async () => {
   assert.match(html, /A required check still tests removed behavior/);
   assert.match(html, /Troubleshooting/);
   assert.match(html, /Automatic setup stopped: fix the first FAIL/);
+  assert.match(html, /agent login/);
+  assert.match(html, /What Tier, Merge, and Gates mean/);
   assert.match(html, /provisions and prepares the environment/);
   assert.match(html, /No module named pytest/);
   assert.match(html, /git pull --ff-only origin main/);
@@ -146,6 +153,8 @@ test("attendee page stays within its copy budget", async () => {
   assert.ok(words < 2400, `attendee page renders ${words} visible words; expected fewer than 2400`);
   assert.match(source, /factory approve-contract --repo "\$TARGET" --live --yes/);
   assert.match(source, /cursor-workshop/);
+  assert.match(source, /Start here on your first run/);
+  assert.match(source, /pushes nothing to GitHub/);
   assert.match(source, /factory run --repo "\$TARGET"/);
   assert.match(source, /approve-tests ISSUE_NUMBER --repo "\$TARGET"/);
   assert.match(source, /gh project view <project-number>/);

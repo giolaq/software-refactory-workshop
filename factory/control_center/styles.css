@@ -310,6 +310,10 @@ input:focus, select:focus, textarea:focus { border-color: var(--blue); outline: 
 .automatic-setup li small { color: var(--muted); text-align: right; }
 .automatic-setup > p { margin: 8px 0 0; color: var(--muted); font-size: 10px; line-height: 1.5; }
 .compact-facts { grid-template-columns: 1fr; }
+.contract-terms { margin: 12px 0; padding: 11px 12px; border: 1px solid var(--line); border-radius: var(--radius-control); background: var(--surface-inset); }
+.contract-terms > b { font-size: 11px; }
+.contract-terms ul { display: grid; margin: 7px 0 0; padding: 0; gap: 5px; color: var(--muted); font-size: 10px; line-height: 1.45; list-style: none; }
+.contract-terms li strong { color: var(--ink); }
 .facts { margin: 20px 0; }
 .facts div { display: grid; grid-template-columns: 100px 1fr; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--line-soft); }
 .facts dt { color: var(--muted); }

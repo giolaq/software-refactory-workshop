@@ -193,7 +193,7 @@ If the repository changes shape, edit the committed contract and run planning
 again. A planning run records its contract hash and refuses publication after
 the contract becomes stale.
 
-Rehearsal mode is intentionally narrower. Its deterministic agents implement
+A Rehearsal Run is intentionally narrower. Its deterministic agents implement
 only the bundled Pocket Cinema scenarios, so use Live mode for an arbitrary PRD.
 
 ## Choose built-in adapters

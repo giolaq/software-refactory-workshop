@@ -20,7 +20,9 @@ locally because it operates the attendee's agents, Git worktrees, and files.
 
 ## Local development
 
-Requires Node.js 22.13 or later.
+Requires Node.js 22.13 or later. `npm install`, `npm run dev`, `npm run edit`,
+and `npm run build` stop immediately with a direct version message when the
+active Node.js runtime is too old.
 
 ```sh
 npm install

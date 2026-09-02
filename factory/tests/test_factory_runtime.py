@@ -13,7 +13,14 @@ from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).parents[1]))
 
-from doctor import Check, baseline_check, run_doctor, version_tuple
+from doctor import (
+    Check,
+    baseline_check,
+    node_engine_requirement,
+    node_tool_check,
+    run_doctor,
+    version_tuple,
+)
 from codex_cli import (
     codex_auth_ready,
     codex_region_environment,
@@ -2908,6 +2915,28 @@ class RuntimeTests(unittest.TestCase):
                 run_doctor(Path(directory), config, full=False)
 
         which.assert_not_called()
+
+    def test_node_check_enforces_the_strongest_source_manifest_requirement(self):
+        with tempfile.TemporaryDirectory() as directory:
+            repo = Path(directory)
+            (repo / "workshop-guide").mkdir()
+            (repo / "workshop-guide/package.json").write_text(json.dumps({
+                "engines": {"node": ">=22.13.0"},
+            }))
+
+            requirement = node_engine_requirement(repo, ("workshop-guide",))
+            with mock.patch(
+                "doctor.command",
+                return_value=subprocess.CompletedProcess(
+                    ["/usr/bin/node", "--version"], 0, "v20.19.0\n", "",
+                ),
+            ):
+                check = node_tool_check(repo, ("workshop-guide",), "/usr/bin/node")
+
+            self.assertEqual(requirement, ((22, 13, 0), "22.13.0", "workshop-guide/package.json"))
+            self.assertEqual(check.level, "FAIL")
+            self.assertIn("requires >= 22.13.0", check.detail)
+            self.assertIn("retry automatic setup", check.detail)
 
     def test_doctor_fails_closed_for_missing_unapproved_or_incompatible_charter(self):
         config = {
