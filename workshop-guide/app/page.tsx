@@ -92,7 +92,7 @@ function WorkshopPaths({
         <h3>Use the Control Center</h3>
         <dl className="instruction-list">
           <div><dt>Do this</dt><dd>{click}</dd></div>
-          <div><dt>What happens</dt><dd>{whyStopped ?? <>The factory stops when it needs your decision or when a check fails. <strong>Current phase</strong> tells you what to do next.</>}</dd></div>
+          <div><dt>What happens</dt><dd>{whyStopped ?? <>It stops when it needs your decision or a check fails. <strong>Current phase</strong> says what to do next.</>}</dd></div>
           <div><dt>Check</dt><dd>{inspect}</dd></div>
           <div><dt>Continue when</dt><dd>{continueWhen}</dd></div>
         </dl>
@@ -268,7 +268,7 @@ export default function Home() {
             <span className="eyebrow">Hands-on developer workshop</span>
             <h1>Software (re)-Factory workshop</h1>
             <p className="hero-lede">
-              Take one PRD through tickets, code, tests, review, and a merge. It stops when it needs a decision.
+              Take one PRD — a product requirements document — through tickets, code, tests, review, and a merge. It stops when it needs a decision.
             </p>
             <div className="hero-meta">
               <span><b>Duration:</b> 3 hours</span>
@@ -295,22 +295,22 @@ export default function Home() {
           <div className="layer-chain" aria-label="Five replaceable factory layers">
             <article><span>01</span><b>Compute</b><small>Laptop, container, or runner</small></article><i>→</i>
             <article><span>02</span><b>Development environment</b><small>Checkout, tools, services, gates</small></article><i>→</i>
-            <article><span>03</span><b>Inner harness</b><small>Claude, Codex, Cursor, or yours</small></article><i>→</i>
-            <article><span>04</span><b>Outer harness</b><small>Roles, Charter, QA, retries, review</small></article><i>→</i>
-            <article><span>05</span><b>Control plane</b><small>Orchestrator, Control Center, GitHub</small></article>
+            <article><span>03</span><b>Inner harness</b><small>The AI CLI itself: Claude, Codex, Cursor, or yours</small></article><i>→</i>
+            <article><span>04</span><b>Outer harness</b><small>Rules around it: roles, tests, retries, review</small></article><i>→</i>
+            <article><span>05</span><b>Control plane</b><small>What runs it all: Control Center, GitHub</small></article>
           </div>
           <div className="factory-principles">
             <article><strong>Agents are cheap. Review is not.</strong><p>Parallel tickets land on your desk. Only parallelize work you can review.</p></article>
-            <article><strong>A prototype is not a Vertical Slice.</strong><p>Throw a prototype away. A Vertical Slice is bounded, tested, reviewed, and meant to merge.</p></article>
+            <article><strong>A prototype is not a Vertical Slice.</strong><p>A prototype is an experiment you delete once it answers your question. A Vertical Slice is a small change to the real product, tested and reviewed before it merges.</p></article>
           </div>
           <details className="capability-compare">
-            <summary>Selected adapter capabilities</summary>
+            <summary>What each agent CLI provides</summary>
             <div className="capability-table">
-              <div><b>Adapter</b><b>Protocol v1 declaration</b></div>
-              <div><span>Codex</span><span>Structured planning, native read-only, subagents</span></div>
-              <div><span>Cursor</span><span>Structured planning, native read-only</span></div>
+              <div><b>Agent CLI</b><b>What it can do</b></div>
+              <div><span>Codex</span><span>Returns structured plans, runs read-only, subagents</span></div>
+              <div><span>Cursor</span><span>Returns structured plans, runs read-only</span></div>
             </div>
-            <p><strong>Swapping adapters does not change the rules.</strong> A role never gains abilities its adapter lacks. Its policy, gates, and merge authority stay put.</p>
+            <p><strong>If your adapter can&apos;t do something, the role goes without it.</strong> The rules never bend to fit the tool. Policy, gates, and the human merge stay the same whichever CLI you pick.</p>
           </details>
         </section>
 
@@ -318,7 +318,6 @@ export default function Home() {
           <div className="section-heading">
             <span className="section-kicker">Before you begin</span>
             <h2>Install and sign in</h2>
-            <p>Complete this before opening the Control Center.</p>
           </div>
           <div className="prerequisites-grid">
             <article>
@@ -335,7 +334,7 @@ export default function Home() {
               <span className="requirement-label">Live path</span>
               <h3>Accounts and access</h3>
               <ul>
-                <li>GitHub CLI with the <code>project</code> scope</li>
+                <li>GitHub CLI (<code>gh</code>), signed in, with Projects access</li>
                 <li>One personal GitHub product repository and its full URL</li>
                 <li>Permission to create issues, branches, and Projects</li>
                 <li>One signed-in agent CLI: Claude, Codex, Cursor, or your adapter</li>
@@ -384,11 +383,11 @@ agent status`}</CodeBlock>
           </div>
           <div className="path-grid">
             <button type="button" className={`path-card${track === "rehearsal" ? " path-selected" : ""}`} onClick={() => chooseTrack("rehearsal")}>
-              <span className="recommended">Start here on your first run</span>
+              <span className="recommended">Recommended first</span>
               <span className="path-icon rehearsal-icon">R</span>
               <strong>Rehearsal</strong>
               <span>Built-in agents; nothing leaves your machine.</span>
-              <small>Learn the steps here.</small>
+              <small>Learn the steps.</small>
             </button>
             <button type="button" className={`path-card${track === "live" ? " path-selected" : ""}`} onClick={() => chooseTrack("live")}>
               <span className="path-icon live-icon">L</span>
@@ -399,8 +398,8 @@ agent status`}</CodeBlock>
           </div>
         </section>
 
-        <StepSection index={1} id="setup" title="Finish Setup" goal="Open the Control Center, connect the correct repository, and pass preflight." complete={completed.includes("setup")} onToggle={() => toggleStep("setup")}>
-          <p>{track === "live" ? "CONTROL operates the separate TARGET checkout." : "Rehearsal is local and credential-free."}</p>
+        <StepSection index={1} id="setup" title="Finish Setup" goal="Open the Control Center, connect the correct repository, and pass its first-time checks." complete={completed.includes("setup")} onToggle={() => toggleStep("setup")}>
+          <p>{track === "live" ? "The factory runs from CONTROL and makes all changes in TARGET." : "Rehearsal is local and credential-free."}</p>
           <CodeBlock label="Terminal 1 — do this once">{track === "rehearsal" ? `git clone https://github.com/giolaq/software-refactory-workshop.git software-refactory-rehearsal
 cd software-refactory-rehearsal
 ./setup_demo.sh --scenario recipe-rebrand
@@ -428,13 +427,13 @@ export TARGET="$CONTROL/.factory/repositories/YOUR-NAME/YOUR-REPOSITORY"`}</Code
 
           <h3>Complete Setup in three steps</h3>
           <ol className="setup-sequence">
-            <li><span>1</span><div><strong>Connect</strong><p>Open <strong>Setup → Connection</strong>. Select <strong>{track === "live" ? "Live" : "Rehearsal"}</strong>, <strong>Standard</strong>, and your agent preset. {track === "live" ? <>Paste <em>your product repository</em> URL. Select <strong>Seed the guided Pocket Cinema starter</strong> for this exercise; leave it clear for your own existing product.</> : <>No GitHub settings are needed.</>} Select <strong>Save and connect</strong>.</p></div></li>
-            <li><span>2</span><div><strong>Create contract</strong><p>Select <strong>Create contract</strong>. The factory detects source folders, tests, verification gates, and conservative operating rules. No coding agent runs.</p></div></li>
+            <li><span>1</span><div><strong>Connect</strong><p>Open <strong>Setup → Connection</strong>. Select <strong>{track === "live" ? "Live" : "Rehearsal"}</strong>, <strong>Standard</strong>, and your agent preset — which AI CLI the factory will use. {track === "live" ? <>Paste <em>your product repository</em> URL. Select <strong>Seed the guided Pocket Cinema starter</strong> for this exercise; leave it clear for your own existing product.</> : <>No GitHub settings are needed.</>} Select <strong>Save and connect</strong>.</p></div></li>
+            <li><span>2</span><div><strong>Create contract</strong><p>Select <strong>Create contract</strong>. The factory scans the repository and writes its settings: which folders it may change, and the checks every change must pass. No coding agent runs.</p></div></li>
             <li><span>3</span><div><strong>Review and approve</strong><p>Open <strong>Review repository model</strong> and <strong>Review operating policy</strong>. If they match the repository, select <strong>Approve contract and continue</strong>.</p></div></li>
           </ol>
           <details className="optional-detail setup-terms">
             <summary>What Tier, Merge, and Gates mean</summary>
-            <p><strong>Tier</strong> describes the consequence of a wrong change. <strong>Merge</strong> says who makes the final merge decision. <strong>Gates</strong> sets how much verification evidence is required.</p>
+            <p><strong>Tier</strong> is how much damage a wrong change could do. <strong>Merge</strong> says who makes the final merge decision — here, a human: you. <strong>Gates</strong> are the checks a change must pass before it can merge.</p>
           </details>
 
           <Callout type="note" title="What happens after you approve">
@@ -479,7 +478,7 @@ AGENT_PRESET=claude-workshop # or codex-workshop or cursor-workshop
             height={980}
           />
           <Callout type="tip" title="Use Current run as your guide">
-            <p><strong>Current phase</strong> explains the state. <strong>Next safe action</strong> opens the one action the factory needs from you.</p>
+            <p><strong>Current phase</strong> explains the state. <strong>Next safe action</strong> is the one thing to do.</p>
           </Callout>
           <Checkpoint><a href="http://127.0.0.1:5050">127.0.0.1:5050</a> is open, the correct repository is shown, Step 3 says <strong>Approved and ready</strong>, and Activity reports no failures.</Checkpoint>
         </StepSection>
@@ -488,8 +487,8 @@ AGENT_PRESET=claude-workshop # or codex-workshop or cursor-workshop
           <p>The guided exercise starts with Pocket Cinema. A new product repository has no app yet.</p>
           <WorkshopPaths
             click={<>Open <strong>Current run</strong> and check that <strong>Next safe action</strong> says <strong>Open the PRD</strong>.</>}
-            whyStopped={<>No ticket starts before you save and approve a plan. For the guided exercise, the starter app runs as a separate process.</>}
-            inspect={<>For the guided exercise, open Pocket Cinema. For a new product, confirm that the repository contains only <code>.gitignore</code> and the two factory settings files.</>}
+            whyStopped={<>No ticket starts before you save and approve a plan; the starter app runs separately.</>}
+            inspect={<>Guided exercise: open Pocket Cinema. New product: the repository should contain only <code>.gitignore</code> and two factory settings files.</>}
             continueWhen={<>The starting repository is correct and the Control Center points to <strong>Plan → Requirements</strong>.</>}
             cliPurpose={<>Open the starter application or inspect the empty product baseline.</>}
             cliDirectory={track === "live" ? <><code>software-refactory-control</code> with <code>CONTROL</code> and <code>TARGET</code> set</> : <><code>software-refactory-rehearsal</code></>}
@@ -511,7 +510,7 @@ git -C "$TARGET" ls-tree -r --name-only HEAD`
           <Checkpoint>Pocket Cinema opens, or the new product repository contains only factory settings.</Checkpoint>
         </StepSection>
 
-        <StepSection index={3} id="prd" title="Write requirements" goal="Confirm the outcome the planning roles must design." complete={completed.includes("prd")} onToggle={() => toggleStep("prd")}>
+        <StepSection index={3} id="prd" title="Write requirements" goal="Describe the result you want, in your own words." complete={completed.includes("prd")} onToggle={() => toggleStep("prd")}>
           <WorkshopPaths
             click={<>Open <strong>Plan → Requirements</strong>. Read the PRD and edit it if needed. The draft saves automatically.</>}
             whyStopped={<>No planning role runs until you select <strong>Start Product Review</strong>.</>}
@@ -526,7 +525,7 @@ git -C "$TARGET" ls-tree -r --name-only HEAD`
             src="/screenshots/control-center-prd.jpg"
             alt="Control Center Plan and Requirements screen with an auto-saving PRD editor and Start Product Review button"
             label="Plan → Requirements"
-            caption="Read the request and make any needed edits. The draft saves automatically."
+            caption="The draft saves automatically."
             width={1440}
             height={980}
           />
@@ -602,7 +601,7 @@ export PLAN_ID=<plan-id-from-output>
             src="/screenshots/control-center-ticket-tests.jpg"
             alt="Control Center ticket drawer open on the Tests tab"
             label="Ticket tests"
-            caption="Approve only when RED PROVED shows that the requested behavior is missing."
+            caption="Approve only on RED PROVED."
             width={1440}
             height={980}
           />
@@ -623,7 +622,7 @@ export PLAN_ID=<plan-id-from-output>
             src="/screenshots/control-center-tickets.jpg"
             alt="Control Center Tickets board with backlog and QA Review columns"
             label="Deliver → Tickets"
-            caption="Active lanes keep the current work readable. Choose All lanes only when you need the full lifecycle."
+            caption="Active lanes show only the current work."
             width={1440}
             height={980}
           />
@@ -643,7 +642,7 @@ export PLAN_ID=<plan-id-from-output>
             src="/screenshots/control-center-overview.jpg"
             alt="Control Center Current run page showing current phase, next safe action, delivery trace, and human decisions"
             label="Current run"
-            caption="Current phase shows what is happening. Next safe action opens the decision the factory needs."
+            caption="The overview follows your run from PRD to merge."
             width={1440}
             height={980}
           />
@@ -689,7 +688,7 @@ export PLAN_ID=<plan-id-from-output>
             src="/screenshots/control-center-evidence.jpg"
             alt="Control Center Review and Run app screen with the start command and application URLs"
             label="Review → Run app"
-            caption="Start the integrated application from the repository used by this run."
+            caption="Start the finished app from your repository."
             width={1440}
             height={980}
           />
@@ -697,7 +696,7 @@ export PLAN_ID=<plan-id-from-output>
         </StepSection>
 
         <section className="transfer-section" aria-labelledby="transfer-title">
-          <div><span className="section-kicker">Use it for your work</span><h2 id="transfer-title">Take the layers with you</h2><p>Know each layer&apos;s interface, evidence, and failure owner.</p></div>
+          <div><span className="section-kicker">Use it for your work</span><h2 id="transfer-title">Take the layers with you</h2><p>Know what each layer does, how to check it worked, and who fixes it when it breaks.</p></div>
           <ol><li>Compute</li><li>Development environment</li><li>Inner harness</li><li>Outer harness</li><li>Control plane</li></ol>
         </section>
 
@@ -762,7 +761,7 @@ export PLAN_ID=<plan-id-from-output>
             <details><summary>A ticket is blocked</summary><p>Open the ticket history and read the last error. Fix that problem, then select <strong>Retry</strong> or run <code>factory retry ISSUE_NUMBER</code>.</p></details>
             <details><summary>A required check still tests removed behavior</summary><p>Compare the failed test with the ticket. If the ticket intentionally removes that behavior, do not restore it. Select <strong>Retry</strong>. The coding agent can update an existing test when the Charter marks existing tests for review.</p></details>
             <details><summary><code>NEEDS YOU</code> says dispatch is paused</summary><p>Too many decisions are waiting for a person. Open the oldest linked item and complete that decision. New ticket work starts again when the queue has space.</p></details>
-            <details><summary>A remote claim belongs to an old run</summary><p>Confirm that the old run has stopped. Open the blocked ticket and select <strong>Release abandoned claim</strong>.</p></details>
+            <details><summary>A remote claim belongs to an old run</summary><p>A claim is the marker that says this run owns a ticket. Confirm the old run has stopped, open the blocked ticket, and select <strong>Release abandoned claim</strong>.</p></details>
             <details><summary>The Control Center reports a dependency cycle</summary><p>Two or more tickets depend on each other. Edit the issue dependencies so one ticket can start, then run the factory again.</p></details>
             <details><summary>The issue listener does not import an existing issue</summary><p>This is expected. Its first start records the existing backlog and watches only for issues created afterward. Create a new issue, or stop the listener and follow the normal PRD planning path.</p></details>
             <details><summary>Live planning is slow or inconsistent</summary><p>Use a Rehearsal Run to learn the steps. Return to a Live Run after agent access and the PRD are stable.</p></details>
@@ -797,7 +796,7 @@ export PLAN_ID=<plan-id-from-output>
           </details>
           <details className="optional-detail">
             <summary>Factory interfaces for production</summary>
-            <p>Open <strong>More tools → Factory interfaces</strong>. Workspace checks name related revisions. Authenticated triggers create deduplicated intake proposals. Reviewed compounding suggests improvements from repeated evidence. The merge steward may synchronize and re-verify a candidate, but it never merges.</p>
+            <p>Open <strong>More tools → Factory interfaces</strong>. These are power-user tools: workspace checks that list related revisions, authenticated triggers that turn outside events into proposals, improvement suggestions built from repeated runs, and a merge helper that can prepare and re-check a candidate — but never merges it. A human always merges.</p>
           </details>
           <div className="next-links">
             <a href="https://github.com/giolaq/software-refactory-workshop/blob/main/factory/WORKSHOP_OUTLINE.md"><span>FACILITATOR</span><b>Workshop outline</b><i>→</i></a>

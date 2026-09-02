@@ -22,7 +22,7 @@ test("server-renders the concise self-guided workshop", async () => {
   const html = await response.text();
   assert.match(html, /<title>Software \(re\)-Factory Workshop<\/title>/i);
   assert.match(html, /Software \(re\)-Factory workshop/);
-  assert.match(html, /Take one PRD through tickets, code, tests, review, and a merge/);
+  assert.match(html, /Take one PRD — a product requirements document — through tickets/);
   assert.match(html, /It stops when it needs a decision/);
   assert.match(html, /The code is the easy part/);
   assert.match(html, /This workshop is the rest/);
@@ -30,10 +30,9 @@ test("server-renders the concise self-guided workshop", async () => {
     assert.match(html, new RegExp(layer));
   }
   assert.match(html, /Agents are cheap\. Review is not\./);
-  assert.match(html, /Selected adapter capabilities/);
-  assert.match(html, /Structured planning, native read-only/);
-  assert.match(html, /Protocol v1/);
-  assert.match(html, /Swapping adapters does not change the rules/);
+  assert.match(html, /What each agent CLI provides/);
+  assert.match(html, /Returns structured plans, runs read-only/);
+  assert.match(html, /the role goes without it/);
   assert.match(html, /prototype/i);
   assert.match(html, /Vertical Slice/);
 
@@ -154,7 +153,7 @@ test("attendee page stays within its copy budget", async () => {
   assert.ok(words < 2400, `attendee page renders ${words} visible words; expected fewer than 2400`);
   assert.match(source, /factory approve-contract --repo "\$TARGET" --live --yes/);
   assert.match(source, /cursor-workshop/);
-  assert.match(source, /Start here on your first run/);
+  assert.match(source, /Recommended first/);
   assert.match(source, /pushes nothing to GitHub/);
   assert.match(source, /factory run --repo "\$TARGET"/);
   assert.match(source, /approve-tests ISSUE_NUMBER --repo "\$TARGET"/);
