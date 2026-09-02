@@ -22,17 +22,18 @@ test("server-renders the concise self-guided workshop", async () => {
   const html = await response.text();
   assert.match(html, /<title>Software \(re\)-Factory Workshop<\/title>/i);
   assert.match(html, /Software \(re\)-Factory workshop/);
-  assert.match(html, /Follow Setup, Plan, Deliver, and Review/);
-  assert.match(html, /Turn one PRD into reviewed tickets, code, tests, and evidence/);
-  assert.match(html, /A coding agent makes a change\. A software factory makes delivery repeatable/);
+  assert.match(html, /Take one PRD through tickets, code, tests, review, and a merge/);
+  assert.match(html, /It stops when it needs a decision/);
+  assert.match(html, /The code is the easy part/);
+  assert.match(html, /This workshop is the rest/);
   for (const layer of ["Compute", "Development environment", "Inner harness", "Outer harness", "Control plane"]) {
     assert.match(html, new RegExp(layer));
   }
-  assert.match(html, /Review capacity is the limit/);
+  assert.match(html, /Agents are cheap\. Review is not\./);
   assert.match(html, /Selected adapter capabilities/);
   assert.match(html, /Structured planning, native read-only/);
   assert.match(html, /Protocol v1/);
-  assert.match(html, /Unavailable stays unavailable/);
+  assert.match(html, /Swapping adapters does not change the rules/);
   assert.match(html, /prototype/i);
   assert.match(html, /Vertical Slice/);
 
@@ -104,7 +105,7 @@ test("server-renders the concise self-guided workshop", async () => {
   assert.match(html, /Automatic setup stopped: fix the first FAIL/);
   assert.match(html, /agent login/);
   assert.match(html, /What Tier, Merge, and Gates mean/);
-  assert.match(html, /provisions and prepares the environment/);
+  assert.match(html, /prepares the environment, checks gates, and runs preflight/);
   assert.match(html, /No module named pytest/);
   assert.match(html, /git pull --ff-only origin main/);
   assert.match(html, /Setup → Connection/);
@@ -112,7 +113,7 @@ test("server-renders the concise self-guided workshop", async () => {
   assert.match(html, /Deliver → Tickets/);
   assert.match(html, /Review → Run app/);
   assert.match(html, /Factory interfaces/);
-  assert.match(html, /Own, buy, or bring existing/);
+  assert.match(html, /Take the layers with you/);
 
   assert.match(html, /screenshots\/pocket-cinema-before\.webp/);
   assert.match(html, /screenshots\/control-center-connect\.jpg/);
@@ -126,7 +127,7 @@ test("server-renders the concise self-guided workshop", async () => {
   assert.match(html, /screenshots\/control-center-preflight-failure\.jpg/);
 
   assert.doesNotMatch(html, /Start with one responsible delivery loop/);
-  assert.match(html, /More agents are a cost/);
+  assert.match(html, /Only parallelize work you can review/);
   assert.doesNotMatch(html, /The supervisor coordinates work\. It does not own delivery/);
   assert.doesNotMatch(html, /The Code Review role closes the feedback loop/);
   assert.doesNotMatch(html, /Turn product intent into contracts and small vertical slices/);

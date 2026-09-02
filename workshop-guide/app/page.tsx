@@ -268,7 +268,7 @@ export default function Home() {
             <span className="eyebrow">Hands-on developer workshop</span>
             <h1>Software (re)-Factory workshop</h1>
             <p className="hero-lede">
-              Follow Setup, Plan, Deliver, and Review. Turn one PRD into reviewed tickets, code, tests, and evidence.
+              Take one PRD through tickets, code, tests, review, and a merge. It stops when it needs a decision.
             </p>
             <div className="hero-meta">
               <span><b>Duration:</b> 3 hours</span>
@@ -289,8 +289,8 @@ export default function Home() {
         <section id="layers" className="layers-section" aria-labelledby="layers-title">
           <div className="section-heading">
             <span className="section-kicker">The system around the agent</span>
-            <h2 id="layers-title">A coding agent makes a change. A software factory makes delivery repeatable.</h2>
-            <p>Generation is fast; intent, environments, review, and accountability remain scarce.</p>
+            <h2 id="layers-title">The code is the easy part. This workshop is the rest.</h2>
+            <p>Deciding what to build and reviewing the result take structure. These five layers provide it.</p>
           </div>
           <div className="layer-chain" aria-label="Five replaceable factory layers">
             <article><span>01</span><b>Compute</b><small>Laptop, container, or runner</small></article><i>→</i>
@@ -300,8 +300,8 @@ export default function Home() {
             <article><span>05</span><b>Control plane</b><small>Orchestrator, Control Center, GitHub</small></article>
           </div>
           <div className="factory-principles">
-            <article><strong>Review capacity is the limit</strong><p>More agents are a cost. Parallelize only reviewable evidence.</p></article>
-            <article><strong>Prototype or Vertical Slice?</strong><p>A prototype may be discarded. A Vertical Slice is bounded, tested, reviewed, and intended to merge.</p></article>
+            <article><strong>Agents are cheap. Review is not.</strong><p>Parallel tickets land on your desk. Only parallelize work you can review.</p></article>
+            <article><strong>A prototype is not a Vertical Slice.</strong><p>Throw a prototype away. A Vertical Slice is bounded, tested, reviewed, and meant to merge.</p></article>
           </div>
           <details className="capability-compare">
             <summary>Selected adapter capabilities</summary>
@@ -310,7 +310,7 @@ export default function Home() {
               <div><span>Codex</span><span>Structured planning, native read-only, subagents</span></div>
               <div><span>Cursor</span><span>Structured planning, native read-only</span></div>
             </div>
-            <p><strong>Unavailable stays unavailable.</strong> The same Agent Role keeps its policy, gates, and authority when you swap adapters.</p>
+            <p><strong>Swapping adapters does not change the rules.</strong> A role never gains abilities its adapter lacks. Its policy, gates, and merge authority stay put.</p>
           </details>
         </section>
 
@@ -387,14 +387,14 @@ agent status`}</CodeBlock>
               <span className="recommended">Start here on your first run</span>
               <span className="path-icon rehearsal-icon">R</span>
               <strong>Rehearsal</strong>
-              <span>Built-in agents; nothing is pushed to GitHub.</span>
-              <small>Learn first.</small>
+              <span>Built-in agents; nothing leaves your machine.</span>
+              <small>Learn the steps here.</small>
             </button>
             <button type="button" className={`path-card${track === "live" ? " path-selected" : ""}`} onClick={() => chooseTrack("live")}>
               <span className="path-icon live-icon">L</span>
               <strong>Live</strong>
-              <span>Your repository plus a signed-in Claude, Codex, or Cursor CLI.</span>
-              <small>Run agents.</small>
+              <span>Your GitHub repository plus a signed-in Claude, Codex, or Cursor CLI.</span>
+              <small>For real delivery.</small>
             </button>
           </div>
         </section>
@@ -437,8 +437,8 @@ export TARGET="$CONTROL/.factory/repositories/YOUR-NAME/YOUR-REPOSITORY"`}</Code
             <p><strong>Tier</strong> describes the consequence of a wrong change. <strong>Merge</strong> says who makes the final merge decision. <strong>Gates</strong> sets how much verification evidence is required.</p>
           </details>
 
-          <Callout type="note" title="One approval, visible automation">
-            <p>After Step 3, the factory publishes the contract in Live mode, provisions and prepares the environment, checks health and gates, and runs preflight. <strong>Activity and CLI output</strong> shows each substep and stops at the first error.</p>
+          <Callout type="note" title="What happens after you approve">
+            <p>After Step 3, the factory publishes the contract (Live mode), prepares the environment, checks gates, and runs preflight. <strong>Activity and CLI output</strong> shows each substep and stops at the first error.</p>
           </Callout>
 
           <Callout type="warning" title="If automatic setup stops, fix the first error">
@@ -697,7 +697,7 @@ export PLAN_ID=<plan-id-from-output>
         </StepSection>
 
         <section className="transfer-section" aria-labelledby="transfer-title">
-          <div><span className="section-kicker">Use it for your work</span><h2 id="transfer-title">Own, buy, or bring existing</h2><p>Name each layer&apos;s interface, evidence, and failure owner.</p></div>
+          <div><span className="section-kicker">Use it for your work</span><h2 id="transfer-title">Take the layers with you</h2><p>Know each layer&apos;s interface, evidence, and failure owner.</p></div>
           <ol><li>Compute</li><li>Development environment</li><li>Inner harness</li><li>Outer harness</li><li>Control plane</li></ol>
         </section>
 
