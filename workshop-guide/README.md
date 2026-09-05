@@ -2,13 +2,11 @@
 
 Release: `workshop-v1.2.1`
 
-The attendee-facing, self-guided website for the Software (re)-Factory
-workshop. It follows the Control Center's **Setup → Plan → Deliver → Review**
-workflow and one PRD from intent to verified delivery. The main path contains only the decisions,
-Control Center actions, and evidence attendees need. Equivalent CLI commands
-are available beside every Control Center step. The guide introduces the five
-replaceable factory layers, makes development-environment setup explicit, and
-keeps production-only interfaces in optional reference sections.
+The attendee procedure guide follows **Setup → Plan → Deliver → Review**.
+It explains commands, clicks, expected results, and recovery. The facilitator's
+slides and notes explain the rationale. Live is the session path, using the
+bounded genre-search PRD; the full recipe rebrand is an extension and the
+simulated Rehearsal pack. The organizer supplies a tested release tag.
 
 The guide supports deterministic rehearsal and live GitHub paths. Claude is
 the worked example, but attendees can use Codex, Cursor, or a custom CLI.
@@ -68,5 +66,6 @@ npm run lint
 npm test
 ```
 
-Workshop progress and the selected path are stored in the attendee's browser.
-The site does not require a database, account, or application secrets.
+There is no completion tracker, progress bar, or browser-storage state. The guide
+opens on Live; attendees can select the simulated Rehearsal instructions. It
+does not require a database, account, or application secrets.

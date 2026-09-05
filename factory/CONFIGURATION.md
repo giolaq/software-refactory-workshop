@@ -5,6 +5,27 @@ tied to one coding agent, model, or execution environment. Use a built-in
 adapter, combine different adapters by role, or register a noninteractive
 command that invokes your own agent.
 
+For the workshop, use the Control Center's three steps: connect, create the
+contract, review and approve. Advanced integration is not a prerequisite.
+
+## Supported verification and execution
+
+| Capability | Current support |
+| --- | --- |
+| Repository intake and planning | Repository-specific Project Contract; review detected settings before setup executes commands |
+| Live planning | Built-in Claude, Codex, Cursor, or Bedrock planning adapter |
+| Implementation, QA, and review | Built-in or registered noninteractive adapter with its required capabilities |
+| Focused acceptance tests in Standard and Assured | Python pytest, or Node's built-in runner for .js, .cjs, and .mjs files |
+| Other test ecosystems | Supply a compatible wrapper; native Go, Java, Rust, or TypeScript focused tests are not automatically supported |
+| Execution isolation | Local worktrees by default, not a host sandbox; stronger isolation needs an enforcing adapter |
+| Usage and cost | Only trustworthy provider-reported values; unavailable is not zero |
+
+Repository verification gates may use other tools. That does not automatically
+add a focused Acceptance Test runner. Confirm this integration before planning
+a Standard run for an existing product. See [production boundaries](LIMITS.md).
+
+## Optional AWS preset
+
 The `bedrock-aws` preset is the hosted counterpart to the local Claude, Codex,
 and Cursor presets. It selects the built-in Amazon Bedrock adapter for planning,
 supervision, QA, implementation, and code review:

@@ -99,7 +99,7 @@ def _receipt_references(manifest: dict, tickets: list[dict]) -> list[str]:
 def export_evidence(
     repo: Path,
     identifier: str,
-    canvas_path: Path,
+    canvas_path: Path | None = None,
     ticket_numbers: list[int] | None = None,
     output: Path | None = None,
 ) -> tuple[Path, Path]:
@@ -123,8 +123,13 @@ def export_evidence(
         raise ValueError(
             "Planning Run profile does not match its recorded Factory Charter governance."
         )
-    canvas_path = canvas_path if canvas_path.is_absolute() else repo / canvas_path
-    canvas_text = validate_canvas(canvas_path)
+    # Run evidence does not require an adoption worksheet. Validate a Canvas
+    # when explicitly supplied; never fill unanswered governance choices for people.
+    if canvas_path is not None:
+        canvas_path = canvas_path if canvas_path.is_absolute() else repo / canvas_path
+        canvas_text = validate_canvas(canvas_path)
+    else:
+        canvas_text = "Not included. This packet records the run, not an adoption decision."
     state = _load_state(repo)
     all_tickets = state.get("tickets", [])
     plan_tickets = [ticket for ticket in all_tickets if ticket.get("plan_id") == manifest["plan_id"]]
@@ -350,19 +355,19 @@ def export_evidence(
         artifacts.append({"kind": "handoff_receipt", "path": reference, "sha256": sha_text(path.read_text())})
 
     lines += ["## Factory Canvas", "", redact_credentials(canvas_text).strip(), ""]
-    canvas_resolved = canvas_path.resolve()
-    artifacts.append({
-        "kind": "factory_canvas",
-        "path": str(canvas_resolved.relative_to(repo.resolve())) if repo.resolve() in canvas_resolved.parents else canvas_resolved.name,
-        "sha256": sha_text(canvas_text),
-    })
+    if canvas_path is not None:
+        canvas_resolved = canvas_path.resolve()
+        artifacts.append({
+            "kind": "factory_canvas",
+            "path": str(canvas_resolved.relative_to(repo.resolve())) if repo.resolve() in canvas_resolved.parents else canvas_resolved.name,
+            "sha256": sha_text(canvas_text),
+        })
     lines += ["## Completion rubric", ""]
     rubric = (
         "revised Product Review",
         "PRD-derived Tickets",
         "reviewed protected Acceptance Test",
         "Ticket trace",
-        "peer-reviewed Factory Canvas",
     )
     lines += [f"- [ ] {item}" for item in rubric]
     if missing:

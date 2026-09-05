@@ -2,7 +2,9 @@
 
 Version: 2
 
-Complete every section, then review the Canvas with a peer before exporting the final Evidence Packet.
+Optional detailed adoption worksheet. Complete every section before attaching
+it with `factory evidence --canvas PATH`. Exporting run evidence without a Canvas
+is supported. For the workshop, use [the short pilot worksheet](WORKSHOP_PILOT.md).
 
 ## Use case
 

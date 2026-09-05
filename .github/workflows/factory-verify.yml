@@ -6,6 +6,35 @@ on:
   pull_request:
 
 jobs:
+  guide-and-browser:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.11"
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: workshop-guide/package-lock.json
+      - run: python3 -m pip install -r demo-app/requirements.txt
+      - run: npm ci
+        working-directory: workshop-guide
+      - run: npm test && npm run lint && npm run build:vercel
+        working-directory: workshop-guide
+      - run: npx --yes agent-browser@0.36.0 install --with-deps
+      - name: Check the procedural guide and full local Rehearsal in a browser
+        run: |
+          npm --prefix workshop-guide run dev -- --port 3030 > /tmp/workshop-guide.log 2>&1 &
+          GUIDE_PID=$!
+          trap 'kill "$GUIDE_PID"' EXIT
+          for attempt in $(seq 1 60); do
+            if curl --fail --silent http://localhost:3030/ > /dev/null; then break; fi
+            sleep 1
+          done
+          GUIDE_URL=http://localhost:3030 node factory/tests/workshop_browser_check.mjs
+
   factory-unit-tests:
     runs-on: ubuntu-latest
     steps:
