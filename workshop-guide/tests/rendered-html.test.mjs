@@ -93,6 +93,43 @@ test("Control Center setup is direct and does not require a shell wizard", async
   assert.match(setup, /export TARGET="\$CONTROL\/\.factory\/repositories\/\$REPOSITORY"/);
 });
 
+test("the agenda starts eligible delivery earlier without reducing the product or human gates", async () => {
+  const read = name => readFile(new URL("../../factory/" + name, import.meta.url), "utf8");
+  const [plan, outline, dryRun] = await Promise.all([
+    read("WORKSHOP_PLAN_3_HOURS.md"), read("WORKSHOP_OUTLINE.md"), read("WORKSHOP_DRY_RUN.md"),
+  ]);
+  const slots = [...plan.matchAll(/^\| (\d{2,3})–(\d{2,3}) \| (.+)$/gm)]
+    .map(([, start, end, description]) => ({ start: Number(start), end: Number(end), description }));
+  assert.ok(slots.length > 0);
+  assert.equal(slots[0].start, 0);
+  assert.equal(slots.at(-1).end, 180);
+  for (const [i, slot] of slots.entries()) {
+    assert.ok(slot.end > slot.start);
+    if (i) assert.equal(slot.start, slots[i - 1].end, "agenda gap or overlap");
+  }
+  const start = slots.find(slot => /select Run factory/.test(slot.description));
+  assert.ok(start && start.end <= 80, "eligible implementation should start before the break");
+  assert.ok(slots.some(slot => slot.end - slot.start === 10 && /Break/.test(slot.description)));
+  assert.ok(slots.some(slot => slot.end - slot.start === 20 && /pilot worksheet/.test(slot.description)));
+  assert.match(plan.replace(/\s+/g, " "), /not a reduction in scope/);
+  assert.match(plan, /Never approve merely/);
+  assert.match(outline, /Complete means the full approved transformation/);
+  assert.doesNotMatch(outline, /Aim for one tested|recipe rebrand.*extensions/s);
+  assert.match(dryRun, /Not performed by this document/);
+  assert.match(dryRun, /not a performance benchmark/);
+  assert.match(dryRun, /two or three new users/);
+});
+
+test("attendees trace the cooking journey and justify decisions while work runs", async () => {
+  const html = await (await render()).text();
+  for (const phrase of [
+    "find a recipe by ingredient", "read its cooking steps", "save it to My Cookbook",
+    "Challenge unnecessary dependencies", "explain which assertion",
+    "do not wait for the whole room", "Record the effort behind this result",
+    "Human wait is not active review time", "unknown, not zero",
+  ]) assert.ok(html.includes(phrase), "missing decision instruction: " + phrase);
+});
+
 test("guide has no local completion state and retains concise instructions", async () => {
   const source = await readFile(new URL("../app/page.tsx", import.meta.url), "utf8");
   assert.doesNotMatch(source, /localStorage|setCompleted|toggleStep|useEffect|CSSProperties/);

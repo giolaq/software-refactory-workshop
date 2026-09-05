@@ -791,6 +791,10 @@ an optional Canvas, missing-evidence warnings, and a hash manifest. Raw prompts,
 logs, command output, environment values, tokens, and credentials are excluded.
 
 For an adoption discussion, use [the short pilot worksheet](WORKSHOP_PILOT.md).
+Prepare a real-run cost record and observe new users with
+[Workshop dry run](WORKSHOP_DRY_RUN.md). These are human validation activities,
+not results established by passing mock tests. Keep feature additions frozen
+until the observation identifies a concrete need.
 To attach a detailed Canvas, create it with `factory canvas`, complete it, and
 pass `--canvas PATH` to evidence export. An explicitly supplied incomplete Canvas
 is still rejected. Evidence export does not waive any delivery or merge gate.

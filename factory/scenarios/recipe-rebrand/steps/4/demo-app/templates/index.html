@@ -8,11 +8,11 @@
   <link rel="stylesheet" href="{{ url_for('static', filename='recipe-tv.css') }}">
 </head>
 <body class="{{ 'tv' if tv_mode else 'mobile' }}">
-  <header class="topbar"><a class="brand" href="{{ url_for('index', mode='tv') if tv_mode else url_for('index') }}" aria-label="TableStory home"><span>TS</span>TableStory</a><a href="#recipes">My Cookbook</a></header>
+  <header class="topbar"><a class="brand" href="{{ url_for('index', mode='tv') if tv_mode else url_for('index') }}" aria-label="TableStory home"><span>TS</span>TableStory</a><a href="{{ url_for('index', view='cookbook', mode='tv') if tv_mode else url_for('index', view='cookbook') }}">My Cookbook</a></header>
   <main>
     <section class="hero"><p class="eyebrow">RECIPES FOR REAL LIFE</p><h1>Good food,<br>clearly told.</h1><p>Find dependable recipes for everyday cooking.</p></section>
     <label class="search"><span aria-hidden="true">⌕</span><input id="search" type="search" placeholder="Search dishes or ingredients" autocomplete="off"></label>
-    <div class="section-heading"><h2>Explore recipes</h2><span id="count">{{ recipes|length }} recipes</span></div>
+    <div class="section-heading"><h2>{{ 'My Cookbook' if cookbook_view else 'Explore recipes' }}</h2><span id="count">{{ recipes|length }} {{ 'recipe' if recipes|length == 1 else 'recipes' }}</span></div>
     <section class="recipe-grid" id="recipes" aria-live="polite">
       {% for recipe in recipes %}
       <article class="recipe-card" data-recipe-id="{{ recipe.id }}" data-search="{{ ([recipe.title, recipe.description, recipe.category] + recipe.dietary_tags + recipe.ingredients)|join(' ')|lower }}">
@@ -24,7 +24,7 @@
       </article>
       {% endfor %}
     </section>
-    <p class="empty" id="empty" hidden>No recipes found. Try another ingredient or dish.</p>
+    <p class="empty" id="empty" {% if recipes %}hidden{% endif %}>No recipes found. Try another ingredient or dish.</p>
   </main>
   <script type="module" src="{{ url_for('static', filename='app.js') }}"></script>
   <script type="module" src="{{ url_for('static', filename='recipe-rails.js') }}"></script>

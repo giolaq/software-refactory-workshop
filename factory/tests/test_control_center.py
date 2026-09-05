@@ -19,6 +19,27 @@ from project_contract import ProjectContract
 
 
 class ControlCenterTests(unittest.TestCase):
+    def test_workshop_preview_uses_product_port_not_control_center_readme_url(self):
+        with tempfile.TemporaryDirectory() as directory:
+            center = ControlCenter(self.make_repo(directory))
+            (center.repo / "demo-app").mkdir()
+            (center.repo / "demo-app/app.py").write_text(
+                "from flask import Flask\napp = Flask(__name__)\n"
+                "if __name__ == '__main__': app.run(port=5000)\n"
+            )
+            (center.repo / "README.md").write_text("Control Center: http://127.0.0.1:5050/\n")
+            ProjectContract.detect(center.repo).write()
+            with patch.object(center, "_port_available", side_effect=lambda port: port == 5001):
+                entry = center._application_entrypoint()
+                # Polling while the app is running must keep the same URL.
+                with patch.object(center, "_port_available", return_value=False):
+                    self.assertEqual(center._application_entrypoint()["port"], entry["port"])
+            self.assertEqual(entry["preferred_port"], 5000)
+            self.assertEqual(entry["urls"][0]["url"], "http://127.0.0.1:5001/")
+            self.assertNotIn("5050", str(entry["urls"]))
+            self.assertIn("--port", entry["argv"])
+            self.assertIn("5001", entry["argv"])
+
     def make_repo(self, directory: str) -> Path:
         repo = Path(directory)
         (repo / "factory/control_center").mkdir(parents=True)
@@ -428,6 +449,26 @@ class ControlCenterTests(unittest.TestCase):
 
                 self.assertIn(adapter, failure["cause"].lower())
                 self.assertIn(login, failure["recovery"])
+
+    def test_configure_traceback_is_not_misreported_as_agent_authentication(self):
+        failure = ControlCenter._operation_failure_guidance(
+            "configure", 1,
+            "Agent: claude\nSaved attendee defaults: .factory/local.toml\n"
+            "Traceback (most recent call last):\n"
+            "NameError: name 'CONTRACT_PATH' is not defined\n",
+            "./factory/factory configure --preset claude-workshop",
+        )
+        self.assertIn("internal", failure["cause"].lower())
+        self.assertIn("CONTRACT_PATH", failure["cause"])
+        self.assertIn("facilitator", failure["recovery"])
+        self.assertNotIn("sign in", failure["recovery"])
+
+    def test_provider_name_alone_does_not_imply_authentication_failure(self):
+        failure = ControlCenter._operation_failure_guidance(
+            "configure", 1, "Agent: codex\nError: cannot save configuration\n",
+            "./factory/factory configure --preset codex-workshop",
+        )
+        self.assertNotIn("sign in", failure["recovery"])
 
     def test_external_repository_uses_the_bundled_control_plane_and_can_be_initialized(self):
         with tempfile.TemporaryDirectory() as directory:

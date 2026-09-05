@@ -105,6 +105,18 @@ class MergeStewardTests(unittest.TestCase):
             self.assertTrue((candidate / "feature.txt").is_file())
             self.assertTrue((candidate / "upstream.txt").is_file())
 
+            # A local Rehearsal has no origin, and a human edit invalidates an
+            # approval even when the candidate already contains the base.
+            subprocess.run(["git", "remote", "remove", "origin"], cwd=repo, check=True)
+            saved.update(status="In Review", approved_head=result["candidate_head"])
+            state.write_text(json.dumps({"mode": "mock", "tickets": [saved]}))
+            (candidate / "feature.txt").write_text("reviewed correction\n")
+            subprocess.run(["git", "add", "feature.txt"], cwd=candidate, check=True)
+            subprocess.run(["git", "commit", "-qm", "human correction"], cwd=candidate, check=True)
+            local = steward_synchronize_ticket(repo, 7, assume_yes=True)
+            self.assertEqual(local["state"], "steward-updating")
+            self.assertEqual(json.loads(state.read_text())["tickets"][0]["approved_head"], "")
+
 
 if __name__ == "__main__":
     unittest.main()

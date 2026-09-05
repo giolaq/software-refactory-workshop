@@ -18,6 +18,13 @@ how to operate the factory, not the presentation's rationale.
    evidence for slow or unavailable providers.
 6. Test the guide, Control Center, and screenshots against the same code.
 7. Check the projector layout and the actual room's network/authentication flow.
+8. Record one real transformation's outcome and operating cost, then observe two
+   or three new users with the [dry-run procedure](WORKSHOP_DRY_RUN.md). These
+   records are required evidence to collect, not results supplied by the code.
+
+Freeze feature work until that observation. Prioritize unclear instructions,
+broken steps, and recovery over new roles, dashboards, or integrations. Keep the
+same tested release for preparation and the session.
 
 Run local validation with the Factory virtual environment:
 
@@ -35,6 +42,11 @@ live-provider smoke or a novice dry run. Record both in
 
 ## Explain only the next decision
 
+Use **agree on the change → build it → inspect the evidence → accept it** in
+slides. Follow one cooking journey: ingredient search → cooking steps → My
+Cookbook. Keep the complete transformation in the tickets; do not turn the
+teaching thread into a smaller exercise.
+
 - Setup: confirm the target and review the shell commands and authority in the
   contract. Worktrees isolate Git state, not the whole host.
 - Plan: make a recipe journey testable; trace it through the four expert outputs
@@ -49,6 +61,23 @@ live-provider smoke or a novice dry run. Record both in
   behavior. Distinguish a complete transformation from partially merged work.
   Export run evidence and complete the pilot
   worksheet. An optional detailed Canvas is not an export prerequisite.
+
+## Keep execution moving
+
+Ask attendees to finish Setup and open Pocket Cinema before class. Confirm that
+state at the start; do not restart successful setup for the demonstration.
+After valid QA approval, continue immediately to **Deliver tickets → Run factory**.
+Target the first eligible implementation in minutes 65–80; this is not a timeout
+or a completion guarantee. Attendees may progress at different rates.
+
+Use the [prepared decision cases](WORKSHOP_PLAN_3_HOURS.md#worked-examples-and-answer-key)
+while healthy work runs. Each person decides first, compares reasons with a
+neighbor, then sees the answer. Include a weak requirement, an unnecessary
+dependency, false RED, and stale review. Never manufacture defects in a healthy
+Live run or ask attendees to approve evidence they have not inspected.
+
+Keep handling later QA and merge decisions while other tickets execute. Do not
+wait until the closing review block to unlock a dependency that is ready now.
 
 ## Recovery without shortcuts
 

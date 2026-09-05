@@ -4,6 +4,8 @@
 from __future__ import annotations
 
 import argparse
+import re
+import sys
 from pathlib import Path
 
 
@@ -95,16 +97,22 @@ def test_ticket_1_cookbook_acceptance(client):
     assert [recipe["id"] for recipe in client.get("/api/cookbook").get_json()] == ["tomato-pasta"]
     assert client.delete("/api/cookbook/tomato-pasta").get_json()["ids"] == []
 ''',
-    2: '''from pathlib import Path
-
-
-def test_ticket_2_brand_tokens_acceptance():
-    css = (Path(__file__).parents[1] / "static/table-story.css").read_text().lower()
+    2: '''def test_ticket_2_brand_tokens_acceptance(client):
+    response = client.get("/static/table-story.css")
+    assert response.status_code == 200, "The TableStory stylesheet must be served"
+    css = response.get_data(as_text=True).lower()
     assert all(color in css for color in ("#fff8ed", "#c9472d", "#3f6b4f", "#26231f", "#e9b44c"))
     assert ".recipe-grid" in css and "minmax(220px,1fr)" in css
     assert "@media (max-width: 520px)" in css and "grid-template-columns:1fr" in css
     assert ":focus-visible" in css and "outline" in css
     assert '.cookbook[aria-pressed="true"]' in css
+
+
+def test_ticket_2_visible_brand_acceptance(client):
+    home = client.get("/")
+    assert home.status_code == 200
+    assert b"TableStory" in home.data
+    assert b"table-story.css" in home.data
 ''',
     3: '''from pathlib import Path
 
@@ -156,6 +164,7 @@ def test_ticket_4_tv_recipe_acceptance(client):
 
 def test_ticket_5_documentation_acceptance():
     root = Path(__file__).parents[1]
+    assert (root / "README.md").is_file(), "The product must include its TableStory run and verification guide"
     readme = (root / "README.md").read_text()
     assert "TableStory" in readme
     assert "?mode=tv" in readme
@@ -169,6 +178,18 @@ def test_ticket_5_documentation_acceptance():
 }
 
 
+BRAND_REVISION = '''
+
+def test_ticket_2_stylesheet_delivery_acceptance(client):
+    response = client.get("/static/table-story.css")
+    assert response.status_code == 200
+    assert response.mimetype == "text/css"
+    home = client.get("/")
+    assert b'name="viewport"' in home.data
+    assert b'aria-label="TableStory home"' in home.data
+'''
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("ticket", type=int)
@@ -178,9 +199,24 @@ def main() -> int:
     if args.ticket not in tests:
         print(f"QA rejected ticket #{args.ticket}: acceptance criteria are not objectively testable")
         return 2
+    # Rehearsal offers bounded reference revisions, not open-ended generation.
+    prompt = sys.stdin.read() if not sys.stdin.isatty() else ""
+    feedback = re.search(r"## Human review feedback\n.*?```\n(.*?)\n```", prompt, re.S)
+    source = tests[args.ticket]
+    if feedback:
+        supported = args.scenario == "recipe-rebrand" and args.ticket == 2 and any(
+            term in feedback.group(1).lower() for term in ("filenotfounderror", "stylesheet")
+        )
+        if not supported:
+            print("This feedback is not supported by the deterministic Rehearsal adapter. "
+                  "Use Live mode for open-ended revisions; no replacement test was generated.")
+            return 2
+        source += BRAND_REVISION
+        print("Reference revision: validate stylesheet delivery and the branded HTML shell. "
+              "Browser layout and keyboard focus still require human inspection.")
     destination = Path.cwd() / "demo-app/tests" / f"test_ticket_{args.ticket}_acceptance.py"
     destination.parent.mkdir(parents=True, exist_ok=True)
-    destination.write_text(tests[args.ticket])
+    destination.write_text(source)
     print(f"Mock QA created {destination.relative_to(Path.cwd())}")
     return 0
 

@@ -12,7 +12,8 @@ is not required for exporting run evidence.
 5. **Owner:** Who reviews, recovers blocked work, and accepts the final revision?
 6. **Cost and capacity:** What will you measure against today's workflow?
    Include accepted changes, review minutes, retries, defects, and provider cost
-   when available. Keep unknown values explicit.
+   when available. Keep unknown values explicit. Separate active review effort
+   from waiting; ask whether a coding CLI plus existing CI already meets the need.
 7. **Pilot:** What is the smallest useful trial? Name a stop/go criterion and
    the next action with its owner.
 

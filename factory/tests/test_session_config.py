@@ -1,3 +1,4 @@
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -11,6 +12,23 @@ from session_config import configure_session, load_session_config, remember_proj
 
 
 class SessionConfigTests(unittest.TestCase):
+    def test_configure_cli_saves_defaults_and_reports_next_step(self):
+        for contract_exists in (False, True):
+            with self.subTest(contract_exists=contract_exists), tempfile.TemporaryDirectory() as directory:
+                repo = Path(directory)
+                if contract_exists:
+                    (repo / "factory.project.toml").touch()
+                result = subprocess.run(
+                    [sys.executable, str(Path(__file__).parents[1] / "orchestrator.py"),
+                     "configure", "--repo", str(repo), "--preset", "claude-workshop",
+                     "--profile", "standard", "--max-parallel", "1", "--review-qa-tests"],
+                    capture_output=True, text=True, timeout=30,
+                )
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                self.assertIn("Saved attendee defaults:", result.stdout)
+                self.assertIn("approve-contract" if contract_exists else "factory init", result.stdout)
+                self.assertEqual(load_session_config(repo)["agent"], "claude")
+
     def test_cursor_preset_selects_cursor_for_every_agent_role(self):
         with tempfile.TemporaryDirectory() as directory:
             _, value = configure_session(Path(directory), "cursor-workshop", 12)

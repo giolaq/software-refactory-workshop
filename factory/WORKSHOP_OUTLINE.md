@@ -5,13 +5,15 @@ release tag and matching guide URL; branch previews are not published releases.
 
 ## Attendee invitation
 
-In three hours, you will use an AI software factory to transform Pocket Cinema,
-a film-browsing app, into TableStory, a recipe product. You will review the plan,
+In three hours, you will work through an AI software factory's transformation of
+Pocket Cinema, a film-browsing app, into TableStory, a recipe product. You will review the plan,
 follow GitHub tickets, inspect acceptance tests and code reviews, and decide what
 to merge in your own repository. You will also create a pilot proposal for your
 team. You do not need prior AI software-factory experience.
 
 The goal is the complete product transformation, not a small film-search change.
+Follow one journey through the work: find a recipe by ingredient, read its cooking
+steps, and save it to My Cookbook. This example does not replace the full PRD.
 Live execution time varies. If work is unfinished, keep its actual state and
 resume point; use labeled prepared evidence to practice the remaining decisions.
 
@@ -67,9 +69,10 @@ Then run only the check for your selected agent:
 - Custom adapter: follow its registered readiness command.
 
 Follow the session guide's Setup steps using the release tag supplied by the
-organizer. Confirm the selected repository and resolve required failures before
-class. Ask for help with the first failed command, its output, operating system,
-and selected CLI. Never send a password or access token.
+organizer. Confirm the selected repository, resolve required failures, and open
+the Pocket Cinema baseline before class. Ask for help with the first failed
+command, its output, operating system, and selected CLI. Never send a password
+or access token.
 
 Support targets and actually completed checks are listed in
 [Workshop validation](WORKSHOP_VALIDATION.md). WSL and individual live providers
@@ -88,12 +91,19 @@ completed verification.
 8. Complete a [personal pilot worksheet](WORKSHOP_PILOT.md).
 
 See the [timed plan](WORKSHOP_PLAN_3_HOURS.md) for the full 180-minute agenda and
-answer keys. The [recipe rebrand](../recipe-app-prd.md), cloud deployment, and
-custom adapters are extensions.
+answer keys. The [recipe transformation](../recipe-app-prd.md) is the main exercise.
+Cloud deployment and custom adapters are optional follow-up labs.
 
 ## Completion
 
-Aim for one tested, reviewed, user-visible slice. A healthy Live run can continue
-past a teaching checkpoint. If it is unfinished, retain its resume point and use
-prepared evidence for the decision exercise. Do not disable QA, mark unmerged
+Complete means the full approved transformation is merged and integrated
+acceptance checks pass. One completed slice is progress, not a finished TableStory.
+A healthy Live run can continue past a teaching checkpoint. If it is unfinished,
+retain its resume point and use prepared evidence for the decision exercise.
+Do not disable QA, mark unmerged
 tickets Done, or claim a mock run completed a Live change.
+
+Learning success is separate: explain why you accepted or rejected a requirement,
+test, or candidate revision, and leave with a pilot owner, evidence strategy,
+and a measurable stop/go criterion. The workshop does not require adoption of
+this factory or claim that more agents always improve delivery.

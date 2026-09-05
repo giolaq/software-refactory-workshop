@@ -3,7 +3,16 @@
 Use this checklist before publishing a session release. A passing test suite is
 not a guarantee that beginners finish Live work in three hours.
 
-## Latest local result — 5 September 2026
+## Instruction update — 6 September 2026
+
+On `codex/workshop-audience-payoff`, 14 guide/editor tests, seven repository-contract
+tests, guide lint, both production builds, and local link/asset checks passed.
+Regression checks cover the continuous 180-minute agenda, earlier eligible
+implementation, the break and pilot time, full transformation scope, and the
+absence of a completion tracker. No factory runtime or screenshot assets changed.
+The real-run cost record and novice observation remain to be performed.
+
+## Baseline validation — 5 September 2026
 
 On `codex/workshop-simplify-readiness`: 432 factory tests and 11 guide/editor
 tests passed, as did lint, both production builds, the complexity gate, and local
@@ -12,8 +21,10 @@ recovery, a five-ticket Standard Rehearsal, UI evidence export and packet openin
 and guide reload. Updated screenshots were inspected; their recorded source and
 asset hashes match. A 390-pixel guide viewport had no horizontal overflow.
 
-These were local macOS checks. The new Linux CI job is configured but has not
-run remotely as part of this change. Live provider accounts, fresh Linux/WSL
+Those were local macOS checks. Subsequent PR #59 checks passed the factory tests,
+guide/browser journey, and both rehearsal scenarios on GitHub
+([run record](https://github.com/giolaq/software-refactory-workshop/actions/runs/33964842824)).
+CI is not a novice observation. Live provider accounts, fresh Linux/WSL
 installations, the public deployment, and a timed novice session remain unverified.
 
 ## Automated local checks
@@ -61,8 +72,11 @@ tested source revision as the guide.
 
 ## Required human dry run — not yet established by these checks
 
-Run a timed session with at least one person who has not used the Factory.
-Record observations rather than coaching them past unclear instructions.
+Follow [Workshop dry run](WORKSHOP_DRY_RUN.md): record one real transformation's
+scope and operating effort, then observe two or three people who have not used
+the Factory. Record observations rather than coaching them past unclear
+instructions. Freeze feature additions until these observations identify the
+actual blockers; fix and retest required paths before claiming beginner readiness.
 
 | Check | Record before release |
 | --- | --- |
@@ -70,7 +84,7 @@ Record observations rather than coaching them past unclear instructions.
 | Live provider smoke | CLI version, authentication method, planning, QA, implementation, review, final human merge; test each advertised provider when an account is available |
 | Personal GitHub repository and Project | Correct target, published issues, visible Project status, permission and branch recovery |
 | Novice navigation | Can open the Control Center, find the current phase, inspect tests, recover, and export without facilitator rescue |
-| Three-hour pacing | Setup duration, time at each decision, agent time versus human wait, completed transformation scope, remaining tickets and resume point |
+| Three-hour pacing | Setup duration, first eligible implementation start, time at each decision, agent time versus active human effort and wait, completed transformation scope, remaining tickets and resume point |
 | Learning | Can reject false RED, reject stale approval, and propose a bounded pilot with an owner and stop/go criterion |
 | Accessibility | Keyboard-only decisions, zoom, narrow viewport, and screen-reader labels in the browsers attendees use |
 

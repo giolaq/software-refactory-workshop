@@ -2,11 +2,17 @@
 
 Release: `workshop-v1.2.1`
 
-The attendee procedure guide follows **Setup → Plan → Deliver → Review**.
+The attendee procedure guide uses the existing **Setup → Plan → Deliver → Review**
+screens, framed as agree on the change, build it, inspect evidence, and accept it.
 It explains commands, clicks, expected results, and recovery. The facilitator's
 slides and notes explain the rationale. Live is the session path, using the
 Pocket Cinema → TableStory product-transformation PRD in `recipe-app-prd.md`.
 The same transformation is the simulated Rehearsal pack, not an optional extension. The organizer supplies a tested release tag.
+
+The repeated cooking journey is a teaching thread, not reduced scope. Attendees
+challenge requirements, dependencies, tests, and exact-revision evidence. They
+start eligible implementation immediately after required approvals, without
+waiting for the room. No additional tracker or runtime controls are introduced.
 
 The guide supports deterministic rehearsal and live GitHub paths. Claude is
 the worked example, but attendees can use Codex, Cursor, or a custom CLI.

@@ -1,12 +1,11 @@
 const search = document.querySelector('#search');
-const cards = [...document.querySelectorAll('.recipe-card')];
 const count = document.querySelector('#count');
 const empty = document.querySelector('#empty');
 
 search?.addEventListener('input', () => {
   const query = search.value.trim().toLowerCase();
   let visible = 0;
-  for (const card of cards) {
+  for (const card of document.querySelectorAll('.recipe-card')) {
     card.hidden = !card.dataset.search.includes(query);
     if (!card.hidden) visible += 1;
   }
@@ -23,16 +22,20 @@ function render(button) {
   button.setAttribute('aria-label', `${active ? 'Remove' : 'Add'} ${title} ${active ? 'from' : 'to'} My Cookbook`);
 }
 
-const buttons = [...document.querySelectorAll('.cookbook[data-recipe-id]')];
+const buttons = () => [...document.querySelectorAll('.cookbook[data-recipe-id]')];
+document.addEventListener('tablestory:rails-ready', () => buttons().forEach(render));
 fetch('/api/cookbook').then(response => response.json()).then(recipes => {
-  saved = new Set(recipes.map(recipe => recipe.id)); buttons.forEach(render);
+  saved = new Set(recipes.map(recipe => recipe.id)); buttons().forEach(render);
 });
-for (const button of buttons) button.addEventListener('click', async () => {
+document.addEventListener('click', async event => {
+  const button = event.target.closest('.cookbook[data-recipe-id]');
+  if (!button) return;
   const id = button.dataset.recipeId;
   const active = saved.has(id);
   await fetch(active ? `/api/cookbook/${id}` : '/api/cookbook', {
     method: active ? 'DELETE' : 'POST', headers: {'Content-Type':'application/json'},
     body: active ? undefined : JSON.stringify({id}),
   });
-  active ? saved.delete(id) : saved.add(id); render(button);
+  active ? saved.delete(id) : saved.add(id); buttons().forEach(render);
+  if (new URLSearchParams(location.search).get('view') === 'cookbook') location.reload();
 });

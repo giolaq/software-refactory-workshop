@@ -234,9 +234,9 @@ export default function Home() {
             <a className="primary-button" href="#path">Start the workshop</a>
           </div>
           <div className="factory-map" aria-label="Workshop workflow">
-            <div className="map-row"><span className="map-node">1 · Setup</span><i>→</i><span className="map-node node-blue">2 · Plan</span></div>
+            <div className="map-row"><span className="map-node">1 · Agree</span><i>→</i><span className="map-node node-blue">2 · Build</span></div>
             <div className="map-down">↓</div>
-            <div className="map-row"><span className="map-node node-purple">3 · Deliver</span><i>→</i><span className="map-node node-human">4 · Review</span></div>
+            <div className="map-row"><span className="map-node node-purple">3 · Inspect evidence</span><i>→</i><span className="map-node node-human">4 · Accept</span></div>
             <div className="map-down">↓</div>
             <div className="map-row"><span className="map-node node-green">Running app and evidence</span></div>
           </div>
@@ -256,7 +256,7 @@ export default function Home() {
 
         <section id="prerequisites" className="prerequisites-section">
           <div className="section-heading">
-            <span className="section-kicker">Before you begin</span>
+            <span className="section-kicker">Before the session: finish Setup and check the starting app</span>
             <h2>Install and sign in</h2>
           </div>
           <div className="prerequisites-grid">
@@ -455,7 +455,7 @@ AGENT_PRESET=claude-workshop # or codex-workshop or cursor-workshop
           <WorkshopPaths
             click={<>Open <strong>Plan → Requirements</strong>. Replace the draft with <code>recipe-app-prd.md</code> from the Factory checkout. Edit it as directed by your facilitator. The draft saves automatically.</>}
             whyStopped={<>No planning role runs until you select <strong>Start Product Review</strong>.</>}
-            inspect={<>Check recipe data and APIs, ingredient search, cooking steps, My Cookbook, the new brand, and mobile/TV navigation. Do not reduce the request to changing labels.</>}
+            inspect={<>Keep the full transformation. Trace this journey: find a recipe by ingredient → read its cooking steps → save it to My Cookbook.</>}
             continueWhen={<>The save indicator is current and you can describe the requested product change.</>}
             cliPurpose={<>Open the workshop PRD in your local editor.</>}
             cliDirectory={track === "live" ? <><code>software-refactory-control</code></> : <><code>software-refactory-rehearsal</code></>}
@@ -477,7 +477,7 @@ AGENT_PRESET=claude-workshop # or codex-workshop or cursor-workshop
           <WorkshopPaths
             click={<>In <strong>Plan → Requirements</strong>, select <strong>Start Product Review</strong>. Then open <strong>Plan → Review plan</strong> and select <strong>Product Review</strong>.</>}
             whyStopped={<>A person must approve the product plan before technical planning starts.</>}
-            inspect={<>Check the users, problem, required behavior, success checks, and any questions. Request a revision when the plan is unclear.</>}
+            inspect={<>Write one observable outcome for the cooking journey. Compare it with the plan; request a correction where the behavior or evidence is unclear.</>}
             continueWhen={<>The product plan is clear, testable, and approved.</>}
             cliPurpose={<>Generate, inspect, revise if needed, and approve Product Review.</>}
             cliDirectory={track === "live" ? <><code>software-refactory-control</code>; commands target <code>$TARGET</code></> : <><code>software-refactory-rehearsal</code></>}
@@ -505,11 +505,11 @@ read -r PLAN_ID
           <Checkpoint>Product Review shows <strong>Approved</strong>.</Checkpoint>
         </StepSection>
 
-        <StepSection index={5} id="publish" title="Create tickets" goal="Review the technical plan and approve the Vertical Slices.">
+        <StepSection index={5} id="publish" title="Create tickets" goal="Check the proposed work before publishing it.">
           <WorkshopPaths
             click={<>In <strong>Plan → Review plan</strong>, select <strong>Run remaining experts</strong>. Open each result, resolve blockers, and complete approvals. Then select <strong>Create tickets</strong>.</>}
-            whyStopped={<>The factory waits for answers when an expert cannot make a safe assumption. It also waits for your final approval before it creates tickets.</>}
-            inspect={<>Check coverage: recipe data, APIs, interface, mobile/TV journeys, and integration tests. Inspect dependencies and acceptance criteria. Live ticket counts vary; Rehearsal has five.</>}
+            whyStopped={<>Resolve blocking questions, then approve the plan before tickets can be created.</>}
+            inspect={<>Trace the cooking journey through the tickets. Challenge unnecessary dependencies. Confirm full coverage: recipe data, APIs, branding, mobile/TV, and cleanup. Live ticket counts vary; Rehearsal has five.</>}
             continueWhen={track === "live" ? <>The GitHub Project contains the planned issues.</> : <>The Tickets page contains the planned work.</>}
             cliPurpose={<>Complete technical planning and publish the approved Vertical Slices as tickets.</>}
             cliDirectory={track === "live" ? <><code>software-refactory-control</code>; commands target <code>$TARGET</code></> : <><code>software-refactory-rehearsal</code></>}
@@ -530,8 +530,8 @@ read -r PLAN_ID
           <WorkshopPaths
             click={<>Open <strong>Deliver → Tickets</strong>. Open <strong>Run options</strong> and select <strong>Run one cycle</strong>. Open the ticket labeled <strong>QA Review</strong>, select <strong>Tests</strong>, and read the proposed test and baseline failure. Approve it there, or request a revision.</>}
             whyStopped={<>The factory runs the new test before implementation. <strong>RED PROVED</strong> records an assertion failure on the baseline. Read the assertion to confirm it tests the requested behavior.</>}
-            inspect={<>Check the test file, command, and failure. Do not approve a test that fails because of setup, syntax, or an unrelated error.</>}
-            continueWhen={<>The assertion checks the requested behavior, its baseline failure is relevant, and you approve the test.</>}
+            inspect={<>Decide approve or revise, and explain which assertion proves the requirement. Setup, syntax, and unrelated failures are not valid behavior evidence.</>}
+            continueWhen={<>You approve relevant test evidence. Continue to <a href="#factory">Deliver tickets</a> immediately; do not wait for the whole room.</>}
             cliPurpose={<>Run one ticket through QA RED evidence, then approve its acceptance tests.</>}
             cliDirectory={track === "live" ? <><code>software-refactory-control</code>; commands target <code>$TARGET</code></> : <><code>software-refactory-rehearsal</code></>}
           >{track === "live" ? `./factory/factory run --repo "$TARGET" --review-qa-tests --once
@@ -563,8 +563,8 @@ read -r ISSUE_NUMBER
         <StepSection index={7} id="factory" title="Deliver tickets" goal="Run the planned work and handle each human checkpoint.">
           <WorkshopPaths
             click={<>Open <strong>Deliver → Tickets</strong> and select <strong>Run factory</strong>. Keep <strong>Active lanes</strong> selected. When <strong>NEEDS YOU</strong> appears, open the linked ticket.</>}
-            whyStopped={<>For each ticket, the factory assigns work, runs tests and required checks, and asks a separate agent to review the change. It stops when a check fails or a person must decide.</>}
-            inspect={<>Open the ticket tabs to read the task, live log, changed files, tests, checks, and code review. Before merge, confirm that the approved commit matches the pull request.</>}
+            whyStopped={<>Each ticket needs implementation, passing checks, and separate code review. A failed check or required human decision stops progress.</>}
+            inspect={<>Inspect the diff, tests, checks, and review. Before merging, explain why the evidence covers this commit. Handle later QA and merge decisions as they become ready.</>}
             continueWhen={<>Code review approves the commit and you select <strong>Merge exact revision</strong>. The ticket then moves to Done.</>}
             cliPurpose={<>Run eligible tickets and follow their GitHub Project state.</>}
             cliDirectory={track === "live" ? <><code>software-refactory-control</code>; commands target <code>$TARGET</code></> : <><code>software-refactory-rehearsal</code></>}
@@ -647,6 +647,10 @@ gh project view "$PROJECT_NUMBER" --owner "@me" --web
             height={980}
           />
           <p>Stop the app, then select <strong>Export run evidence</strong> on this page. Open the packet and select <strong>Download</strong>. A Canvas is optional; no form is required to export.</p>
+          <details className="optional-detail">
+            <summary>Record the effort behind this result</summary>
+            <p>Note completed tickets, retries, elapsed time, and minutes you actively spent reviewing or recovering. Use ticket records for attempts and evidence; provider records for available model usage and charges. Human wait is not active review time. Mark missing usage unknown, not zero. Do not share credentials or raw sensitive logs.</p>
+          </details>
           <Checkpoint>TableStory satisfies the PRD; evidence is saved. Unfinished Live run? Record the resume point and inspect the facilitator’s labeled prepared result.</Checkpoint>
         </StepSection>
 

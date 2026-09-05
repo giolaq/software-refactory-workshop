@@ -23,6 +23,10 @@ def git(repo: Path, *args: str) -> str:
 
 
 class ProjectContractTests(unittest.TestCase):
+    def test_workshop_preparation_uses_frozen_node_dependencies(self):
+        contract = ProjectContract.load(Path(__file__).parents[2])
+        self.assertIn("cd workshop-guide && npm ci", contract.setup_commands)
+
     def make_repo(self, root: str) -> Path:
         repo = Path(root)
         git(repo, "init", "-q", "-b", "main")

@@ -26,7 +26,9 @@ def create_app(testing: bool = False) -> Flask:
 
     @app.get("/")
     def index():
-        return render_template("index.html", recipes=recipes, tv_mode=is_tv_mode())
+        cookbook_view = request.args.get("view") == "cookbook"
+        visible = [r for r in recipes if r["id"] in app.config["COOKBOOK"]] if cookbook_view else recipes
+        return render_template("index.html", recipes=visible, tv_mode=is_tv_mode(), cookbook_view=cookbook_view)
 
     @app.get("/recipe/<recipe_id>")
     def detail(recipe_id: str):

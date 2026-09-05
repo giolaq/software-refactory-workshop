@@ -9,7 +9,7 @@ protected_paths = [".github/workflows", "factory/planning_schemas", "factory/pol
 
 [environment]
 required_tools = ["git", "python3", "node"]
-setup = ["{python} -m pip install -r demo-app/requirements.txt", "cd workshop-guide && npm install"]
+setup = ["{python} -m pip install -r demo-app/requirements.txt", "cd workshop-guide && npm ci"]
 ports = [5000]
 
 [qa]

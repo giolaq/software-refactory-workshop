@@ -16,6 +16,7 @@ _COLLECTION_MARKERS = (
     "error collecting",
     "collection error",
     "modulenotfounderror",
+    "no module named",
     "importerror",
     "cannot find module",
     "syntaxerror",
@@ -26,12 +27,6 @@ _COLLECTION_MARKERS = (
 _ASSERTION_MARKERS = (
     "assertionerror",
     "err_assertion",
-    "assert ",
-    "not ok",
-    "expected:",
-    "received:",
-    "failed ",
-    " failures",
 )
 
 
@@ -71,6 +66,13 @@ def classify_focused_result(exit_code: int, output: str) -> str:
         return "command_error"
     if any(marker in lowered for marker in _COLLECTION_MARKERS):
         return "collection_error"
+    # A runner's FAILED/not-ok summary says nothing about the failure cause.
+    # Mixed assertion + execution failures must not establish RED either.
+    exceptions = re.findall(r"\b([a-z][a-z0-9_]*(?:error|exception))\b\s*:", lowered)
+    if any(name != "assertionerror" for name in exceptions) or re.search(
+        r"\b(?:enoent|eacces|econnrefused|enotfound)\b", lowered,
+    ):
+        return "unrelated_failure"
     if exit_code == 1 and any(marker in lowered for marker in _ASSERTION_MARKERS):
         return "behavior_assertion"
     return "unrelated_failure"

@@ -20,3 +20,10 @@ def test_cookbook_round_trip(client):
     assert [recipe["id"] for recipe in client.get("/api/cookbook").get_json()] == ["tomato-pasta"]
     assert client.delete("/api/cookbook/tomato-pasta").get_json() == {"ids": []}
     assert client.post("/api/cookbook", json={"id": "missing"}).status_code == 400
+def test_cookbook_view_only_shows_saved_recipes(client):
+    client.post("/api/cookbook", json={"id": "tomato-pasta"})
+    page = client.get("/?view=cookbook")
+    assert b"Silky Tomato Pasta" in page.data
+    assert b"Miso Sesame Noodles" not in page.data
+    client.delete("/api/cookbook/tomato-pasta")
+    assert b"Silky Tomato Pasta" not in client.get("/?view=cookbook").data

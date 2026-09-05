@@ -571,6 +571,7 @@ class ControlCenter:
         self,
         contract: ProjectContract,
         default_port: int,
+        *, read_documented_urls: bool = True,
     ) -> tuple[list[dict], int, int]:
         urls = []
         seen = set()
@@ -585,7 +586,7 @@ class ControlCenter:
             ),
             None,
         )
-        if readme:
+        if readme and read_documented_urls:
             try:
                 text = readme.read_text(errors="replace")[:256_000]
             except OSError:
@@ -795,6 +796,7 @@ class ControlCenter:
         base_command = [str(python), str(relative)]
         urls, preferred_port, selected_port = self._documented_application_urls(
             contract, contract.ports[0] if contract.ports else 5000,
+            read_documented_urls=relative != Path("demo-app/app.py"),
         )
         command = (
             ["env", f"PORT={selected_port}", *base_command]
@@ -802,7 +804,14 @@ class ControlCenter:
             base_command
         )
         if relative == Path("demo-app/app.py"):
-            base_url = urls[0]["url"]
+            # The workshop README documents both the factory and the product.
+            # Start the bundled Flask workpiece explicitly, including historical
+            # baselines whose __main__ hardcodes port 5000 and enables reload.
+            command = [str(python), "-m", "flask", "--app", str(relative),
+                       "run", "--host", "127.0.0.1", "--port", str(selected_port),
+                       "--no-reload", "--no-debugger"]
+            base_url = f"http://127.0.0.1:{selected_port}/"
+            urls = [{"label": "Application", "url": base_url}]
             separator = "&" if "?" in base_url else "?"
             urls.append({
                 "label": "Television",
@@ -812,11 +821,7 @@ class ControlCenter:
             "argv": command,
             "command": (
                 f"cd {shlex.quote(str(self.repo))}\n"
-                + (
-                    f"PORT={selected_port} {shlex.join(base_command)}"
-                    if selected_port != preferred_port else
-                    shlex.join(base_command)
-                )
+                + shlex.join(command)
             ),
             "urls": urls,
             "kind": "python",
@@ -950,7 +955,15 @@ class ControlCenter:
             }
         layer = "Control plane"
         recovery_prefix = "Repair the Control Center or GitHub connection."
-        if action.startswith("environment-") or any(
+        if "traceback (most recent call last):" in lowered and any(
+            marker in diagnostic.lower() for marker in ("nameerror:", "attributeerror:", "typeerror:")
+        ):
+            layer = "Internal software"
+            recovery_prefix = (
+                "Share the displayed command and traceback with your facilitator or maintainer. "
+                "This is a software error; changing agent credentials will not resolve it."
+            )
+        elif action.startswith("environment-") or any(
             marker in lowered for marker in (
                 "required tool", "no module named", "port ", "project contract",
                 "dependency", "command not found",
@@ -959,7 +972,8 @@ class ControlCenter:
             layer = "Development environment"
             recovery_prefix = "Correct the Project Contract, tool, dependency, service, or port check."
         elif any(marker in lowered for marker in (
-            "adapter not found", "not signed in", "auth login", "claude", "codex", "cursor",
+            "adapter not found", "not signed in", "auth login", "cli not found",
+            "authentication failed", "codex login", "agent login",
         )):
             layer = "Inner harness"
             recovery_prefix = "Install or sign in to the selected Agent Adapter, then run its preflight again."

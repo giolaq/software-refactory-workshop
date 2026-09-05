@@ -97,7 +97,7 @@ from planning_pipeline import (
     resolve_run,
     review as review_plan,
 )
-from project_contract import ProjectContract, ProjectContractError
+from project_contract import CONTRACT_PATH, ProjectContract, ProjectContractError
 from triage import GATE_ORDER, classify_controls, declared_paths, triage_ticket
 from run_summary import factory_run_summary, render_factory_run_summary
 from monitor import FactoryMonitor
@@ -4611,7 +4611,7 @@ class Factory:
             elif unfinished and not waiting_qa:
                 deadlock = tuple((t["number"], tuple(t["dependencies"])) for t in unfinished)
                 if deadlock != self.last_deadlock:
-                    print("Deadlock: " + ", ".join(f"#{t['number']} waits for {t['dependencies']}" for t in unfinished), flush=True)
+                    print("Waiting for dependencies: " + ", ".join(f"#{t['number']} waits for {t['dependencies']}" for t in unfinished), flush=True)
                     self.last_deadlock = deadlock
             if self.args.mock and self.args.once:
                 return
@@ -5038,20 +5038,24 @@ def steward_synchronize_ticket(
     if dirty:
         raise ValueError("The candidate worktree has uncommitted changes; a person must inspect it.")
     default_branch = ProjectContract.load(repo).default_branch
-    fetched = run(
-        ["git", "fetch", "origin", default_branch], repo, check=False,
-    )
-    if fetched.returncode:
-        raise ValueError(
-            "Could not fetch the default branch; repair repository access before synchronization."
+    rehearsal = store.data.get("mode") == "mock"
+    if rehearsal:
+        remote_ref = run(["git", "rev-parse", "HEAD"], repo).stdout.strip()
+    else:
+        fetched = run(
+            ["git", "fetch", "origin", default_branch], repo, check=False,
         )
-    remote_ref = f"origin/{default_branch}"
+        if fetched.returncode:
+            raise ValueError(
+                "Could not fetch the default branch; repair repository access before synchronization."
+            )
+        remote_ref = f"origin/{default_branch}"
     old_head = run(["git", "rev-parse", "HEAD"], candidate).stdout.strip()
     up_to_date = run(
         ["git", "merge-base", "--is-ancestor", remote_ref, "HEAD"],
         candidate, check=False,
     ).returncode == 0
-    if up_to_date:
+    if up_to_date and old_head == ticket.get("approved_head"):
         return {
             "schema_version": 1,
             "state": "ready-for-human-merge",
@@ -5083,8 +5087,8 @@ def steward_synchronize_ticket(
         store.save()
         raise ValueError(ticket["failure"])
     new_head = run(["git", "rev-parse", "HEAD"], candidate).stdout.strip()
-    pushed = run(["git", "push", "origin", branch], candidate, check=False)
-    if pushed.returncode:
+    pushed = None if rehearsal else run(["git", "push", "origin", branch], candidate, check=False)
+    if pushed is not None and pushed.returncode:
         ticket.update(
             status="Blocked", phase="merge-steward",
             failure="Synchronized candidate could not be pushed; inspect the preserved worktree.",

@@ -8,6 +8,17 @@ from acceptance_evidence import classify_focused_result, focused_test_command
 
 
 class AcceptanceEvidenceTests(unittest.TestCase):
+    def test_runner_failure_summary_is_not_assertion_evidence(self):
+        for output in (
+            "FAILED test_brand - FileNotFoundError: table-story.css\n1 failed",
+            "not ok 1 - brand\nerror: ENOENT: no such file",
+            "FAILED test_brand - RuntimeError: server unavailable",
+            "E       assert False\nFAILED test_one - AssertionError\n"
+            "FAILED test_two - FileNotFoundError: missing file",
+        ):
+            with self.subTest(output=output):
+                self.assertEqual(classify_focused_result(1, output), "unrelated_failure")
+
     def test_builds_a_bounded_command_for_the_exact_python_test_files(self):
         command = focused_test_command(
             ["tests/test_ticket_7_search.py", "tests/test_ticket_7_errors.py"],

@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>TableStory · Good food, clearly told.</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='table-story.css') }}">
+  <style>
+    * { box-sizing: border-box; }
+    body { margin: 0; background: var(--cream); color: var(--charcoal); font: 18px/1.5 system-ui,sans-serif; }
+    header, main { width: min(92%, 1100px); margin: auto; padding: 24px 0; }
+    a { color: inherit; }
+    h1 { font: 700 clamp(40px,8vw,80px)/1.1 Georgia,serif; }
+    .recipe-card { padding: 24px; overflow-wrap: anywhere; }
+  </style>
+</head>
+<body>
+  <header><a href="/" aria-label="TableStory home">TableStory</a></header>
+  <main>
+    <h1>Good food,<br>clearly told.</h1>
+    <p>The TableStory design foundation is ready. Recipe discovery and My Cookbook arrive in the next ticket.</p>
+    <section class="recipe-grid" aria-label="Recipe design preview">
+      <article class="recipe-card"><h2>Find dinner inspiration</h2><p>A calm, readable place for your next meal.</p></article>
+    </section>
+  </main>
+</body>
+</html>
