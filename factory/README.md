@@ -795,10 +795,11 @@ To attach a detailed Canvas, create it with `factory canvas`, complete it, and
 pass `--canvas PATH` to evidence export. An explicitly supplied incomplete Canvas
 is still rejected. Evidence export does not waive any delivery or merge gate.
 
-The three-hour Live exercise uses [genre-aware film search](../workshop-search-prd.md).
-Planning accepts a minimum of one ticket by default; it does not need to invent
-enabling tickets for a small end-to-end change. The full recipe rebrand remains
-the deterministic Rehearsal pack and an optional extension.
+The main workshop exercise is the [Pocket Cinema → TableStory product transformation](../recipe-app-prd.md)
+in both Live and Rehearsal. Live planning generates a reviewed, PRD-driven ticket
+breakdown; Rehearsal uses the five-ticket recipe pack. Complete means the approved
+transformation scope is merged and integrated recipe journeys pass, not just one
+Done ticket. The generic planner still permits a single ticket for smaller requests.
 
 Before a public/template release, freeze a clean tree and run:
 

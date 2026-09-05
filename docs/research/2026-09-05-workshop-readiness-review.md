@@ -14,6 +14,14 @@ on `codex/workshop-simplify-readiness`. The owner's later direction supersedes
 two recommendations: the website explains **how**, while slides explain **why**;
 website completion tracking is removed, not repaired.
 
+Subsequent exercise decision: the owner selected the full Pocket Cinema →
+TableStory product transformation as the main exercise, superseding R04's
+small-change curriculum recommendation. Both Live and Rehearsal use
+[`recipe-app-prd.md`](../../recipe-app-prd.md). The genre-search PRD remains an
+optional example. Completion means the approved transformation scope is merged
+and integrated acceptance checks pass; unfinished Live work needs an explicit
+resume point. The original assessment below is retained as historical context.
+
 ## Executive assessment
 
 The factory is a credible teaching implementation with unusually useful review and verification controls. The current workshop does not yet make those controls easy enough to understand, exercise, and reuse in three hours.

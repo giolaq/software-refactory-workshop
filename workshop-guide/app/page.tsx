@@ -224,7 +224,7 @@ export default function Home() {
             <span className="eyebrow">Hands-on developer workshop</span>
             <h1>Software (re)-Factory workshop</h1>
             <p className="hero-lede">
-              Follow these steps in your own repository. Keep this guide beside the Control Center. Use the CLI sections only if you prefer the terminal.
+              Transform Pocket Cinema into TableStory, a recipe app. Follow these steps in your own repository, using the Control Center or CLI.
             </p>
             <div className="hero-meta">
               <span><b>Duration:</b> 3 hours</span>
@@ -349,7 +349,7 @@ cd software-refactory-control
             <h3>Create your workshop repository</h3>
             <ol>
               <li>Open <a href="https://github.com/new" target="_blank" rel="noreferrer">GitHub → New repository</a>. Use your personal account as the owner.</li>
-              <li>Name it <code>factory-search-workshop</code> and select <strong>Private</strong>. If that name already exists, choose another.</li>
+              <li>Name it <code>factory-tablestory-workshop</code> and select <strong>Private</strong>. If that name already exists, choose another.</li>
               <li>Leave README, .gitignore, and license unselected. Select <strong>Create repository</strong>.</li>
               <li>Copy its page URL. You will paste it into the Control Center in the next step. Do not clone this repository yourself.</li>
             </ol>
@@ -395,8 +395,8 @@ cd software-refactory-control
             cliPurpose={<>Connect the product repository and approve its contract. {track === "live" && <>Open another terminal in the Factory checkout. Set the three variables below and keep that terminal for later CLI commands. If you already connected in the browser, skip the remaining setup commands. Use <code>claude-workshop</code>, <code>codex-workshop</code>, or <code>cursor-workshop</code> for your selected CLI.</>}</>}
             cliDirectory={track === "live" ? <><code>software-refactory-control</code> (the Factory checkout)</> : <><code>software-refactory-rehearsal</code></>}
           >{track === "live" ? `# Open another terminal in software-refactory-control.
-# Replace your-account/factory-search-workshop with your repository.
-REPOSITORY=your-account/factory-search-workshop
+# Replace your-account/factory-tablestory-workshop with your repository.
+REPOSITORY=your-account/factory-tablestory-workshop
 export CONTROL="$PWD"
 export TARGET="$CONTROL/.factory/repositories/$REPOSITORY"
 
@@ -429,20 +429,16 @@ AGENT_PRESET=claude-workshop # or codex-workshop or cursor-workshop
         </StepSection>
 
         <StepSection index={2} id="baseline" title="Check the starting app" goal="Confirm what the factory will change.">
-          <p>The guided exercise starts with Pocket Cinema. A new product repository has no app yet.</p>
+          <p>Try Pocket Cinema’s search, film details, and watchlist. You will transform these into recipe discovery, cooking steps, and My Cookbook.</p>
           <WorkshopPaths
             click={<>Open <strong>Review → Run app</strong> and select <strong>Start app</strong>. Open the displayed browser link, inspect the baseline, then select <strong>Stop app</strong> before planning.</>}
             whyStopped={<>No ticket starts before you save and approve a plan; the starter app runs separately.</>}
-            inspect={<>Guided exercise: open Pocket Cinema. New product: the repository should contain only <code>.gitignore</code> and two factory settings files.</>}
+            inspect={<>Confirm that Pocket Cinema shows films, film details, and a watchlist. This is the baseline, not the recipe product.</>}
             continueWhen={<>The starting repository is correct and the Control Center points to <strong>Plan → Requirements</strong>.</>}
-            cliPurpose={<>Open the starter application or inspect the empty product baseline.</>}
+            cliPurpose={<>Open the Pocket Cinema starter application.</>}
             cliDirectory={track === "live" ? <><code>software-refactory-control</code> with <code>CONTROL</code> and <code>TARGET</code> set</> : <><code>software-refactory-rehearsal</code></>}
           >{track === "live"
-            ? `# Guided exercise:
-"$CONTROL/.factory/venv/bin/python" "$TARGET/demo-app/app.py"
-
-# New product:
-git -C "$TARGET" ls-tree -r --name-only HEAD`
+            ? `"$CONTROL/.factory/venv/bin/python" "$TARGET/demo-app/app.py"`
             : `.factory/venv/bin/python demo-app/app.py`}</WorkshopPaths>
           <WorkshopMedia
             src="/screenshots/pocket-cinema-before.webp"
@@ -452,19 +448,19 @@ git -C "$TARGET" ls-tree -r --name-only HEAD`
             width={1440}
             height={980}
           />
-          <Checkpoint>Pocket Cinema opens, or the new product repository contains only factory settings.</Checkpoint>
+          <Checkpoint>Pocket Cinema opens and you have checked its film-browsing journey.</Checkpoint>
         </StepSection>
 
         <StepSection index={3} id="prd" title="Write requirements" goal="Describe the result you want, in your own words.">
           <WorkshopPaths
-            click={<>Open <strong>Plan → Requirements</strong>. Replace the draft with {track === "live" ? <code>workshop-search-prd.md</code> : <code>recipe-app-prd.md</code>} from the Factory checkout. Edit it as directed by your facilitator. The draft saves automatically.</>}
+            click={<>Open <strong>Plan → Requirements</strong>. Replace the draft with <code>recipe-app-prd.md</code> from the Factory checkout. Edit it as directed by your facilitator. The draft saves automatically.</>}
             whyStopped={<>No planning role runs until you select <strong>Start Product Review</strong>.</>}
-            inspect={<>Check the target users, required behavior, limits, and proof of success.</>}
+            inspect={<>Check recipe data and APIs, ingredient search, cooking steps, My Cookbook, the new brand, and mobile/TV navigation. Do not reduce the request to changing labels.</>}
             continueWhen={<>The save indicator is current and you can describe the requested product change.</>}
             cliPurpose={<>Open the workshop PRD in your local editor.</>}
             cliDirectory={track === "live" ? <><code>software-refactory-control</code></> : <><code>software-refactory-rehearsal</code></>}
           >{track === "live"
-            ? `\${EDITOR:-vi} "$CONTROL/workshop-search-prd.md"`
+            ? `\${EDITOR:-vi} "$CONTROL/recipe-app-prd.md"`
             : `\${EDITOR:-vi} recipe-app-prd.md`}</WorkshopPaths>
           <WorkshopMedia
             src="/screenshots/control-center-prd.jpg"
@@ -474,7 +470,7 @@ git -C "$TARGET" ls-tree -r --name-only HEAD`
             width={1440}
             height={980}
           />
-          <Checkpoint>The PRD is saved. Live delivers genre-aware film search; Rehearsal demonstrates the full TableStory rebrand.</Checkpoint>
+          <Checkpoint>The saved PRD requests the full Pocket Cinema → TableStory product transformation in both modes.</Checkpoint>
         </StepSection>
 
         <StepSection index={4} id="plan" title="Approve Product Review" goal="Approve the user problem and expected behavior before technical design.">
@@ -485,7 +481,7 @@ git -C "$TARGET" ls-tree -r --name-only HEAD`
             continueWhen={<>The product plan is clear, testable, and approved.</>}
             cliPurpose={<>Generate, inspect, revise if needed, and approve Product Review.</>}
             cliDirectory={track === "live" ? <><code>software-refactory-control</code>; commands target <code>$TARGET</code></> : <><code>software-refactory-rehearsal</code></>}
-          >{track === "live" ? `./factory/factory plan "$CONTROL/workshop-search-prd.md" --repo "$TARGET"
+          >{track === "live" ? `./factory/factory plan "$CONTROL/recipe-app-prd.md" --repo "$TARGET"
 echo "Paste the plan ID from the output, then press Enter:"
 read -r PLAN_ID
 ./factory/factory review product "$PLAN_ID" --repo "$TARGET"
@@ -513,7 +509,7 @@ read -r PLAN_ID
           <WorkshopPaths
             click={<>In <strong>Plan → Review plan</strong>, select <strong>Run remaining experts</strong>. Open each result, resolve blockers, and complete approvals. Then select <strong>Create tickets</strong>.</>}
             whyStopped={<>The factory waits for answers when an expert cannot make a safe assumption. It also waits for your final approval before it creates tickets.</>}
-            inspect={<>Live: keep genre search in one end-to-end ticket unless there is a genuine blocker. Rehearsal: inspect the five sample tickets and their dependencies.</>}
+            inspect={<>Check coverage: recipe data, APIs, interface, mobile/TV journeys, and integration tests. Inspect dependencies and acceptance criteria. Live ticket counts vary; Rehearsal has five.</>}
             continueWhen={track === "live" ? <>The GitHub Project contains the planned issues.</> : <>The Tickets page contains the planned work.</>}
             cliPurpose={<>Complete technical planning and publish the approved Vertical Slices as tickets.</>}
             cliDirectory={track === "live" ? <><code>software-refactory-control</code>; commands target <code>$TARGET</code></> : <><code>software-refactory-rehearsal</code></>}
@@ -629,15 +625,15 @@ gh project view "$PROJECT_NUMBER" --owner "@me" --web
           {track === "live" && <Callout type="tip" title="Two views, one run">
             <p>GitHub Projects shows shared ticket status. The Control Center shows local agent logs, changed files, tests, and checks.</p>
           </Callout>}
-          <Checkpoint>At least one ticket reaches Done after tests, checks, review, and your merge decision.</Checkpoint>
+          <Checkpoint>All approved transformation tickets are checked, reviewed, and merged. One Done ticket is progress, not completion. Record any pending tickets and next action.</Checkpoint>
         </StepSection>
 
         <StepSection index={8} id="finish" title="Run the app and save evidence" goal="Check the merged behavior and save the run records.">
           <WorkshopPaths
             click={<>Open <strong>Review → Run app</strong> and select <strong>Start app</strong>, or copy the displayed startup command.</>}
             whyStopped={<>You can preview the baseline or merged work at any time. Remaining tickets do not prevent a preview.</>}
-            inspect={<>Open <code>http://127.0.0.1:5000/</code> for mobile and desktop, or <code>http://127.0.0.1:5000/?mode=tv</code> for television.</>}
-            continueWhen={<>Your merged behavior works. The full TableStory rebrand requires all five tickets. Keep the terminal running while you use it, then press <code>Ctrl+C</code> to stop the server.</>}
+            inspect={<>Use the displayed application URL. Search for a recipe by ingredient, open its cooking steps, save and remove it in My Cookbook, and test mobile and TV navigation. Check for remaining film labels and movie API contracts.</>}
+            continueWhen={<>The approved scope is merged and integrated acceptance checks pass. Rehearsal requires five tickets; Live follows your approved plan. Select <strong>Stop app</strong>, or press <code>Ctrl+C</code> for a terminal launch.</>}
             cliPurpose={<>Start the application from the merged product checkout.</>}
             cliDirectory={track === "live" ? <><code>$TARGET</code> (the Product checkout)</> : <><code>software-refactory-rehearsal</code></>}
           >{track === "live" ? `cd "$TARGET"
@@ -651,7 +647,7 @@ gh project view "$PROJECT_NUMBER" --owner "@me" --web
             height={980}
           />
           <p>Stop the app, then select <strong>Export run evidence</strong> on this page. Open the packet and select <strong>Download</strong>. A Canvas is optional; no form is required to export.</p>
-          <Checkpoint>The merged change works. Unfinished tickets stay visible; do not mark them Done to finish the session.</Checkpoint>
+          <Checkpoint>TableStory satisfies the PRD; evidence is saved. Unfinished Live run? Record the resume point and inspect the facilitator’s labeled prepared result.</Checkpoint>
         </StepSection>
 
 

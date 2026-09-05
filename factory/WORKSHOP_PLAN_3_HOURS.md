@@ -6,11 +6,15 @@ Use **Standard Live**, each attendee's own disposable GitHub repository, and
 GitHub Projects. The facilitator uses a separate repository. Keep human QA
 approval and exact-revision human merge enabled.
 
-The core Live exercise is [genre-aware film search](../workshop-search-prd.md):
-one visible improvement to Pocket Cinema, including tests and review. The full
-[TableStory rebrand](../recipe-app-prd.md) is an extension, not the three-hour
-completion promise. Rehearsal uses that five-ticket teaching pack; its mock
-adapters do not implement an arbitrary PRD.
+The main exercise is the [Pocket Cinema → TableStory product transformation](../recipe-app-prd.md).
+A food company wants a recipe product built from the existing cinema app. Attendees
+change the data model, APIs, visual identity, recipe journeys, saved items, and
+mobile/TV behavior. A logo swap or a single completed ticket is not the result.
+
+Live and Rehearsal use the same PRD. Live experts generate and humans review the
+ticket breakdown; Rehearsal uses five deterministic tickets. Do not force Live
+to match that count. Product completion means the approved transformation scope
+is merged and the integrated recipe journeys pass their acceptance checks.
 
 The website explains **how**: commands, clicks, expected results, and recovery.
 Explain **why** with slides, worked examples, and discussion. The website does
@@ -36,17 +40,17 @@ reaches the next decision. Do not impose a presentation timeout.
 
 | Time | Explain or demonstrate | Attendee activity | Observable result |
 | --- | --- | --- | --- |
-| 00–10 | Show an app and a PR approved at an older commit. Ask whether to merge. | Vote and identify missing evidence with a neighbor | They inspect the candidate revision, not just a green badge |
+| 00–10 | Show Pocket Cinema, introduce the recipe customer, and show a prepared TableStory result. Ask whether to merge a PR reviewed at an older commit. | Vote and identify missing evidence with a neighbor | They inspect the candidate revision, not just a green badge |
 | 10–20 | Define the factory with Git, tests, review, and three actors: agent, orchestrator, human | Identify who acts at each point | They distinguish a proposal from permission |
 | 20–35 | Confirm repository, selected CLI, contract, and merge policy | Complete or verify website Setup in their own repository | Correct target and no unresolved required readiness failure |
-| 35–50 | Show how ambiguity becomes unintended behavior | Paste the search PRD, review Product Review, request a correction, approve | Search behavior and one success example are testable |
-| 50–65 | Explain architecture, program design, and slicing through one requirement | Trace genre search through the plan; reject unnecessary enabling tickets | One end-to-end slice, with genuine blockers explained |
-| 65–80 | Show GitHub Projects versus the local Control Center | Publish the approved plan, find their issue and Project, start QA | They identify the ticket waiting for QA review |
+| 35–50 | Show how ambiguity becomes unintended behavior | Paste the recipe PRD, review Product Review, request a correction, approve | Recipe discovery, cooking steps, and My Cookbook have testable outcomes |
+| 50–65 | Explain architecture, program design, and slicing through one requirement | Trace a recipe journey through the plan; inspect contracts, ticket scope, and dependencies | The tickets cover the complete transformation in a workable order |
+| 65–80 | Show GitHub Projects versus the local Control Center | Publish the approved plan, find their issues and Project, start QA | They identify the ticket waiting for QA review |
 | 80–95 | Contrast an assertion failure, missing dependency, and irrelevant assertion | Inspect test code and baseline failure; approve or request changes | One justified rejection and acceptance |
 | 95–105 | Break | Leave healthy work running | No new material |
-| 105–125 | Show implementation, checks, and recovery | Follow the ticket; inspect a retry or prepared failure | They distinguish blocked, working, dependency wait, and human wait |
-| 125–145 | Inspect review receipts and human merge | Review the diff and current receipt; request rework or merge | An accepted core slice, or an honest unfinished Live state with the decision exercised on prepared evidence |
-| 145–155 | Verify behavior, durable evidence, and operating effort | Run the app, stop it, export and download run evidence | They name what was verified and what remains unknown |
+| 105–125 | Show implementation, checks, and recovery | Follow the dependency-ready tickets; inspect a retry or prepared failure | They distinguish blocked, working, dependency wait, and human wait |
+| 125–145 | Inspect review receipts and human merge | Review candidate diffs and current receipts; request rework or merge, then allow dependent work to continue | Accepted transformation tickets; unfinished work remains explicitly recorded |
+| 145–155 | Verify behavior, durable evidence, and operating effort | Check recipe search, detail, My Cookbook, mobile/TV behavior, and domain cleanup; export evidence | A verified TableStory transformation, or a recorded partial result with the remaining tickets and resume action |
 | 155–175 | Apply the decisions to their own work | Complete the pilot worksheet; exchange a peer challenge | A use case, owner, evidence strategy, cost question, and stop/go criterion |
 | 175–180 | Ask three new decision questions | Answer and name one next action | Answers refer to evidence, authority, and capacity |
 
@@ -60,28 +64,30 @@ than editing an attendee's active branch to manufacture the mismatch.
 
 ### Product Review: make the request testable
 
-Start with “Find films quickly.” Ask for the searched fields, case and whitespace
-behavior, the empty state, and one real genre from the catalog. Request a
-specific correction. Longer prose is not the objective.
+Start with “Turn this cinema app into a recipe app.” Ask what a recipe contains,
+what users can search, how My Cookbook works, and which movie-specific interfaces
+must disappear. Make one cooking journey explicit and request a specific
+correction. Longer prose is not the objective.
 
 ### Four experts: one trace
 
 Follow the same requirement through all four outputs:
 
-1. Product Review: the viewer can search by genre.
-2. Architecture: catalog genre data reaches browser filtering.
-3. Program Design: specify the data and matching contract without a new framework.
-4. Vertical Slices: deliver template data, browser behavior, and tests together.
+1. Product Review: a home cook finds a recipe by ingredient and reads its steps.
+2. Architecture: recipe data and API contracts feed the browsing and detail views.
+3. Program Design: define recipe fields, routes, matching behavior, and saved-item contracts.
+4. Vertical Slices: order the recipe foundation, interface, journeys, and integration checks.
 
-A genuine dependency may justify another ticket. Review that reason rather than
-forcing an unsafe change to satisfy a ticket count.
+Inspect which tickets can run together and which depend on merged contracts.
+Check that every required PRD outcome has a ticket and acceptance evidence.
+Do not split work merely to increase the number of agents.
 
 ### QA: three failures
 
 | Observation | Decision |
 | --- | --- |
 | No module named pytest | Repair the environment. This is not behavior evidence. |
-| The accepted genre assertion fails on the unchanged baseline | Inspect its relation to the requirement; then it can be valid RED. |
+| The accepted recipe behavior assertion fails on the unchanged baseline | Inspect its relation to the requirement; then it can be valid RED. |
 | An unrelated or impossible assertion fails | Request a revision. Failure alone does not justify implementation. |
 
 RED PROVED is a runner classification, not a semantic guarantee. Inspect the
@@ -114,7 +120,10 @@ decision not to use a factory is a successful learning outcome.
 - Keep each person's repository and actual run status intact.
 - Leave healthy agents running; use prepared evidence for the next decision.
 - Use a separate Rehearsal checkout, not a reset of the Live run.
-- Keep human gates enabled. Reduce scope instead of bypassing QA.
+- Keep human gates and the transformation objective intact. Walk through prepared
+  evidence rather than quietly replacing the exercise with a smaller feature.
+- Separate product completion from participation: record unfinished Live work
+  and demonstrate the remaining recipe journey on the labeled prepared run.
 - Record the exact resume point. Do not claim a fallback completed a Live change.
 
 Cloud deployment, custom adapters, native test-runner integration, dependency

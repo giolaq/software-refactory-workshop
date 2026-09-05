@@ -5,10 +5,15 @@ release tag and matching guide URL; branch previews are not published releases.
 
 ## Attendee invitation
 
-In three hours, you will take a small product request through planning, a GitHub
-ticket, acceptance tests, implementation, code review, and a human merge decision.
-You will use your own repository and leave with a small pilot proposal for your
+In three hours, you will use an AI software factory to transform Pocket Cinema,
+a film-browsing app, into TableStory, a recipe product. You will review the plan,
+follow GitHub tickets, inspect acceptance tests and code reviews, and decide what
+to merge in your own repository. You will also create a pilot proposal for your
 team. You do not need prior AI software-factory experience.
+
+The goal is the complete product transformation, not a small film-search change.
+Live execution time varies. If work is unfinished, keep its actual state and
+resume point; use labeled prepared evidence to practice the remaining decisions.
 
 The website contains the step-by-step instructions. The facilitator explains the
 concepts with slides and worked examples. Use Standard Live for the session.
@@ -75,8 +80,8 @@ completed verification.
 
 1. Inspect whether a candidate change is safe to merge.
 2. Connect your repository and approve its contract.
-3. Turn [the search request](../workshop-search-prd.md) into a reviewed plan.
-4. Publish the ticket to your GitHub Project.
+3. Turn [the recipe-product PRD](../recipe-app-prd.md) into a reviewed transformation plan.
+4. Publish the tickets to your GitHub Project and inspect their dependencies.
 5. Review QA's test code and its baseline failure.
 6. Run implementation and checks; inspect review and merge the accepted revision.
 7. Verify the changed behavior and export run evidence.

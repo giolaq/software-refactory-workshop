@@ -1,5 +1,8 @@
 # Pocket Cinema: search by film or genre
 
+Optional small-change example. This is not the main workshop exercise; use
+[the TableStory product-transformation PRD](recipe-app-prd.md) for the workshop.
+
 ## User and problem
 
 A viewer wants to find a film by title or genre. The search field says
