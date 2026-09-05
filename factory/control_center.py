@@ -247,6 +247,9 @@ class ControlCenter:
         self.repository_root = self.control_repo / ".factory" / "repositories"
         self.lock = threading.RLock()
         self.companion_lock = threading.Lock()
+        self._stream_lock = threading.Lock()
+        self._stream_value = None
+        self._stream_at = 0.0
         self.process: subprocess.Popen | None = None
         self.worker: threading.Thread | None = None
         self._pending_activation: Path | None = None
@@ -417,6 +420,7 @@ class ControlCenter:
             "name": self.repo.name,
             "path": str(self.repo),
             "branch": branch or "detached",
+            "head": run_text(["git", "rev-parse", "HEAD"], self.repo),
             "remote": remote,
             "github_url": configured.url if configured else (connected.url if connected else ""),
             "github_repository": configured.url if configured else "",
@@ -1149,6 +1153,43 @@ class ControlCenter:
             "tickets", state="attention",
         )
 
+    def setup_readiness(self, planning, tickets, operation, prd, config, project, charter, environment) -> dict:
+        """Use persisted facts, never presentation dictionaries, for setup."""
+        has_plan = bool(PLAN_ID.fullmatch(str(planning.get("plan_id", ""))))
+        connected = bool(config if config is not None else self.session_config()) or has_plan or bool(tickets)
+        project_ready = project is None or bool(project.get("configured") and project.get("valid"))
+        charter_ready = charter is None or bool(charter.get("approved"))
+        setup_published = (
+            project is None
+            or bool(project.get("committed"))
+            or not bool((config or {}).get("github_repository"))
+            or has_plan
+            or bool(tickets)
+        )
+        setup_attempt_incomplete = (
+            operation.get("action") == "approve-contract"
+            and operation.get("status") in {"running", "stopping", "failed"}
+        )
+        environment_ready = (
+            environment is None
+            or (
+                environment.get("status") == "healthy"
+                and not setup_attempt_incomplete
+            )
+            or ((has_plan or bool(tickets)) and not setup_attempt_incomplete
+                and (environment or {}).get("status") != "blocked")
+        )
+        prd_ready = bool(prd.get("saved")) or has_plan
+        return {
+            "connected": connected,
+            "contract_ready": project_ready,
+            "charter_ready": charter_ready,
+            "published": setup_published,
+            "environment_ready": environment_ready,
+            "prd_ready": prd_ready,
+            "complete": all((connected, project_ready, charter_ready, setup_published, environment_ready)),
+        }
+
     def journey(
         self,
         planning: dict,
@@ -1172,30 +1213,15 @@ class ControlCenter:
             ("build", "Build & verify", "Run QA, implementation, and gates", "tickets"),
             ("evidence", "Run app", "Open the completed application", "evidence"),
         ]
-        connected = bool(config if config is not None else self.session_config()) or bool(planning) or bool(tickets)
-        project_ready = project is None or bool(project.get("configured") and project.get("valid"))
-        charter_ready = charter is None or bool(charter.get("approved"))
-        setup_published = (
-            project is None
-            or bool(project.get("committed"))
-            or not bool((config or {}).get("github_repository"))
-            or bool(planning)
-            or bool(tickets)
+        setup = self.setup_readiness(
+            planning, tickets, operation, prd, config, project, charter, environment,
         )
-        setup_attempt_incomplete = (
-            operation.get("action") == "approve-contract"
-            and operation.get("status") in {"running", "stopping", "failed"}
-        )
-        environment_ready = (
-            environment is None
-            or (
-                environment.get("status") == "healthy"
-                and not setup_attempt_incomplete
-            )
-            or bool(planning)
-            or bool(tickets)
-        )
-        prd_ready = bool(prd.get("saved")) or bool(planning)
+        connected = setup["connected"]
+        project_ready = setup["contract_ready"]
+        charter_ready = setup["charter_ready"]
+        setup_published = setup["published"]
+        environment_ready = setup["environment_ready"]
+        prd_ready = setup["prd_ready"]
         plan_complete = planning.get("status") in {"awaiting_alignment_approval", "alignment_approved", "published"}
         tickets_approved = (
             planning.get("status") == "published"
@@ -1335,6 +1361,7 @@ class ControlCenter:
             "phase_number": phase_index + 1,
             "phase_count": len(phases),
             "phase_label": phases[phase_index]["label"],
+            "setup": setup,
             "headline": headline,
             "detail": detail,
             "ticket": ticket_number,
@@ -1405,6 +1432,19 @@ class ControlCenter:
             "view": "tickets",
         } for ticket in tickets if ticket.get("status") == "Blocked")
         return decisions
+
+    def stream_snapshot(self) -> dict:
+        """Share at most one snapshot per second across status streams."""
+        with self._stream_lock:
+            current = time.monotonic()
+            if (
+                self._stream_value is None
+                or current - self._stream_at >= 1
+                or self._stream_value["repo"]["path"] != str(self.repo)
+            ):
+                self._stream_value = self.snapshot()
+                self._stream_at = current
+            return self._stream_value
 
     def snapshot(self) -> dict:
         planning = read_json(self.repo / ".factory" / "planning-state.json", {})
@@ -2260,11 +2300,9 @@ class ControlCenter:
             ]]
         if action == "evidence":
             plan = self._plan_id(payload)
-            if not self.canvas_path.is_file():
-                raise InputError("Complete and save the Factory Canvas before exporting evidence.")
             output = self.runtime / f"evidence-{plan}"
             return "Create evidence packet", [
-                base + ["evidence", plan, "--canvas", str(self.canvas_path), "--output", str(output)],
+                base + ["evidence", plan, "--repo", str(self.repo), "--output", str(output)],
             ]
         if action in {"monitor", "publish-monitor"}:
             command = base + ["monitor", "--repo", str(self.repo), "--json"]
@@ -2527,6 +2565,7 @@ class ControlCenter:
             ".factory/reviews/",
             ".factory/plans/",
             ".factory/control-center/",
+            ".factory/evidence/",
         )
         if not normalized.startswith(allowed):
             raise InputError("Only factory evidence artifacts can be opened.")
@@ -2542,6 +2581,37 @@ class ControlCenter:
             data = data[-MAX_ARTIFACT:]
             return "… earlier content omitted …\n" + data.decode("utf-8", errors="replace")
         return data.decode("utf-8", errors="replace")
+
+    def ticket_tests(self, issue: int) -> dict:
+        """Read only the protected test paths at the recorded QA revision."""
+        state = read_json(self.repo / ".factory/state.json", {"tickets": []})
+        ticket = next((item for item in state.get("tickets", []) if item.get("number") == issue), None)
+        if not ticket:
+            raise InputError(f"Ticket #{issue} was not found.")
+        revision = ticket.get("qa_commit", "")
+        if not isinstance(revision, str) or not re.fullmatch(r"[a-f0-9]{40,64}", revision):
+            raise InputError("No committed QA test proposal is available yet.")
+        files = []
+        for raw in ticket.get("qa_tests", {}):
+            path = PurePosixPath(raw)
+            if path.is_absolute() or ".." in path.parts:
+                raise InputError("Invalid protected test path.")
+            result = subprocess.run(
+                ["git", "show", f"{revision}:{path.as_posix()}"],
+                cwd=self.repo, capture_output=True, check=False,
+            )
+            if result.returncode:
+                raise InputError("The recorded QA revision is unavailable. Fetch the ticket branch and retry.")
+            if len(result.stdout) > MAX_ARTIFACT:
+                raise InputError("This test is too large for the viewer. Inspect its QA revision in Git.")
+            blob = subprocess.run(
+                ["git", "hash-object", "--stdin"], input=result.stdout,
+                cwd=self.repo, capture_output=True, check=False,
+            )
+            if blob.returncode or blob.stdout.decode().strip() != ticket["qa_tests"][raw]:
+                raise InputError("The test content does not match the protected QA evidence. Inspect the ticket before approval.")
+            files.append({"path": raw, "content": result.stdout.decode("utf-8", errors="replace")})
+        return {"revision": revision, "files": files}
 
     def ticket_diff(self, issue: int) -> str:
         state = read_json(self.repo / ".factory" / "state.json", {"tickets": []})
@@ -2625,6 +2695,9 @@ class Handler(BaseHTTPRequestHandler):
             if parsed.path == "/api/artifact":
                 raw = parse_qs(parsed.query).get("path", [""])[0]
                 return self._json({"path": raw, "content": self.server.center.artifact(raw)})
+            match = re.fullmatch(r"/api/tickets/(\d+)/tests", parsed.path)
+            if match:
+                return self._json(self.server.center.ticket_tests(int(match.group(1))))
             match = re.fullmatch(r"/api/tickets/(\d+)/diff", parsed.path)
             if match:
                 issue = int(match.group(1))
@@ -2671,7 +2744,7 @@ class Handler(BaseHTTPRequestHandler):
         last_write = 0.0
         try:
             while True:
-                data = json.dumps(self.server.center.snapshot())
+                data = json.dumps(self.server.center.stream_snapshot())
                 current = time.monotonic()
                 if data != previous:
                     self.wfile.write(f"data: {data}\n\n".encode())

@@ -1,0 +1,28 @@
+{
+  "capturedAt": "2026-09-05T11:11:01.074Z",
+  "baseRevision": "b80bf38ca55bfae461f9c738ae8c5688a592f94a",
+  "workingTreeChanges": true,
+  "scenario": "Disposable Standard Rehearsal; mock providers; not Live GitHub evidence",
+  "viewport": {
+    "width": 1440,
+    "height": 980
+  },
+  "sources": {
+    "factory/control_center.py": "2d1d7a727e3051490cb62ce4635708fe82ae70b6f42385c832fd18f6f35168d2",
+    "factory/control_center/app.js": "01a6b198badc544c28d6e956b7d608cab706cb8fee0581a35c7f4c41246e58b8",
+    "factory/control_center/index.html": "93159bfcc84ac1b5d930215df5ecab84abda47eeb9fdcd411934e3ad5b93d666",
+    "factory/control_center/styles.css": "b1401a3a1d3e12e7ed557b97b0a84e1792f83270a60e88c067cab17214c3ab93",
+    "factory/tests/serve_workshop_fixture.py": "1fd9a2f00b5d48c376bac8271048dbd4e7a4b33ea1040b0a23fb32eaa39c7d74"
+  },
+  "images": {
+    "workshop-guide/public/screenshots/control-center-connect.jpg": "12c9a0e79a8b6e3e042418f211b6177f99ecbfa065b9949c2636cb6718863b49",
+    "workshop-guide/public/screenshots/control-center-prd.jpg": "856dfbe2bec1f7c550e2ce6ad48e9c88b99dc5e1c2454ede1c6db3d92dff0110",
+    "workshop-guide/public/screenshots/control-center-planning.jpg": "10d92f495ad59e41f35bb11e4b20bf765c7f9adefe07ff7596da03cf8e33263b",
+    "workshop-guide/public/screenshots/control-center-overview.jpg": "67d8ce50aed16d9ad5a26de618c83746d56eaff9501568a80b3c7b7713db64ae",
+    "workshop-guide/public/screenshots/control-center-tickets.jpg": "25b65c4b9355820dbf6377b64b7da7a289597df7aae3024bb13423a2bf206f14",
+    "workshop-guide/public/screenshots/control-center-ticket-tests.jpg": "fb87da7e4223e32ba3dda1eb2521aa90fd1741086a6dc0442116911fcf867ccd",
+    "workshop-guide/public/screenshots/control-center-qa-decision.jpg": "c3728817971cbbafb2309687dd1a4873457c8381651f9cf0615e1cf296473568",
+    "workshop-guide/public/screenshots/control-center-human-merge.jpg": "2f7d9f857a070bf65542139889239df62470c9cac9a5d23f89ee811185c8e56d",
+    "workshop-guide/public/screenshots/control-center-evidence.jpg": "e9aff0b56231ab5dd340db1299ea3c04fe07bb2224c0252187335750d2ae1b2c"
+  }
+}

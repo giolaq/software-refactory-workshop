@@ -46,6 +46,69 @@ class ControlCenterTests(unittest.TestCase):
         self.assertEqual(args.port, 5050)
         self.assertTrue(args.no_open)
 
+    def test_fresh_snapshot_does_not_infer_setup_from_presentation(self):
+        with tempfile.TemporaryDirectory() as directory:
+            center = ControlCenter(self.make_repo(directory))
+            with (
+                patch.object(center, "project_contract", return_value={"configured": True, "valid": True, "committed": True}),
+                patch.object(center, "factory_charter", return_value={"approved": True}),
+                patch.object(center, "environment_snapshot", return_value={"status": "not-provisioned"}),
+            ):
+                snapshot = center.snapshot()
+            self.assertIn("presentation", snapshot["planning"])
+            self.assertFalse(snapshot["prd"]["saved"])
+            self.assertEqual(snapshot["journey"]["phase_index"], 0)
+            self.assertFalse(snapshot["journey"]["setup"]["complete"])
+            self.assertEqual(snapshot["journey"]["phases"][1]["status"], "pending")
+
+    def test_stream_clients_share_snapshot_until_expiry(self):
+        with tempfile.TemporaryDirectory() as directory:
+            center = ControlCenter(self.make_repo(directory))
+            with (
+                patch.object(center, "snapshot", return_value={"repo": {"path": str(center.repo)}}) as snapshot,
+                patch("control_center.time.monotonic", side_effect=[10, 10.5, 11.1]),
+            ):
+                center.stream_snapshot()
+                center.stream_snapshot()
+                self.assertEqual(snapshot.call_count, 1)
+                center.stream_snapshot()
+                self.assertEqual(snapshot.call_count, 2)
+
+    def test_tests_view_reads_the_recorded_qa_commit_not_working_changes(self):
+        with tempfile.TemporaryDirectory() as directory:
+            center = ControlCenter(self.make_repo(directory))
+            subprocess.run(["git", "init", "-q"], cwd=center.repo, check=True)
+            test_file = center.repo / "test_example.py"
+            original = "def test_search():\n    assert search('Drama')\n"
+            test_file.write_text(original)
+            subprocess.run(["git", "add", "test_example.py"], cwd=center.repo, check=True)
+            subprocess.run(["git", "-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit", "-qm", "QA proposal"], cwd=center.repo, check=True)
+            revision = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=center.repo, text=True).strip()
+            blob = subprocess.check_output(["git", "hash-object", "test_example.py"], cwd=center.repo, text=True).strip()
+            state = {"tickets": [{"number": 42, "qa_commit": revision, "qa_tests": {"test_example.py": blob}}]}
+            (center.repo / ".factory/state.json").write_text(json.dumps(state))
+            test_file.write_text("uncommitted change")
+            result = center.ticket_tests(42)
+            self.assertEqual(result["revision"], revision)
+            self.assertEqual(result["files"], [{"path": "test_example.py", "content": original}])
+            with self.assertRaises(InputError):
+                center.ticket_tests(99)
+            state["tickets"][0]["qa_tests"]["test_example.py"] = "wrong-hash"
+            (center.repo / ".factory/state.json").write_text(json.dumps(state))
+            with self.assertRaisesRegex(InputError, "does not match"):
+                center.ticket_tests(42)
+            state["tickets"][0]["qa_tests"] = {"../outside.py": "bad"}
+            (center.repo / ".factory/state.json").write_text(json.dumps(state))
+            with self.assertRaisesRegex(InputError, "Invalid protected test path"):
+                center.ticket_tests(42)
+
+    def test_export_does_not_require_an_adoption_canvas(self):
+        with tempfile.TemporaryDirectory() as directory:
+            center = ControlCenter(self.make_repo(directory))
+            _, commands = center.build_commands("evidence", {"plan_id": "abcdef123456"})
+            self.assertNotIn("--canvas", commands[0])
+            self.assertIn(str(center.repo), commands[0])
+
     def test_parser_exposes_single_repository_contract_approval(self):
         args = parser().parse_args([
             "approve-contract", "--repo", "/tmp/product", "--live", "--yes",
@@ -2108,7 +2171,7 @@ class ControlCenterTests(unittest.TestCase):
             "Define the outcome",
             "Review the plan",
             "Operate the factory",
-            "Run the completed app",
+            "Run app and save evidence",
             "Live log",
             "Diff",
             "Start the server",
@@ -2165,7 +2228,9 @@ class ControlCenterTests(unittest.TestCase):
         self.assertIn('action("restart-plan")', javascript)
         self.assertIn("Causal acceptance evidence", javascript)
         self.assertIn("RED NOT PROVED", javascript)
-        self.assertIn("GREEN NOT PROVED", javascript)
+        self.assertIn("Not run yet", javascript)
+        self.assertIn("loadTestProposal", javascript)
+        self.assertIn("data-open-tests", javascript)
         self.assertIn("NEEDS YOU · Dispatch paused", backend)
         self.assertIn("Release abandoned claim", javascript)
         self.assertIn("Merge exact revision", javascript)
@@ -2253,7 +2318,8 @@ class ControlCenterTests(unittest.TestCase):
 
         self.assertIn('value="bedrock-aws">Amazon Bedrock on AWS', source)
         self.assertIn('value="cursor-workshop">Cursor workshop', source)
-        self.assertIn('Bedrock, Claude, Codex, Cursor, or custom', source)
+        self.assertIn('Advanced: selected agent capabilities', source)
+        self.assertNotIn('class="layer-strip"', source)
         self.assertIn('["bedrock", "claude", "codex", "cursor"].includes(item)', javascript)
         self.assertIn('["bedrock", "claude", "codex", "cursor"].includes(agent)', javascript)
 

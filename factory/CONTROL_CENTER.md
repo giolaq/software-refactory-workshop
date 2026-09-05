@@ -17,12 +17,12 @@ workshop. Press `Ctrl+C` to close the server.
 
 | Screen | Attendee action | Factory result |
 | --- | --- | --- |
-| Setup → Connection | Inspect or create the Project Contract and Factory Charter; select role adapters; provision, prepare, and check the development environment; run preflight | Binds setup to a revision and contract hash, records human-owned policy approval, and checks the target |
+| Setup → Connection | Connect the repository, create the contract, then review and approve | Publishes setup where needed, prepares the environment, and runs readiness checks automatically |
 | Plan → Requirements | Review or edit the auto-saved requirement; start Product Review | Saves a local PRD and runs the first planning expert |
 | Plan → Review plan | Read four expert artifacts; approve Product Review, final alignment, and any Charter-selected intermediate gates | Creates PRD-derived rehearsal tickets or GitHub issues |
 | Deliver → Tickets | Run the scheduler or start Live repository issue listening; inspect prompts, logs, diffs, tests, gates, code review, and history | Operates isolated worktrees, admits later user-created issues, and shows live state |
 | More tools → Supervisor activity | Inspect worker reports, dispatch instructions, blocks, merge recommendations, and prior decisions | Explains how the next safe Ticket wave and approved revision were coordinated |
-| Review → Run app | Start the completed application and open its normal or television URL | Runs the integrated product from the repository used by the Factory Run |
+| Review → Run app | Preview baseline or merged work; export and download run evidence | Shows which checkout is previewed and keeps incomplete tickets visible |
 | More tools → Repository monitor | Preview read-only health findings; publish only by explicit Live action | Finds stale claims, waits, drift, CI, and advisories without repairing code |
 | More tools → Factory interfaces | Check workspace revisions, inspect trigger proposals, and generate a reviewed improvement report | Makes optional production seams visible without changing the beginner workflow |
 
@@ -40,8 +40,8 @@ available under **More tools**. Advanced role configuration, run options,
 diagnostics, and CLI output stay collapsed until needed so the next safe action
 remains visually dominant.
 
-Setup begins with the five-layer strip: **Compute → Development environment →
-Inner harness → Outer harness → Control plane**. The selected Agent Adapter card
+Setup begins with three actions. Keep architecture explanations in the
+facilitator presentation. The advanced selected Agent Adapter card
 shows its Adapter Protocol version and declared features. An unavailable
 feature remains visibly unavailable; choosing another adapter does not change
 the role's policy or authority.
@@ -297,6 +297,20 @@ Control Center operates a local repository and therefore stays on the attendee's
 machine.
 
 ## Recovery
+
+For a ticket at **QA Review**, open **Tests**. Read the acceptance criterion,
+the protected test code from its recorded Git revision, and the baseline
+assertion failure before selecting **Approve tests**. The viewer checks the
+recorded Git blob hashes; it does not show an uncommitted working copy.
+Request corrections in the same tab. RED PROVED classifies an assertion
+failure; it does not establish that the assertion tests the right requirement.
+
+At **Review → Run app**, the branch, revision, local-change warning, and completed
+ticket count identify what is being previewed. Unmerged ticket worktrees are not
+part of this checkout. Stop the app, select **Export run evidence**, open the
+packet, then select **Download**. No Canvas is required. The optional **Run effort**
+section shows recorded ticket execution, waiting time, and retries; provider
+usage and price are separate from these duration measurements.
 
 If an action fails, read the operation output first. The same command is shown
 above it, so you can copy it into a terminal when deeper diagnosis is useful.

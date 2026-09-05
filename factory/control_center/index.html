@@ -130,13 +130,6 @@
 
     <section class="view" data-view="connect" aria-labelledby="connect-title" hidden>
       <div class="page-heading"><div><span class="eyebrow">Setup</span><h1 id="connect-title">Set up the factory in three steps</h1><p>Select a repository, generate its contract, then approve the exact setup.</p></div></div>
-      <section class="layer-strip" aria-label="Factory layers">
-        <div><span>1</span><b>Compute</b><small>Your laptop or runner</small></div><i>→</i>
-        <div><span>2</span><b>Development environment</b><small>Checkout, tools, services, gates</small></div><i>→</i>
-        <div><span>3</span><b>Inner harness</b><small>Bedrock, Claude, Codex, Cursor, or custom</small></div><i>→</i>
-        <div><span>4</span><b>Outer harness</b><small>Roles, policy, QA, review</small></div><i>→</i>
-        <div><span>5</span><b>Control plane</b><small>This UI, orchestrator, GitHub</small></div>
-      </section>
       <ol class="setup-flow" aria-label="Factory setup progress">
         <li id="setup-step-connect"><span class="setup-step-number">1</span><div><b>Connect</b><small id="setup-step-connect-status">Select repository and settings</small></div></li>
         <li id="setup-step-contract"><span class="setup-step-number">2</span><div><b>Create contract</b><small id="setup-step-contract-status">Waiting for connection</small></div></li>
@@ -170,11 +163,11 @@
             </details>
             <div class="form-actions"><button class="button button-primary" type="submit">Save and connect</button></div>
           </form>
-          <section class="adapter-capabilities" aria-labelledby="adapter-capabilities-title">
+          <details class="adapter-capabilities"><summary>Advanced: selected agent capabilities</summary>
             <div class="surface-heading"><div><span class="section-label">Adapter Protocol v1</span><h2 id="adapter-capabilities-title">Selected harness capabilities</h2></div></div>
             <p>Roles keep the same authority when you change adapters. Provider-specific capabilities remain visible.</p>
             <div id="adapter-capability-list"><p class="empty-state">Save an Agent Adapter configuration to inspect it.</p></div>
-          </section>
+          </details>
         </section>
         <aside class="surface readiness-surface">
           <div class="surface-heading"><div><span class="section-label">Selected repository</span><h2 id="connect-repo">—</h2></div></div>
@@ -193,7 +186,7 @@
               <b>What Tier, Merge, and Gates mean</b>
               <ul><li><strong>Tier</strong> describes the consequence of a wrong change.</li><li><strong>Merge</strong> says who makes the final merge decision.</li><li><strong>Gates</strong> sets how much verification evidence is required.</li></ul>
             </div>
-            <details><summary>Review repository model</summary><pre class="charter-policy" id="project-contract-policy">Create the contract first.</pre></details>
+            <details><summary>Review repository model</summary><p>Standard and Assured acceptance tests currently use Python pytest or Node's built-in JavaScript test runner. Other stacks need a compatible test wrapper before a Live run. Worktrees do not sandbox your laptop.</p><pre class="charter-policy" id="project-contract-policy">Create the contract first.</pre></details>
             <details><summary>Review operating policy</summary><pre class="charter-policy" id="charter-policy">Create the contract first.</pre></details>
             <div class="automatic-setup">
               <b>What happens after approval</b>
@@ -266,13 +259,13 @@
     </section>
 
     <section class="view" data-view="evidence" aria-labelledby="evidence-title" hidden>
-      <div class="page-heading"><div><span class="eyebrow">Review</span><h1 id="evidence-title">Run the completed app</h1><p>Start the generated application from the repository used by this run.</p></div></div>
+      <div class="page-heading"><div><span class="eyebrow">Review</span><h1 id="evidence-title">Run app and save evidence</h1><p>Preview the baseline or merged changes. Unfinished tickets remain unfinished.</p><p id="preview-revision"></p></div></div>
       <div class="run-app-grid">
         <section class="surface">
           <span class="section-label">Terminal</span>
           <h2>Start the server</h2>
-          <p class="run-app-status" id="run-app-status" aria-live="polite">Waiting for the completed application.</p>
-          <pre id="run-app-command">Waiting for the completed application.</pre>
+          <p class="run-app-status" id="run-app-status" aria-live="polite">Looking for an application entry point.</p>
+          <pre id="run-app-command">Looking for an application entry point.</pre>
           <div class="form-actions">
             <button class="button button-primary" id="start-app" type="button">Start app</button>
             <button class="button" id="stop-app" type="button" hidden>Stop app</button>
@@ -282,10 +275,17 @@
         <section class="surface">
           <span class="section-label">Browser</span>
           <h2>Open the app</h2>
-          <div class="run-app-links" id="run-app-links"><p class="empty-state">The application URLs appear when delivery is complete.</p></div>
+          <div class="run-app-links" id="run-app-links"><p class="empty-state">Application URLs appear when an entry point is detected.</p></div>
           <p>Keep the application running while you use it. Return here and choose <strong>Stop app</strong> when you finish.</p>
         </section>
       </div>
+      <section class="surface form-surface evidence-export">
+        <h2>Save run evidence</h2>
+        <p>Export recorded requirements, test results, reviews, and revisions. No adoption worksheet is required. Review the packet before sharing.</p>
+        <button class="button" id="export-evidence" type="button" data-action="evidence">Export run evidence</button>
+        <div id="evidence-files"></div>
+        <details><summary>Run effort</summary><p id="run-effort"></p></details>
+      </section>
     </section>
 
     <section class="view" data-view="monitor" aria-labelledby="monitor-title" hidden>
@@ -339,7 +339,7 @@
   </main>
 
   <div class="drawer-scrim" id="drawer-scrim" hidden></div>
-  <aside class="drawer" id="ticket-drawer" aria-labelledby="ticket-drawer-title" hidden>
+  <aside class="drawer" role="dialog" aria-modal="true" id="ticket-drawer" aria-labelledby="ticket-drawer-title" hidden>
     <header><div><span class="issue-label" id="drawer-issue">Ticket</span><h2 id="ticket-drawer-title">Ticket details</h2></div><button class="icon-button" id="close-drawer" type="button" aria-label="Close details">×</button></header>
     <nav class="drawer-tabs" aria-label="Ticket details"><button class="active" type="button" data-drawer-tab="summary">Summary</button><button type="button" data-drawer-tab="supervisor">Supervisor</button><button type="button" data-drawer-tab="review">Code review</button><button type="button" data-drawer-tab="prompt">Prompt</button><button type="button" data-drawer-tab="log">Live log</button><button type="button" data-drawer-tab="diff">Diff</button><button type="button" data-drawer-tab="tests">Tests</button><button type="button" data-drawer-tab="history">History</button></nav>
     <div class="drawer-content" id="drawer-content"></div>

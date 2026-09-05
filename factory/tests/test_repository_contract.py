@@ -81,9 +81,11 @@ class RepositoryContractTests(unittest.TestCase):
     def test_release_workflow_uses_node_24_action_runtimes(self):
         workflow = (REPO / ".github/workflows/factory-verify.yml").read_text()
 
-        self.assertEqual(workflow.count("uses: actions/checkout@v7"), 3)
-        self.assertEqual(workflow.count("uses: actions/setup-python@v7"), 3)
-        self.assertEqual(workflow.count("uses: actions/setup-node@v7"), 2)
+        self.assertEqual(workflow.count("uses: actions/checkout@v7"), 4)
+        self.assertEqual(workflow.count("uses: actions/setup-python@v7"), 4)
+        self.assertEqual(workflow.count("uses: actions/setup-node@v7"), 3)
+        self.assertIn("workshop_browser_check.mjs", workflow)
+        self.assertIn("npm test && npm run lint && npm run build:vercel", workflow)
         for retired in (
             "actions/checkout@v4",
             "actions/setup-python@v5",

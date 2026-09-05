@@ -4,6 +4,8 @@ const app = {
   view: location.hash.slice(1) || "overview",
   selectedPlanning: "",
   selectedTicket: null,
+  testProposal: null,
+  drawerOpener: null,
   drawerTab: "summary",
   artifactPath: "",
   loadedPlanningArtifact: "",
@@ -190,7 +192,7 @@ function syncOperationPolling(operation) {
     app.operationPoll = null;
     return;
   }
-  if (app.operationPoll) return;
+  if (app.eventSource?.readyState === EventSource.OPEN || app.operationPoll) return;
   app.operationPoll = window.setInterval(() => refreshSnapshot(), 1500);
 }
 
@@ -273,6 +275,7 @@ function renderInterfaces(workspace, triggers, improvements) {
 function renderSnapshot(data) {
   app.snapshot = data;
   const repo = data.repo || {};
+  renderRunEvidence(data);
   $("#repo-name").textContent = repo.name || "Unknown repository";
   $("#repo-branch").textContent = repo.branch || "—";
   $("#repo-dot").className = `status-dot ${repo.dirty ? "warn" : "good"}`;
@@ -323,10 +326,8 @@ function renderSnapshot(data) {
   $("#charter-policy").textContent = charter.text || "Create the contract first.";
   const operation = data.operation || {};
   const setupRunning = operation.action === "approve-contract" && ["running", "stopping"].includes(operation.status);
-  const publishReady = mode() !== "live" || project.committed;
   const environmentReady = environment.status === "healthy";
-  const setupAttemptIncomplete = operation.action === "approve-contract" && operation.status !== "succeeded";
-  const setupComplete = Boolean(charter.approved && publishReady && environmentReady && !setupAttemptIncomplete);
+  const setupComplete = Boolean(data.journey?.setup?.complete);
   $("#approval-status").textContent = setupRunning
     ? "Running"
     : setupComplete
@@ -353,13 +354,14 @@ function renderSnapshot(data) {
     ? "Preparing repository…"
     : setupComplete
       ? "Approved and ready"
-      : charter.approved ? "Retry automatic setup" : "Approve contract and continue";
+      : operation.action === "approve-contract" && operation.status === "failed" ? "Retry automatic setup" : "Approve contract and continue";
   setSetupStep("#setup-step-connect", connectionReady ? "complete" : "active", connectionReady ? "Repository and settings saved" : "Select repository and settings");
   setSetupStep("#setup-step-contract", project.configured && project.valid ? "complete" : connectionReady ? "active" : "waiting", project.configured && project.valid ? "Contract created" : connectionReady ? "Ready to create" : "Waiting for connection");
   setSetupStep("#setup-step-approve", setupComplete ? "complete" : project.configured ? (environment.status === "blocked" ? "blocked" : "active") : "waiting", setupComplete ? "Approved and ready" : environment.status === "blocked" ? "Fix the first Activity error, then retry" : project.configured ? "Review and approve" : "Waiting for contract");
   populateAgentSelects(data.adapters || [], config);
   hydrateConfigForm(config);
   renderAdapterCapabilities(data.adapter_details || {}, config);
+  $('[data-action="listen"]').hidden = mode() !== "live";
 
   const tickets = data.factory?.tickets || [];
   const active = tickets.filter((ticket) => ["In Progress", "Verifying"].includes(ticket.status)).length;
@@ -395,7 +397,7 @@ function renderSnapshot(data) {
 function renderJourney(journey) {
   if (!journey.phases?.length) return;
   $("#now-surface").className = `surface now-surface run-state-${journey.state || "ready"}`;
-  $("#journey-kicker").textContent = `Phase ${journey.phase_number} of ${journey.phase_count} · ${journey.phase_label}`;
+  $("#journey-kicker").textContent = `Current task · ${journey.phase_label}`;
   $("#journey-state").textContent = journey.state || "ready";
   $("#journey-state").className = `journey-state ${journey.state || "ready"}`;
   $("#journey-pulse").className = `now-pulse ${journey.state || "ready"}`;
@@ -676,6 +678,7 @@ function renderPlanningGate(item, planning) {
 
 function renderIssueListener(intake = {}, operation = {}) {
   const panel = $("#issue-listener-state");
+  panel.hidden = mode() !== "live" || (!intake.status && operation.action !== "listen");
   const operationRunning = (
     operation.action === "listen"
     && ["running", "stopping"].includes(operation.status)
@@ -808,6 +811,18 @@ function renderSupervisor(supervisor, factory, config) {
   $("#supervisor-history").innerHTML = events.length ? [...events].reverse().map((event) => `<article class="supervisor-event"><time>${formatTime(event.at)}</time><b>${esc(event.id)}</b><span>${esc(event.summary)}</span><small>${event.kind === "merge" ? `${esc(event.action)} Ticket #${event.ticket} · candidate ${esc((event.candidate_head || "").slice(0, 8))}` : `${event.dispatch?.length || 0} dispatched · ${event.block?.length || 0} blocked · ${event.deferred?.length || 0} deferred`}</small></article>`).join("") : '<p class="empty-state">Decisions will appear here after the first ready wave.</p>';
 }
 
+function renderRunEvidence(data) {
+  const tickets = data.factory?.tickets || [];
+  const done = tickets.filter(ticket => ticket.status === "Done").length;
+  $("#preview-revision").textContent = `${data.repo?.branch || "checkout"} @ ${data.repo?.head?.slice(0, 12) || "unknown revision"}${data.repo?.dirty ? " (local changes)" : ""} · ${done} of ${tickets.length} tickets Done. Preview shows this checkout, not unmerged worktrees.`;
+  $("#export-evidence").disabled = !data.planning?.plan_id || ["running", "stopping"].includes(data.operation?.status);
+  const packets = (data.evidence || []).filter(item => item.name === "evidence-packet.md");
+  $("#evidence-files").innerHTML = packets.length ? packets.map(item => `<button class="text-button" type="button" data-evidence-path="${esc(item.path)}">Open run evidence · ${esc(formatTime(item.updated_at))}</button>`).join("<br>") : "<p>No packet exported yet. Stop the app before exporting.</p>";
+  $$("[data-evidence-path]").forEach(button => button.addEventListener("click", () => openArtifact(button.dataset.evidencePath)));
+  const sum = key => tickets.reduce((total,ticket) => total + Number(ticket.metrics?.[key] || 0), 0);
+  $("#run-effort").textContent = `Accepted tickets: ${done}. Agent execution: ${sum("agent_seconds")}s. Human wait: ${sum("human_wait_seconds")}s. Retries: ${sum("retry_count")}. Token usage and cost: unavailable unless reported by your provider.`;
+}
+
 function renderApplication(application, operation = {}) {
   $("#run-app-command").textContent = application.available
     ? application.command
@@ -933,7 +948,7 @@ async function action(name, extra = {}) {
     }
     renderOperation(operation);
     syncOperationPolling(operation);
-    showView(name === "start-app" ? "evidence" : "overview");
+    showView(["start-app", "evidence"].includes(name) ? "evidence" : "overview");
     toast(`${operation.title} started.`);
     return operation;
   } catch (error) {
@@ -1031,25 +1046,31 @@ function openTicket(number) {
   const ticket = app.snapshot?.factory?.tickets?.find((item) => Number(item.number) === Number(number));
   if (!ticket) return;
   app.selectedTicket = ticket;
-  app.drawerTab = "summary";
+  app.drawerTab = ticket.status === "QA Review" ? "tests" : "summary";
   showDrawer(`#${ticket.number} · ${ticket.status}`, ticket.title, true);
   renderDrawer();
   $("#close-drawer").focus();
 }
 
 function showDrawer(label, title, showTabs) {
+  if ($("#ticket-drawer").hidden) app.drawerOpener = document.activeElement;
   $("#drawer-issue").textContent = label;
   $("#ticket-drawer-title").textContent = title;
   $(".drawer-tabs").hidden = !showTabs;
   $("#ticket-drawer").hidden = false;
   $("#drawer-scrim").hidden = false;
   document.body.style.overflow = "hidden";
+  $("#close-drawer").focus();
 }
 
 function closeDrawer() {
+  if ($("#ticket-drawer").hidden) return;
   $("#ticket-drawer").hidden = true;
   $("#drawer-scrim").hidden = true;
   document.body.style.overflow = "";
+  if (app.drawerOpener?.isConnected) app.drawerOpener.focus();
+  else if (app.drawerOpener?.dataset.ticket) $(`[data-ticket="${app.drawerOpener.dataset.ticket}"]`)?.focus();
+  else $("[data-view-link].active")?.focus();
 }
 
 function captureDrawerPosition() {
@@ -1122,6 +1143,38 @@ function replaceDrawerContent(content, html, preservePosition) {
   const position = preservePosition ? captureDrawerPosition() : null;
   content.innerHTML = html;
   restoreDrawerPosition(position);
+}
+
+function qaDecisionPanel(ticket) {
+  return ticket.status === "QA Review" ? `<section class="detail-panel"><h3>Acceptance Test decision</h3><label for="qa-revision-feedback">Revision feedback</label><textarea id="qa-revision-feedback" rows="4" placeholder="Describe what the revised tests must change or cover."></textarea><p class="field-help">Request a new test revision here. Edit the GitHub issue only when its requirements or acceptance criteria are wrong.</p><div class="form-actions"><button class="button" type="button" data-ticket-action="request-test-changes">Request test changes</button><button class="button button-primary" type="button" data-ticket-action="approve-tests">Approve tests</button></div></section>` : "";
+}
+
+function wireQaDecision(ticket, content) {
+    $('[data-ticket-action="approve-tests"]', content)?.addEventListener("click", () => action("approve-tests", { issue: ticket.number }));
+    $('[data-ticket-action="request-test-changes"]', content)?.addEventListener("click", () => {
+      const feedback = $("#qa-revision-feedback", content)?.value.trim() || "";
+      if (!feedback) {
+        toast("Describe the required test changes before requesting a revision.", true);
+        $("#qa-revision-feedback", content)?.focus();
+        return;
+      }
+      action("request-test-changes", { issue: ticket.number, feedback });
+    });
+
+}
+
+async function loadTestProposal(ticket, content) {
+  const key = `${app.snapshot.repo.path}:${ticket.number}:${ticket.qa_commit}`;
+  try {
+    const proposal = app.testProposal?.key === key ? app.testProposal.value : await request(`/api/tickets/${ticket.number}/tests`);
+    if (app.selectedTicket?.number !== ticket.number || app.drawerTab !== "tests" || app.selectedTicket.qa_commit !== proposal.revision) return;
+    app.testProposal = { key, value: proposal };
+    $("#qa-test-source", content).innerHTML = `<p>QA revision <code>${esc(proposal.revision)}</code></p>${proposal.files.map(file => `<h4>${esc(file.path)}</h4><pre>${esc(file.content)}</pre>`).join("")}`;
+    const approve = $('[data-ticket-action="approve-tests"]', content);
+    if (approve) approve.disabled = !proposal.files.length || ticket.qa_evidence?.red?.result !== "RED PROVED";
+  } catch (error) {
+    if (app.selectedTicket?.number === ticket.number && app.drawerTab === "tests") $("#qa-test-source", content).textContent = error.message;
+  }
 }
 
 async function renderDrawer({ preservePosition = false } = {}) {
@@ -1312,26 +1365,17 @@ async function renderDrawer({ preservePosition = false } = {}) {
         </div>
       </section>`;
     const intakePanel = intakeProposal.case_id && !ticket.intake?.human_approved ? `<section class="detail-panel intake-decision"><span class="section-label">Raw feedback intake</span><h3>${esc(intakeProposal.classification)}</h3><p>${esc(intakeProposal.rationale || "Review the bounded intake evidence before choosing the next workflow.")}</p>${intakeProposal.missing?.length ? `<p><b>Missing evidence</b><br>${intakeProposal.missing.map((item) => `<code>${esc(item)}</code>`).join(" ")}</p>` : ""}${intakeProposal.classification === "READY_TO_IMPLEMENT" ? `<label>Human approval reason<textarea id="intake-approval-reason" rows="3" placeholder="Explain why the revisions, reproduction, criteria, and ownership are sufficient."></textarea></label><div class="form-actions"><button class="button button-primary" type="button" data-ticket-action="approve-intake">Approve intake for triage</button></div>` : intakeProposal.classification === "READY_TO_PLAN" ? '<div class="form-actions"><button class="button" type="button" data-intake-view="planning">Move the request into planning</button></div>' : ""}<p class="field-help">The proposal cannot dispatch work. Your decision is recorded separately from the original classification.</p></section>` : "";
-    const qaDecision = ticket.status === "QA Review" ? `<section class="detail-panel"><h3>Acceptance Test decision</h3><label for="qa-revision-feedback">Revision feedback</label><textarea id="qa-revision-feedback" rows="4" placeholder="Describe what the revised tests must change or cover."></textarea><p class="field-help">Request a new test revision here. Edit the GitHub issue only when its requirements or acceptance criteria are wrong.</p><div class="form-actions"><button class="button" type="button" data-ticket-action="request-test-changes">Request test changes</button><button class="button button-primary" type="button" data-ticket-action="approve-tests">Approve tests</button></div></section>` : "";
+    const qaDecision = ticket.status === "QA Review" ? '<section class="detail-panel"><h3>Acceptance Test decision</h3><button class="button button-primary" type="button" data-open-tests>Inspect tests and decide</button></section>' : "";
     const stewardReady = !mergeSteward.state || mergeSteward.state === "ready-for-human-merge";
     const actions = ticket.status === "In Review" && ticket.merge_authority === "human" && mergeState.allowed && stewardReady ? `<button class="button button-primary" type="button" data-ticket-action="merge">Merge exact revision</button>` : "";
     const merge = ticket.status === "In Review" ? `<section class="detail-panel"><span class="section-label">Non-authoritative merge steward</span><h3>${esc((mergeSteward.state || "human-decision-required").replaceAll("-", " "))}</h3><p><span class="pill">${esc(ticket.merge_authority || "human")}</span> Approved head <code>${esc(ticket.approved_head || "not recorded")}</code></p><p>${esc((mergeSteward.reasons || [ticket.supervisor_merge_decision || "Inspect the exact-revision evidence before deciding."]).join(" "))}</p>${mergeSteward.state === "steward-updating" ? '<div class="form-actions"><button class="button" type="button" data-ticket-action="steward-sync">Synchronize and re-verify</button></div><p class="field-help">A changed head revokes gates and Code Review. The steward never merges.</p>' : ""}</section>` : "";
     const triage = ticket.triage || {};
     const controls = triage.controls || {};
     const metrics = ticket.metrics || {};
-    const timing = `<section class="detail-panel"><h3>Time by owner</h3><div class="detail-grid"><p><b>${esc(metrics.agent_seconds || 0)}s</b><br><small>Useful agent work</small></p><p><b>${esc(metrics.gate_seconds || ticket.verification_duration_seconds || 0)}s</b><br><small>Verification overhead</small></p><p><b>${esc(metrics.human_wait_seconds || 0)}s</b><br><small>Human wait</small></p><p><b>${esc(metrics.retry_count || 0)}</b><br><small>Retries · ${esc(metrics.verifier_rejections || 0)} verifier rejections</small></p></div></section>`;
+    const timing = `<section class="detail-panel"><h3>Time by owner</h3><div class="detail-grid"><p><b>${esc(metrics.agent_seconds || 0)}s</b><br><small>Agent execution</small></p><p><b>${esc(metrics.gate_seconds || ticket.verification_duration_seconds || 0)}s</b><br><small>Verification overhead</small></p><p><b>${esc(metrics.human_wait_seconds || 0)}s</b><br><small>Human wait</small></p><p><b>${esc(metrics.retry_count || 0)}</b><br><small>Retries · ${esc(metrics.verifier_rejections || 0)} verifier rejections</small></p></div></section>`;
     const retryDecision = ticket.last_retry_reason ? `<section class="detail-panel"><h3>Latest retry reason</h3><p>${esc(ticket.last_retry_reason)}</p></section>` : "";
     replaceDrawerContent(content, `${recovery}${intakePanel}<div class="detail-grid"><section class="detail-panel"><h3>Implementation</h3><p><span class="pill">${esc(ticket.agent)}</span> attempt ${ticket.attempt || 0}</p></section><section class="detail-panel"><h3>Independent QA</h3><p><span class="pill">${esc(ticket.qa_agent || "disabled")}</span> attempt ${ticket.qa_attempt || 0}</p></section></div><section class="detail-panel"><h3>Triage and controls</h3><p><span class="pill">${esc(triage.result || "not run")}</span> ${esc(controls.risk || "unclassified")} risk · ${esc(ticket.verification_level || controls.gate_level || "unselected")} verification</p><p>${esc(controls.reason || triage.reason || "Controls are selected before dispatch and checked again from the actual diff.")}</p></section>${timing}${retryDecision}${merge}${qaDecision}<section class="detail-panel"><h3>Specification</h3><pre>${esc(section(ticket.body, "Spec"))}</pre></section><section class="detail-panel"><h3>Acceptance criteria</h3><pre>${esc(section(ticket.body, "Acceptance criteria"))}</pre></section>${ticket.failure ? `<section class="detail-panel"><h3>Last failure</h3><pre>${esc(ticket.failure)}</pre></section>` : ""}<div class="form-actions">${actions}${ticket.issue_url ? `<a class="button" href="${esc(ticket.issue_url)}" target="_blank" rel="noreferrer">Open issue</a>` : ""}${ticket.pr_url ? `<a class="button" href="${esc(ticket.pr_url)}" target="_blank" rel="noreferrer">Open pull request</a>` : ""}</div>`, preservePosition);
-    $('[data-ticket-action="approve-tests"]', content)?.addEventListener("click", () => action("approve-tests", { issue: ticket.number }));
-    $('[data-ticket-action="request-test-changes"]', content)?.addEventListener("click", () => {
-      const feedback = $("#qa-revision-feedback", content)?.value.trim() || "";
-      if (!feedback) {
-        toast("Describe the required test changes before requesting a revision.", true);
-        $("#qa-revision-feedback", content)?.focus();
-        return;
-      }
-      action("request-test-changes", { issue: ticket.number, feedback });
-    });
+    $("[data-open-tests]", content)?.addEventListener("click", () => { app.drawerTab = "tests"; renderDrawer(); });
     const submitRetry = (resetQa = false) => {
       const reason = $("#retry-reason", content)?.value.trim() || "";
       if (reason.length < 12) {
@@ -1429,9 +1473,13 @@ async function renderDrawer({ preservePosition = false } = {}) {
     const causal = ticket.qa_evidence || {};
     const proof = (name, value, waiting) => `<div class="gate-result"><strong class="${value?.result?.includes("PROVED") && !value.result.includes("NOT") ? "pass" : value ? "fail" : ""}">${esc(value?.result || waiting)} · ${name}</strong>${value ? `<p>${esc(value.classification || "unknown")} · exit ${value.exit_code ?? "—"} · ${value.duration_seconds || 0}s</p><pre>${esc(value.output || "")}</pre>` : ""}</div>`;
     const causalEvidence = causal.focused_test_command
-      ? `<section class="detail-panel"><h3>Causal acceptance evidence</h3><p>Identical focused command</p><pre>${esc(causal.focused_test_command)}</pre>${proof("Before implementation", causal.red, "RED NOT PROVED")}${proof("After implementation", causal.green, "GREEN NOT PROVED")}${causal.negative ? proof("Assured negative proof", causal.negative, "NEGATIVE PROOF NOT RUN") : ""}</section>`
+      ? `<section class="detail-panel"><h3>Acceptance evidence</h3><p>Confirm that the assertion checks the requested behavior. An assertion failure alone does not establish that the requirement is correct.</p><p>Identical focused command</p><pre>${esc(causal.focused_test_command)}</pre>${proof("Before implementation", causal.red, "RED NOT PROVED")}${proof("After implementation", causal.green, "Not run yet")}${causal.negative ? proof("Assured negative proof", causal.negative, "NEGATIVE PROOF NOT RUN") : ""}</section>`
       : `<section class="detail-panel"><h3>Causal acceptance evidence</h3><p>RED NOT PROVED · No focused Acceptance Test command has been accepted.</p></section>`;
-    replaceDrawerContent(content, `<section class="detail-panel"><h3>Protected acceptance tests</h3>${tests.length ? tests.map((path) => `<span class="pill">${esc(path)}</span>`).join("") : "No tests recorded."}</section>${causalEvidence}<section class="detail-panel"><h3>Deterministic verification gates</h3><p>Selected level: <span class="pill">${esc(ticket.verification_level || "not selected")}</span> · ${ticket.verification_duration_seconds || 0}s total</p>${gates.length ? gates.map((gate) => { const verdict = gate.classification || (gate.exit_code === 0 ? "PASS" : "FAIL"); return `<div class="gate-result"><strong class="${verdict === "PASS" ? "pass" : "fail"}">${esc(verdict)} · ${esc(gate.name)} · ${esc(gate.level || "full")}</strong><p>${gate.duration_seconds || 0}s</p><pre>${esc(gate.output || "")}</pre></div>`; }).join("") : "No gates have run."}</section>`, preservePosition);
+    replaceDrawerContent(content, `<section class="detail-panel"><h3>Acceptance criterion</h3><p>${esc(section(ticket.body, "Acceptance Criteria"))}</p><h3>Protected acceptance tests</h3>${tests.length ? tests.map((path) => `<span class="pill">${esc(path)}</span>`).join("") : "No tests recorded."}</section><div class="detail-panel" id="qa-test-source">Loading the committed test proposal…</div>${causalEvidence}${qaDecisionPanel(ticket)}<section class="detail-panel"><h3>Deterministic verification gates</h3><p>Selected level: <span class="pill">${esc(ticket.verification_level || "not selected")}</span> · ${ticket.verification_duration_seconds || 0}s total</p>${gates.length ? gates.map((gate) => { const verdict = gate.classification || (gate.exit_code === 0 ? "PASS" : "FAIL"); return `<div class="gate-result"><strong class="${verdict === "PASS" ? "pass" : "fail"}">${esc(verdict)} · ${esc(gate.name)} · ${esc(gate.level || "full")}</strong><p>${gate.duration_seconds || 0}s</p><pre>${esc(gate.output || "")}</pre></div>`; }).join("") : "No gates have run."}</section>`, preservePosition);
+    wireQaDecision(ticket, content);
+    const approve = $('[data-ticket-action="approve-tests"]', content);
+    if (approve) approve.disabled = true;
+    loadTestProposal(ticket, content);
     return;
   }
   if (app.drawerTab === "history") {
@@ -1465,7 +1513,15 @@ async function openArtifact(path) {
     const value = await request(`/api/artifact?path=${encodeURIComponent(path)}`);
     app.selectedTicket = null;
     showDrawer("Factory artifact", path.split("/").at(-1), false);
-    $("#drawer-content").innerHTML = `<section class="detail-panel"><h3>${esc(path)}</h3><pre>${esc(value.content)}</pre></section>`;
+    $("#drawer-content").innerHTML = `<section class="detail-panel"><h3>${esc(path)}</h3><button class="button" id="download-artifact" type="button">Download</button><pre>${esc(value.content)}</pre></section>`;
+    $("#download-artifact").addEventListener("click", () => {
+      const url = URL.createObjectURL(new Blob([value.content], { type: "text/plain;charset=utf-8" }));
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = path.split("/").at(-1);
+      link.click();
+      window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+    });
   } catch (error) { toast(error.message, true); }
 }
 
@@ -1474,7 +1530,11 @@ function connectEvents() {
   setConnection("connecting");
   const source = new EventSource("/api/events");
   app.eventSource = source;
-  source.onopen = () => setConnection("connected");
+  source.onopen = () => {
+    setConnection("connected");
+    if (app.operationPoll) window.clearInterval(app.operationPoll);
+    app.operationPoll = null;
+  };
   source.onmessage = (event) => {
     try {
       setConnection("connected");
@@ -1485,6 +1545,7 @@ function connectEvents() {
   };
   source.onerror = () => {
     setConnection("reconnecting");
+    syncOperationPolling(app.snapshot?.operation);
     refreshSnapshot();
   };
 }
@@ -1555,7 +1616,14 @@ function wireEvents() {
       toast(error.message, true);
     }
   });
-  document.addEventListener("keydown", (event) => { if (event.key === "Escape") { closeDrawer(); closeSidebar(); } });
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") { closeDrawer(); closeSidebar(); }
+    if (event.key !== "Tab" || $("#ticket-drawer").hidden) return;
+    const controls = $$('button:not([disabled]), a[href], input, textarea, select', $("#ticket-drawer")).filter(el => el.getClientRects().length);
+    if (!controls.length) return;
+    if (event.shiftKey && document.activeElement === controls[0]) { event.preventDefault(); controls.at(-1).focus(); }
+    else if (!event.shiftKey && document.activeElement === controls.at(-1)) { event.preventDefault(); controls[0].focus(); }
+  });
   document.addEventListener("visibilitychange", () => { if (!document.hidden) refreshSnapshot(); });
   window.addEventListener("hashchange", () => showView(location.hash.slice(1) || "overview", false));
 }

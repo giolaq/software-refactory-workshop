@@ -48,7 +48,7 @@ uses a short-lived, exact-branch OIDC session instead of stored AWS keys.
 The cloud guide also provides guarded `status`, `pause`, `resume`, and teardown
 commands so workshop infrastructure does not need to run continuously.
 
-- Start the self-guided experience with the [workshop website](workshop-guide/README.md).
+- Follow the commands, clicks, and recovery instructions on the [workshop website](workshop-guide/README.md). Use the [speaker narrative](factory/WORKSHOP_NARRATIVE.md) for the concepts and discussion.
 - Use the [factory quickstart](factory/README.md) for the operator reference.
 - Use the [configuration guide](factory/CONFIGURATION.md) to select Claude,
   Codex, Cursor, or register your own Supervisor, Implementation, QA, and Code Review adapters,

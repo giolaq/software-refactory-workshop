@@ -30,7 +30,7 @@ import time
 import tomllib
 import tempfile
 import uuid
-from collections import Counter
+from collections import Counter, deque
 from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
 
@@ -3315,7 +3315,22 @@ class Factory:
             phase_started_at=now(),
         )
         self._sync_store()
-        chunks = []
+        # Keep a bounded response tail for decision parsing. The full output
+        # remains in the log; long-running agents must not accumulate it in RAM.
+        chunks = deque()
+        output_size = 0
+
+        def keep_output(chunk):
+            nonlocal output_size
+            chunks.append(chunk)
+            output_size += len(chunk)
+            while output_size > 1024 * 1024:
+                first = chunks.popleft()
+                remove = min(len(first), output_size - 1024 * 1024)
+                if remove < len(first):
+                    chunks.appendleft(first[remove:])
+                output_size -= remove
+
         protocol_errors = []
         protocol_results = []
         protocol_mode = "{assignment}" in template
@@ -3346,7 +3361,7 @@ class Factory:
                         except AdapterProtocolError as exc:
                             protocol_errors.append(str(exc))
                             continue
-                        chunks.append(chunk)
+                        keep_output(chunk)
                         stream.write(chunk)
                         stream.flush()
                 except (OSError, ValueError):
@@ -3361,7 +3376,7 @@ class Factory:
                 process.wait()
                 returncode = 124
                 timeout_message = f"Agent timed out after {self.cfg['factory']['agent_timeout']}s\n"
-                chunks.append(timeout_message); stream.write(timeout_message); stream.flush()
+                keep_output(timeout_message); stream.write(timeout_message); stream.flush()
             reader.join(timeout=5)
             stdout.close()
             if reader.is_alive():
@@ -3393,7 +3408,7 @@ class Factory:
         if protocol_errors:
             result_path.unlink(missing_ok=True)
             protocol_message = "Adapter protocol failed: " + "; ".join(protocol_errors) + "\n"
-            chunks.append(protocol_message)
+            keep_output(protocol_message)
             with log.open("a") as stream:
                 stream.write(protocol_message)
         output = "".join(chunks)
@@ -6708,7 +6723,7 @@ def parser():
     canvas.add_argument("--force", action="store_true")
     evidence = sub.add_parser("evidence", help="export a sanitized Evidence Packet")
     evidence.add_argument("plan"); evidence.add_argument("--repo", default=".")
-    evidence.add_argument("--canvas", required=True)
+    evidence.add_argument("--canvas", help="optionally include a completed adoption Canvas")
     evidence.add_argument("--ticket", action="append", type=int, dest="tickets")
     evidence.add_argument("--output")
     release_check = sub.add_parser("release-check", help="audit a frozen tree before public/template release")
@@ -6832,7 +6847,7 @@ def parser():
     plan.add_argument("--profile", choices=sorted(FACTORY_PROFILES))
     plan.add_argument("--default-agent", help="registered adapter written into generated tickets")
     plan.add_argument("--planning-agent", choices=sorted(PLANNING_AGENTS))
-    plan.add_argument("--min-tickets", type=int, default=3); plan.add_argument("--max-tickets", type=int, default=12)
+    plan.add_argument("--min-tickets", type=int, default=1); plan.add_argument("--max-tickets", type=int, default=12)
     plan.add_argument("--mock", action="store_true", help="use bundled deterministic planning artifacts")
     plan.add_argument(
         "--allow-autonomous-merge",
@@ -7224,7 +7239,7 @@ class FactoryCLI:
             packet, evidence_manifest = export_evidence(
                 repo,
                 args.plan,
-                Path(args.canvas),
+                Path(args.canvas) if args.canvas else None,
                 args.tickets,
                 Path(args.output) if args.output else None,
             )

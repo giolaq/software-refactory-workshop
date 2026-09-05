@@ -230,6 +230,16 @@ class AdapterProtocolTests(unittest.TestCase):
                 ["started", "status", "completed"],
             )
 
+            # Retain a bounded tail without dropping a multi-line final decision;
+            # the complete ordinary stdout still belongs in the on-disk log.
+            payload = ("x" * 8192 + "\n") * 160 + "{\n" + '\n'.join('"key%d": %d,' % (i, i) for i in range(200)) + '\n"decision": "APPROVE"\n}\n'
+            (repo / "output.txt").write_text(payload)
+            script.write_text('#!/bin/sh\ncat "' + str(repo / "output.txt") + '"\n')
+            code, output = factory.run_adapter("worker", ticket, repo, prompt, "long.log", "implementation")
+            self.assertEqual(code, 0)
+            self.assertEqual(output, payload[-1024 * 1024:])
+            self.assertEqual((repo / ".factory/logs/long.log").read_text(), payload)
+
     def test_protocol_adapter_must_emit_one_valid_final_result(self):
         with tempfile.TemporaryDirectory() as directory:
             repo = Path(directory)

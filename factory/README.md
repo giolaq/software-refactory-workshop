@@ -777,18 +777,28 @@ demo works offline.
 
 ## Export review evidence
 
-Generate the 16-section Factory Canvas, complete it, and ask a peer to review
-it before export:
+Open **Review → Run app**, stop the preview if it is running, and select
+**Export run evidence**. Open the packet and select **Download**. No adoption
+worksheet is required. From the CLI:
 
 ```sh
-./factory/factory canvas --output factory-canvas.md
-./factory/factory evidence PLAN_ID --canvas factory-canvas.md
+./factory/factory evidence PLAN_ID
 ```
 
 The packet includes reviewed planning, approvals, traceability, selected ticket
 and pull-request links, protected-test metadata, gate results, Handoff Receipts,
-the Canvas, missing-evidence warnings, and a hash manifest. Raw prompts, raw
+an optional Canvas, missing-evidence warnings, and a hash manifest. Raw prompts, raw
 logs, command output, environment values, tokens, and credentials are excluded.
+
+For an adoption discussion, use [the short pilot worksheet](WORKSHOP_PILOT.md).
+To attach a detailed Canvas, create it with `factory canvas`, complete it, and
+pass `--canvas PATH` to evidence export. An explicitly supplied incomplete Canvas
+is still rejected. Evidence export does not waive any delivery or merge gate.
+
+The three-hour Live exercise uses [genre-aware film search](../workshop-search-prd.md).
+Planning accepts a minimum of one ticket by default; it does not need to invent
+enabling tickets for a small end-to-end change. The full recipe rebrand remains
+the deterministic Rehearsal pack and an optional extension.
 
 Before a public/template release, freeze a clean tree and run:
 

@@ -201,9 +201,17 @@ Reviewed by Sam; reduce Assured controls until the data becomes regulated.
             )
 
             output = repo / ".factory/evidence/demo-plan"
+            updated_state = json.loads((repo / ".factory/state.json").read_text())
+            # Exporting run evidence must not depend on a personal adoption form.
+            plain = subprocess.run(
+                [sys.executable, str(FACTORY), "evidence", "demo-plan", "--repo", str(repo),
+                 "--ticket", "12", "--output", str(repo / "run-evidence")],
+                text=True, capture_output=True, check=True,
+            )
+            self.assertIn("evidence-packet.md", plain.stdout)
+            self.assertIn("Not included", (repo / "run-evidence/evidence-packet.md").read_text())
             packet = (output / "evidence-packet.md").read_text()
             exported = json.loads((output / "manifest.json").read_text())
-            updated_state = json.loads((repo / ".factory/state.json").read_text())
             self.assertIn(str(output / "evidence-packet.md"), result.stdout)
             self.assertIn("# Evidence Packet — TableStory", packet)
             self.assertIn("## Factory Canvas", packet)
