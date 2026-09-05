@@ -12,8 +12,8 @@ how to operate the factory, not the presentation's rationale.
 1. Send the [prerequisites](WORKSHOP_OUTLINE.md) at least one day ahead.
 2. Verify that everyone creates their own disposable GitHub repository.
 3. Use a separate facilitator repository and a signed-in provider you have tested.
-4. Rehearse [genre-aware film search](../workshop-search-prd.md) as the bounded
-   Live exercise. Planning may produce one ticket; it need not invent three.
+4. Rehearse the full [Pocket Cinema → TableStory transformation](../recipe-app-prd.md)
+   with the Live provider. Review the complete ticket breakdown and dependencies.
 5. Keep a separate five-ticket TableStory Rehearsal checkout and prepared
    evidence for slow or unavailable providers.
 6. Test the guide, Control Center, and screenshots against the same code.
@@ -37,14 +37,17 @@ live-provider smoke or a novice dry run. Record both in
 
 - Setup: confirm the target and review the shell commands and authority in the
   contract. Worktrees isolate Git state, not the whole host.
-- Plan: make one requirement testable; trace it through the four expert outputs.
+- Plan: make a recipe journey testable; trace it through the four expert outputs
+  and confirm that the tickets cover the whole product transformation.
 - QA: read the assertion, exact command, and baseline failure before approving.
 - Deliver: distinguish working, waiting for dependencies, waiting for a person,
   and blocked by a failed check.
 - Review: inspect the current revision. A separate role using the same model is
   not a guarantee of independent reasoning. A Factory comment may not be a
   formal GitHub branch-protection approval.
-- Finish: inspect merged behavior, export run evidence, and complete the pilot
+- Finish: check the integrated recipe journeys and removal of movie-domain
+  behavior. Distinguish a complete transformation from partially merged work.
+  Export run evidence and complete the pilot
   worksheet. An optional detailed Canvas is not an export prerequisite.
 
 ## Recovery without shortcuts

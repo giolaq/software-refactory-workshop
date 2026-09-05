@@ -62,10 +62,23 @@ test("both command paths use valid shell syntax and explicit inputs", async () =
   assert.match(source, /read -r PLAN_ID/);
   assert.match(source, /--branch SESSION_TAG/);
   assert.match(html, /Replace <code>SESSION_TAG<\/code>/);
-  assert.match(source, /workshop-search-prd\.md/);
+  assert.match(source, /recipe-app-prd\.md/);
+  assert.doesNotMatch(source, /workshop-search-prd\.md/);
   assert.match(source, /factory approve-rehearsal/);
   assert.match(source, /factory run --mock --scenario recipe-rebrand --review-qa-tests --once/);
   assert.match(source, /factory run --repo "\$TARGET"/);
+});
+
+test("the main exercise is the full product transformation in both modes", async () => {
+  const html = await (await render()).text();
+  assert.match(html, /Transform Pocket Cinema into TableStory/);
+  assert.match(html, /recipe-app-prd\.md/);
+  assert.match(html, /One Done ticket is progress/);
+  assert.match(html, /Live follows your approved plan/);
+  assert.doesNotMatch(html, /workshop-search-prd|factory-search-workshop/);
+  const plan = await readFile(new URL("../../factory/WORKSHOP_PLAN_3_HOURS.md", import.meta.url), "utf8");
+  assert.match(plan, /recipe-app-prd\.md/);
+  assert.doesNotMatch(plan, /workshop-search-prd\.md/);
 });
 
 test("Control Center setup is direct and does not require a shell wizard", async () => {

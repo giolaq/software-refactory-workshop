@@ -70,7 +70,7 @@ Record observations rather than coaching them past unclear instructions.
 | Live provider smoke | CLI version, authentication method, planning, QA, implementation, review, final human merge; test each advertised provider when an account is available |
 | Personal GitHub repository and Project | Correct target, published issues, visible Project status, permission and branch recovery |
 | Novice navigation | Can open the Control Center, find the current phase, inspect tests, recover, and export without facilitator rescue |
-| Three-hour pacing | Setup duration, time at each decision, agent time versus human wait, core outcome and unfinished work |
+| Three-hour pacing | Setup duration, time at each decision, agent time versus human wait, completed transformation scope, remaining tickets and resume point |
 | Learning | Can reject false RED, reject stale approval, and propose a bounded pilot with an owner and stop/go criterion |
 | Accessibility | Keyboard-only decisions, zoom, narrow viewport, and screen-reader labels in the browsers attendees use |
 

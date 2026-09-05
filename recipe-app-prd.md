@@ -8,7 +8,9 @@
 
 ## Executive summary
 
-Hearth & Harvest Foods wants to use the Pocket Cinema application as the technical foundation for **TableStory**, a recipe discovery app for home cooks. The existing application already provides useful responsive browsing, detail pages, saved-item behavior, search, and television remote navigation. However, its product identity, information architecture, content model, routes, API language, and interaction copy are entirely based on films.
+Hearth & Harvest Foods wants to use the Pocket Cinema application as the technical foundation for **TableStory**, a recipe discovery app for home cooks. The existing application provides browsing, detail pages, saved-item behavior, and search. Its product identity, information architecture, content model, routes, API language, and interaction copy are based on films. TableStory must adapt these capabilities for recipes and add the TV navigation described below.
+
+This is the main workshop exercise for both Live and Rehearsal. Live planning produces a reviewed ticket breakdown from this PRD; Rehearsal uses a fixed five-ticket simulation of the same transformation. A three-hour session is not a guarantee that a Live run will finish. Record any remaining tickets and the next action without treating a partial result as the completed product.
 
 This project is therefore a **complete product rebrand and domain conversion**, not a logo swap. Every customer-visible reference to cinema must be replaced with a coherent cooking experience, and the underlying interfaces must describe recipes rather than disguising recipes as movies.
 
@@ -31,7 +33,7 @@ Simply replacing movie titles with recipe names would leave film-specific URLs, 
 
 Transform Pocket Cinema into TableStory, a responsive recipe discovery experience in which a home cook can find a suitable recipe, understand what it requires, save it, and read the cooking method from either a phone or a TV remote.
 
-The workshop succeeds when an attendee can inspect the finished application without finding any Pocket Cinema or movie-domain language in the supported user experience or public API.
+The product transformation is complete when the approved requirements and integrated acceptance checks pass, including removal of Pocket Cinema and movie-domain language from the supported user experience and public API.
 
 ## Users
 

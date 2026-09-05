@@ -5,8 +5,8 @@ Release: `workshop-v1.2.1`
 The attendee procedure guide follows **Setup → Plan → Deliver → Review**.
 It explains commands, clicks, expected results, and recovery. The facilitator's
 slides and notes explain the rationale. Live is the session path, using the
-bounded genre-search PRD; the full recipe rebrand is an extension and the
-simulated Rehearsal pack. The organizer supplies a tested release tag.
+Pocket Cinema → TableStory product-transformation PRD in `recipe-app-prd.md`.
+The same transformation is the simulated Rehearsal pack, not an optional extension. The organizer supplies a tested release tag.
 
 The guide supports deterministic rehearsal and live GitHub paths. Claude is
 the worked example, but attendees can use Codex, Cursor, or a custom CLI.
