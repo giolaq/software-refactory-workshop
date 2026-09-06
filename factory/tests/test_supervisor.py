@@ -336,6 +336,10 @@ class SupervisorTests(unittest.TestCase):
             report = repo / ".factory/reviews/browser.md"
             report.parent.mkdir(parents=True, exist_ok=True)
             report.write_text("Browser evidence for deadbeef is embedded here.")
+            ticket["review_evidence"] = [{
+                "author_role": "operator", "candidate_head": "deadbeef",
+                "content": report.read_text(),
+            }]
             decision = self.supervisor(repo, response).authorize_merge(ticket)
 
             self.assertEqual(decision["action"], "MERGE")

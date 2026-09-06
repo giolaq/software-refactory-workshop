@@ -11,51 +11,39 @@ from uuid import uuid4
 from sensitive_data import redact_credentials
 
 
-def operator_review_evidence(repo: Path, ticket: dict) -> list[dict]:
-    """Carry explicitly referenced review reports across isolated worktrees."""
-    references = re.findall(
-        r"(?<![\w/])(\.factory/(?:reviews|evidence)/[\w./-]+\.(?:md|json|txt))\b",
-        str(ticket.get("last_retry_reason") or ""),
-    )
-    roots = [(repo / ".factory" / name).resolve() for name in ("reviews", "evidence")]
-    reports = []
-    for reference in dict.fromkeys(references):
-        path = (repo / reference).resolve()
-        report = {"path": reference}
-        try:
-            if not path.is_relative_to(repo.resolve()) or not any(path.is_relative_to(root) for root in roots):
-                raise ValueError("Report is outside the allowed review evidence roots")
-            if path.stat().st_size > 20000:
-                raise ValueError("Report exceeds the 20,000-byte handoff limit")
-            content = redact_credentials(path.read_text())
-            report.update(content=content, sha256=hashlib.sha256(content.encode()).hexdigest())
-        except (OSError, UnicodeError, ValueError) as exc:
-            report["error"] = str(exc)
-        reports.append(report)
-    return reports
-
-
-def capture_implementation_evidence(repo: Path, worktree: Path, number: int, revision: str) -> dict:
-    """Snapshot one explicitly designated worker report, never arbitrary log output."""
-    source = worktree / ".factory/review-handoff.md"
-    if not source.exists():
-        return {}
-    report = {"author_role": "implementation", "candidate_head": revision}
+def capture_review_evidence(
+    repo: Path, source: Path, *, author_role: str, revision: str, source_root: Path,
+) -> dict:
+    """Capture explicitly supplied evidence through one bounded, immutable interface."""
+    if author_role not in {"operator", "implementation"}:
+        raise ValueError("Unsupported evidence author")
+    report = {"author_role": author_role, "candidate_head": revision}
     try:
-        if not source.resolve().is_relative_to(worktree.resolve()):
-            raise ValueError("Implementation report escapes its worktree")
+        if not re.fullmatch(r"[a-f0-9]{40,64}", revision):
+            raise ValueError("Evidence requires a full candidate revision")
+        if not source.resolve().is_relative_to(source_root.resolve()):
+            raise ValueError("Evidence source escapes its allowed root")
         if source.stat().st_size > 20000:
-            raise ValueError("Implementation report exceeds 20,000 bytes")
-        content = redact_credentials(source.read_text())
-        if not revision or revision not in content:
-            raise ValueError("Implementation report must name the full current candidate revision")
+            raise ValueError("Evidence exceeds 20,000 bytes")
+        with source.open(encoding="utf-8") as stream:
+            content = stream.read(20001)
+        if len(content.encode("utf-8")) > 20000:
+            raise ValueError("Evidence exceeds 20,000 bytes")
+        content = redact_credentials(content).strip()
+        if not content:
+            raise ValueError("Evidence must not be empty")
+        if revision not in content:
+            raise ValueError(f"Evidence must name the full candidate revision: {revision}")
         digest = hashlib.sha256(content.encode()).hexdigest()
-        target = repo / ".factory/reviews" / f"implementation-{number}-{digest}.md"
+        target = repo / ".factory/reviews" / f"{author_role}-{digest}.md"
         if not target.resolve().is_relative_to(repo.resolve()) or target.is_symlink():
-            raise ValueError("Implementation snapshot escapes the repository or is a symlink")
+            raise ValueError("Evidence snapshot escapes the repository or is a symlink")
         target.parent.mkdir(parents=True, exist_ok=True)
-        if not target.exists():
-            target.write_text(content)
+        if target.exists():
+            if target.read_text(encoding="utf-8") != content:
+                raise ValueError("Evidence snapshot has changed; inspect it before retrying")
+        else:
+            target.write_text(content, encoding="utf-8")
         report.update(content=content, sha256=digest, artifact=str(target.relative_to(repo)))
     except (OSError, UnicodeError, ValueError) as exc:
         report["error"] = str(exc)
@@ -83,7 +71,7 @@ PROFILES = {
             "vertical_slices",
         ],
         "execution_roles": [
-            "supervisor", "qa", "implementation", "verification", "code_review", "human_review",
+            "qa", "implementation", "verification", "code_review", "human_review",
         ],
         "protected_acceptance_tests": True,
         "merge_authority": "human",

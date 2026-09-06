@@ -194,6 +194,23 @@ class ControlCenterTests(unittest.TestCase):
             self.assertEqual(result["status"], "running")
             companion.assert_called_once()
 
+    def test_retry_report_is_an_explicit_bounded_attachment(self):
+        with tempfile.TemporaryDirectory() as directory:
+            center = ControlCenter(self.make_repo(directory))
+            payload = {"mode": "rehearsal", "issue": 6,
+                       "reason": "The missing browser checks are now recorded",
+                       "evidence": "Checked recipe search at the recorded candidate."}
+            with patch.object(center, "_ticket_action_context", return_value={"number": 6}), \
+                    patch("control_center.ticket_recovery", return_value={}):
+                _, commands = center.build_commands("retry", payload)
+                command = commands[0]
+                report = Path(command[command.index("--evidence-file") + 1])
+                self.assertTrue(report.is_relative_to(center.repo))
+                self.assertEqual(report.read_text(), payload["evidence"])
+                self.assertEqual(command[command.index("--reason") + 1], payload["reason"])
+                with self.assertRaisesRegex(InputError, "20 KB"):
+                    center.build_commands("retry", {**payload, "evidence": "界" * 7000})
+
     def test_parser_exposes_recover_command(self):
         args = parser().parse_args([
             "recover", "--repo", "/tmp/workshop",
@@ -1554,7 +1571,7 @@ class ControlCenterTests(unittest.TestCase):
             charter.write()
             charter.approve()
             (center.repo / ".factory/planning-state.json").write_text(json.dumps({"plan_id": "abc12345"}))
-            (center.repo / ".factory/state.json").write_text(json.dumps({"tickets": [{"number": 1, "status": "Done"}]}))
+            (center.repo / ".factory/state.json").write_text(json.dumps({"supervisor_agent": "mock-supervisor", "tickets": [{"number": 1, "status": "Done"}]}))
             supervisor = center.repo / ".factory/supervisor/state.json"
             supervisor.parent.mkdir(parents=True)
             supervisor.write_text(json.dumps({"status": "ready", "latest": {"id": "supervisor-1"}}))

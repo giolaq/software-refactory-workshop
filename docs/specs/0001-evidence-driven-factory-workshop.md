@@ -181,8 +181,8 @@ adapter. Live planning accepts any PRD and records that contract with the plan.
   human exact-revision merge gate. With a single GitHub identity, formal
   self-approval falls back to an explicit Factory comment that does not satisfy
   branch-protection approval requirements.
-- Standard and Assured profiles include a Supervisor role at each ready-ticket
-  dispatch checkpoint; Lean retains direct scheduler dispatch. The configured adapter
+- Assured and Autonomous Demo profiles include a Supervisor role at each ready-ticket
+  dispatch checkpoint; Lean and Standard use direct scheduler dispatch. The configured adapter
   reads current dependency state and recent worker Handoff Receipts, then
   proposes Ticket-specific dispatch instructions or evidence-backed blocks.
   The orchestrator validates readiness, uniqueness, concurrency, output schema,

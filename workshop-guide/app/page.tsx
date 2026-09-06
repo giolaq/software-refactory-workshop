@@ -75,6 +75,7 @@ function WorkshopPaths({
   continueWhen,
   cliPurpose,
   cliDirectory,
+  cliAfter,
   children,
 }: {
   click: ReactNode;
@@ -83,6 +84,7 @@ function WorkshopPaths({
   continueWhen: ReactNode;
   cliPurpose: ReactNode;
   cliDirectory: ReactNode;
+  cliAfter?: ReactNode;
   children: string;
 }) {
   return (
@@ -105,6 +107,7 @@ function WorkshopPaths({
           <div><dt>Success looks like</dt><dd>{continueWhen}</dd></div>
         </dl>
         <CodeBlock label="CLI">{children}</CodeBlock>
+        {cliAfter}
       </details>
     </div>
   );
@@ -136,7 +139,7 @@ function WorkshopMedia({
         <span>Open image</span>
       </a>
       <figcaption><strong>{label}</strong><span>{caption}</span></figcaption>
-      {src.startsWith("/screenshots/control-center-") && <p className="field-help">Example from a local Rehearsal run. Your ticket names and agent will differ. Select the image to enlarge it.</p>}
+      {src.startsWith("/screenshots/control-center-") && <p className="field-help">Local Rehearsal example. Ticket names and agents may differ.</p>}
     </figure>
   );
 }
@@ -476,39 +479,48 @@ AGENT_PRESET=claude-workshop # or codex-workshop or cursor-workshop
 
         <StepSection index={4} id="plan" title="Approve Product Review" goal="Approve the user problem and expected behavior before technical design.">
           <WorkshopPaths
-            click={<>In <strong>Plan → Requirements</strong>, select <strong>Start Product Review</strong>. Then open <strong>Plan → Review plan</strong> and select <strong>Product Review</strong>.</>}
+            click={<>In <strong>Plan → Requirements</strong>, select <strong>Start Product Review</strong>. Open <strong>Plan → Review plan</strong> and read <strong>Product Review</strong>. Then select the <strong>Approve product</strong> card and its <strong>Approve product</strong> button.</>}
             whyStopped={<>A person must approve the product plan before technical planning starts.</>}
-            inspect={<>Write one observable outcome for the cooking journey. Compare it with the plan; request a correction where the behavior or evidence is unclear.</>}
+            inspect={<>Write one observable outcome for the cooking journey. Compare it with the plan. If you request a correction, read the updated Product Review before approving.</>}
             continueWhen={<>The product plan is clear, testable, and approved.</>}
             cliPurpose={<>Generate, inspect, revise if needed, and approve Product Review.</>}
             cliDirectory={track === "live" ? <><code>software-refactory-control</code>; commands target <code>$TARGET</code></> : <><code>software-refactory-rehearsal</code></>}
+            cliAfter={<>
+              <div>
+                <h4>Optional: request changes before approval</h4>
+                <p>Skip this if the plan is clear and testable. Otherwise, replace the example feedback with your correction. Read the revised Product Review; repeat if needed.</p>
+                <CodeBlock label="Revise and read again">{track === "live" ? `./factory/factory revise "$PLAN_ID" product --repo "$TARGET" \\
+  --feedback "Specify what happens when an ingredient search returns no recipes."
+./factory/factory review product "$PLAN_ID" --repo "$TARGET"` : `./factory/factory revise "$PLAN_ID" product --mock \\
+  --feedback "Specify what happens when an ingredient search returns no recipes."
+./factory/factory review product "$PLAN_ID"`}</CodeBlock>
+              </div>
+              <p>Approve only after reading the latest Product Review and accepting its scope and behavior.</p>
+              <CodeBlock label="Approve the reviewed plan">{track === "live"
+                ? `./factory/factory approve-product "$PLAN_ID" --repo "$TARGET"`
+                : `./factory/factory approve-product "$PLAN_ID"`}</CodeBlock>
+            </>}
           >{track === "live" ? `./factory/factory plan "$CONTROL/recipe-app-prd.md" --repo "$TARGET"
 echo "Paste the plan ID from the output, then press Enter:"
 read -r PLAN_ID
-./factory/factory review product "$PLAN_ID" --repo "$TARGET"
-./factory/factory revise "$PLAN_ID" product --repo "$TARGET" \\
-  --feedback "Clarify the user journey and success checks."
-./factory/factory approve-product "$PLAN_ID" --repo "$TARGET"` : `./factory/factory plan recipe-app-prd.md --mock
+./factory/factory review product "$PLAN_ID" --repo "$TARGET"` : `./factory/factory plan recipe-app-prd.md --mock
 echo "Paste the plan ID from the output, then press Enter:"
 read -r PLAN_ID
-./factory/factory review product "$PLAN_ID"
-./factory/factory revise "$PLAN_ID" product --mock \\
-  --feedback "Clarify the user journey and success checks."
-./factory/factory approve-product "$PLAN_ID"`}</WorkshopPaths>
+./factory/factory review product "$PLAN_ID"`}</WorkshopPaths>
           <WorkshopMedia
             src="/screenshots/control-center-planning.jpg"
             alt="Control Center Plan and Review plan screen showing expert stages and human approval gates"
             label="Plan → Review plan"
-            caption="Open Product Review. Yellow cards need a decision from you."
+            caption="Read Product Review, then open the Approve product card. Yellow cards need your decision."
             width={1440}
             height={980}
           />
-          <Checkpoint>Product Review shows <strong>Approved</strong>.</Checkpoint>
+          <Checkpoint>Product Review shows <strong>Approved</strong>. This approves intent; it does not start technical planning or coding.</Checkpoint>
         </StepSection>
 
         <StepSection index={5} id="publish" title="Create tickets" goal="Check the proposed work before publishing it.">
           <WorkshopPaths
-            click={<>In <strong>Plan → Review plan</strong>, select <strong>Run remaining experts</strong>. Open each result, resolve blockers, and complete approvals. Then select <strong>Create tickets</strong>.</>}
+            click={<>In <strong>Plan → Review plan</strong>, select <strong>Run remaining experts</strong>. Review Architecture, Program Design, and Vertical Slices. Resolve blockers and any requested approvals. Open <strong>Approve alignment</strong>, then select <strong>Approve and create tickets</strong>.</>}
             whyStopped={<>Resolve blocking questions, then approve the plan before tickets can be created.</>}
             inspect={<>Trace the cooking journey through the tickets. Challenge unnecessary dependencies. Confirm full coverage: recipe data, APIs, branding, mobile/TV, and cleanup. Live ticket counts vary; Rehearsal has five.</>}
             continueWhen={track === "live" ? <>The GitHub Project contains the planned issues.</> : <>The Tickets page contains the planned work.</>}
@@ -522,8 +534,24 @@ read -r PLAN_ID
 ./factory/factory approve "$PLAN_ID" --repo "$TARGET" \\
   --new-project-title "Factory Workshop"`}</WorkshopPaths>
           <Callout type="note" title="What planning creates">
-            <p>Product Review defines the user result. Architecture defines the main components. Program Design lists the code changes. Vertical Slices become ordered tickets.</p>
+            <p>The remaining experts run in sequence: Architecture defines components, Program Design defines code contracts, and Vertical Slices become tickets. Publishing tickets does not start delivery.</p>
           </Callout>
+          <WorkshopMedia
+            src="/screenshots/control-center-product-approved.jpg"
+            alt="Approved Product Review with Run remaining experts available and technical stages still pending"
+            label="After product approval"
+            caption="Select Run remaining experts. Wait for their results before approving alignment."
+            width={1440}
+            height={980}
+          />
+          <WorkshopMedia
+            src="/screenshots/control-center-create-tickets.jpg"
+            alt="Alignment approval panel with the Approve and create tickets button"
+            label="After technical planning"
+            caption="Inspect the proposed tickets, then approve alignment. Live creates GitHub issues; Rehearsal creates local tickets."
+            width={1440}
+            height={980}
+          />
           <Checkpoint>{track === "live" ? "The GitHub Project shows the new issues." : "The Tickets page shows the planned work."}</Checkpoint>
         </StepSection>
 
@@ -532,7 +560,7 @@ read -r PLAN_ID
             click={<>Open <strong>Deliver → Tickets</strong>. Open <strong>Run options</strong> and select <strong>Run one cycle</strong>. Open the ticket labeled <strong>QA Review</strong>, select <strong>Tests</strong>, and read the proposed test and baseline failure. Approve it there, or request a revision.</>}
             whyStopped={<>The factory runs the new test before implementation. <strong>RED PROVED</strong> records an assertion failure on the baseline. Read the assertion to confirm it tests the requested behavior.</>}
             inspect={<>Decide approve or revise, and explain which assertion proves the requirement. Setup, syntax, and unrelated failures are not valid behavior evidence.</>}
-            continueWhen={<>You approve relevant test evidence. Continue to <a href="#factory">Deliver tickets</a> immediately; do not wait for the whole room.</>}
+            continueWhen={<>Tests approved? Go to <a href="#factory">Deliver tickets</a> and select <strong>Run factory</strong> to resume; do not wait for the whole room.</>}
             cliPurpose={<>Run one ticket through QA RED evidence, then approve its acceptance tests.</>}
             cliDirectory={track === "live" ? <><code>software-refactory-control</code>; commands target <code>$TARGET</code></> : <><code>software-refactory-rehearsal</code></>}
           >{track === "live" ? `./factory/factory run --repo "$TARGET" --review-qa-tests --once
@@ -565,7 +593,7 @@ read -r ISSUE_NUMBER
           <WorkshopPaths
             click={<>Open <strong>Deliver → Tickets</strong> and select <strong>Run factory</strong>. Keep <strong>Active lanes</strong> selected. When <strong>NEEDS YOU</strong> appears, open the linked ticket.</>}
             whyStopped={<>Each ticket needs implementation, passing checks, and separate code review. A failed check or required human decision stops progress.</>}
-            inspect={<>Inspect the diff, tests, checks, and review. Before merging, explain why the evidence covers this commit. Handle later QA and merge decisions as they become ready.</>}
+            inspect={<>Start with <strong>Summary → Candidate evidence</strong>. Inspect <strong>Diff</strong>, <strong>Tests</strong>, and <strong>Code review</strong>. Confirm the review covers the current commit. Open <strong>Execution details</strong> for adapters and timing.</>}
             continueWhen={<>Code review approves the commit and you select <strong>Merge exact revision</strong>. The ticket then moves to Done.</>}
             cliPurpose={<>Run eligible tickets and follow their GitHub Project state.</>}
             cliDirectory={track === "live" ? <><code>software-refactory-control</code>; commands target <code>$TARGET</code></> : <><code>software-refactory-rehearsal</code></>}
@@ -604,7 +632,7 @@ gh project view "$PROJECT_NUMBER" --owner "@me" --web
           <details className="optional-detail">
             <summary>What happens to each ticket</summary>
             <ol>
-              <li>The Supervisor selects a ticket whose dependencies are complete.</li>
+              <li>The scheduler selects a ticket whose dependencies are complete.</li>
               <li>QA adds a test for the requested behavior.</li>
               <li>The coding agent changes an isolated Git worktree.</li>
               <li>The factory runs tests and repository checks.</li>
@@ -616,7 +644,7 @@ gh project view "$PROJECT_NUMBER" --owner "@me" --web
             src="/screenshots/control-center-human-merge.jpg"
             alt="Control Center Ticket summary showing an exact-revision human merge action"
             label="Merge checkpoint"
-            caption="Confirm that review approved the current pull request commit. Then select Merge exact revision."
+            caption="Compare the reviewed revision with the approved head. Inspect tests and review, then select Merge exact revision. Execution details are collapsed below."
             width={1440}
             height={980}
           />
@@ -707,7 +735,7 @@ gh project view "$PROJECT_NUMBER" --owner "@me" --web
             <details><summary>An agent asks for the wrong credentials</summary><p>Open <strong>Setup → Connection</strong> and choose the preset for the CLI you use. Save, sign in to that CLI, then select <strong>Retry automatic setup</strong>.</p></details>
             <details><summary>A planning expert failed</summary><p>Open <strong>Plan → Review plan</strong> and select the failed expert. For an invalid result, select <strong>Apply correction and continue</strong>. For a login or rate-limit error, fix access or choose another agent. If the PRD or repository settings changed, select <strong>Restart planning safely</strong>.</p></details>
             <details><summary>Ticket publication failed</summary><p>Open <strong>Plan → Review plan</strong> and select <strong>Retry ticket publication</strong>. The retry reuses issues already created for this plan. In the CLI, rerun the same <code>factory approve</code> command shown in the error.</p></details>
-            <details><summary>A ticket is blocked</summary><p>Open the ticket history and read the last error. Fix that problem, then select <strong>Retry</strong> or run <code>factory retry ISSUE_NUMBER</code>.</p></details>
+            <details><summary>A ticket is blocked</summary><p>Open the ticket and follow its recovery panel. Explain what changed before selecting <strong>Retry</strong>. If review needs a report, paste the full commit ID you tested, your checks, and their results into <strong>Evidence for review</strong>. An action may wait for the current worker wave to finish; wait for confirmation before repeating it.</p></details>
             <details><summary>A required check still tests removed behavior</summary><p>Compare the failed test with the ticket. If the ticket intentionally removes that behavior, do not restore it. Select <strong>Retry</strong>. The coding agent can update an existing test when the Charter marks existing tests for review.</p></details>
             <details><summary><code>NEEDS YOU</code> says dispatch is paused</summary><p>Too many decisions are waiting for a person. Open the oldest linked item and complete that decision. New ticket work starts again when the queue has space.</p></details>
             <details><summary>A remote claim belongs to an old run</summary><p>A claim is the marker that says this run owns a ticket. Confirm the old run has stopped, open the blocked ticket, and select <strong>Release abandoned claim</strong>.</p></details>

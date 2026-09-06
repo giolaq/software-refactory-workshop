@@ -48,6 +48,11 @@ Three actors matter:
 - The orchestrator enforces workflow rules and records state.
 - A person settles ambiguity and accepts the exact change.
 
+For the workshop's Standard profile, ordinary code decides which ready Ticket
+runs next. It does not need a model to check a dependency list. Keep agents for
+the work that requires interpretation; keep scheduling and approval checks
+predictable. Assured and Autonomous Demo retain the optional Supervisor role.
+
 This is not a replacement for engineering responsibility or a security sandbox.
 Git worktrees separate changes; they do not isolate the host filesystem,
 credentials, or network.

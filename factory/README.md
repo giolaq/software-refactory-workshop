@@ -158,13 +158,12 @@ The orchestration flow is intentionally direct:
 
 1. Load issues and parse `Depends-on: #…` plus `agent: …` from each body.
 2. Move dependency-complete, `agent-ready` tickets to Ready.
-3. In Standard and Assured profiles, give ready Tickets and recent worker
-   Handoff Receipts to the Supervisor role. The orchestrator validates its
-   dispatch, defer, or block decision and remains the lifecycle authority.
+3. In Lean and Standard, dispatch ready Tickets in number order. Assured and
+   Autonomous Demo add Supervisor proposals, which the orchestrator validates.
 4. Create `../<repository>-wt-<issue>` on `factory/<issue>-<slug>` and ask the independent
    QA adapter to add ticket-numbered acceptance tests only.
 5. Commit and protect the Acceptance Tests; optionally pause for explicit human approval.
-6. Run the Implementation adapter with the supervisor's Ticket instruction. The factory rejects any implementation that
+6. Run the Implementation adapter with the approved Ticket. The factory rejects any implementation that
    modifies or deletes a protected test.
 7. Measure implementation-owned changed lines separately from protected QA
    tests and stop candidates that exceed the ticket limit.
@@ -173,9 +172,10 @@ The orchestration flow is intentionally direct:
 9. On green gates, push or update the PR and give its exact candidate revision
    to the read-only Code Review role. Review comments return to the same
    Implementation adapter and consume the bounded retry budget; gates and review rerun.
-10. After an `APPROVE` decision with no comments, the Supervisor may recommend
-   a revision-bound `MERGE`. The orchestrator rechecks the live PR head. Lean,
-   Standard, and Assured then stop for the human exact-revision merge action;
+10. Standard sends an exact-head `APPROVE` decision to human review without a
+   second agent recommendation. Assured and Autonomous Demo add a Supervisor
+   recommendation. The orchestrator rechecks the live PR head. Lean,
+   Standard, and Assured stop for the human exact-revision merge action;
    only an explicitly opted-in Autonomous Demo executes the recommendation.
 11. Reconcile the merge, unlock dependants, and mirror each transition and
     artifact path to `.factory/state.json` for the Control Center.
@@ -645,8 +645,10 @@ For a corrected GitHub Ticket:
 
 The same change is detected after a Factory process restart: the edited Ticket
 returns to `Backlog`, stale evidence is cleared, and normal triage decides when
-it becomes `Ready`. A still-running process consumes the retry event without a
-restart.
+it becomes `Ready`. A still-running process reloads the saved Ticket at its next
+checkpoint. The CLI action waits for the current worker wave to finish before
+changing state. Read-only inspection remains available; stop the runner before
+setup changes or reset.
 
 The basic CLI recovery is:
 

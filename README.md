@@ -55,10 +55,10 @@ commands so workshop infrastructure does not need to run continuously.
   model wrapper, and execution environment.
 - Use the [Cursor CLI guide](factory/CURSOR.md) to install Cursor, select the
   one-click preset, understand Ask versus Agent mode, and configure permissions.
-- Use the [Control Center guide](factory/CONTROL_CENTER.md) to inspect how worker
-  Handoff Receipts become validated supervisor dispatch commands and how a
-  separate Code Review role requests repairs or approves an exact candidate
-  before the Supervisor recommends that exact revision for a human merge.
+- Use the [Control Center guide](factory/CONTROL_CENTER.md) to inspect tests,
+  code-review findings, and the exact candidate before your merge decision.
+  Standard schedules ready work without a supervisor invocation. Assured and
+  Autonomous Demo retain agent supervision.
 - Follow the [repository issue listener guide](factory/ISSUE_LISTENER.md) to
   admit and implement new user-created GitHub issues from the Control Center.
 - Read the [Factory interface guide](factory/INTERFACES.md) for the five-layer

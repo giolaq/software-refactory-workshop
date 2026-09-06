@@ -89,6 +89,25 @@ try {
     check("window.scrollY > 0");
     navigate("planning");
     check("window.scrollY === 0");
+    browser("set", "viewport", "1440", "980");
+    browser("click", '[data-planning-stage="product_review_gate"]');
+    browser("wait", "#approve-product");
+    shot("planning");
+    browser("eval", "window.confirm = () => true");
+    browser("click", "#approve-product");
+    browser("wait", "--fn", "app.snapshot?.planning?.status === 'product_approved' && app.snapshot?.operation?.status === 'succeeded'");
+    navigate("planning");
+    browser("wait", "#continue-plan:not([hidden]):not([disabled])");
+    check("!(app.snapshot.factory.tickets || []).length");
+    shot("product-approved");
+    browser("click", "#continue-plan");
+    browser("wait", "--fn", "app.snapshot?.planning?.status === 'awaiting_alignment_approval' && app.snapshot?.operation?.status === 'succeeded'");
+    navigate("planning");
+    browser("click", '[data-planning-stage="alignment_gate"]');
+    browser("wait", "#approve-alignment");
+    check("document.querySelector('#approve-alignment').textContent === 'Approve and create tickets'");
+    check("!(app.snapshot.factory.tickets || []).length");
+    shot("create-tickets");
   });
   await fixture("running", () => {
     navigate("planning");
@@ -137,11 +156,27 @@ try {
     browser("press", "Escape");
     check("document.querySelector('#ticket-drawer').hidden");
     check("document.activeElement.matches('[data-ticket]')");
+    // A rejected review uses an explicit attachment; reports cannot inject HTML.
+    browser("eval", `app.selectedTicket = {number: 1, title: 'Evidence fixture', status: 'Blocked',
+      failure: 'Review requested browser checks', body: '', code_review: {status: 'changes_requested', head: 'a'.repeat(40)},
+      review_evidence: [{author_role: 'operator', candidate_head: 'a'.repeat(40), sha256: 'report-hash', content: '<img src=x onerror=alert(1)>'}]};
+      app.drawerTab = 'summary'; renderDrawer()`);
+    check("document.querySelector('#retry-evidence').maxLength === 20000");
+    check("document.querySelector('#drawer-content').textContent.includes('Candidate evidence')");
+    check("document.querySelector('#drawer-content').textContent.includes('not independent verification or approval')");
+    check("!document.querySelector('#drawer-content img')");
   });
-  if (capture) await fixture("review", () => {
+  await fixture("review", () => {
     navigate("tickets");
     browser("click", '[data-ticket="1"]');
     browser("wait", "[data-ticket-action=merge]");
+    check("document.querySelector('#drawer-content').textContent.includes('Candidate evidence')");
+    check("app.snapshot.factory.supervisor_agent === 'disabled'");
+    check("document.querySelector('[data-drawer-tab=supervisor]').hidden");
+    check("document.querySelector('[data-ticket-action=merge]').getBoundingClientRect().bottom < window.innerHeight");
+    browser("eval", "document.querySelector('#drawer-content details').open = true; renderDrawer({preservePosition:true})");
+    check("document.querySelector('#drawer-content details').open");
+    browser("eval", "document.querySelector('#drawer-content details').open = false");
     shot("human-merge");
   });
   // This fixture completes all five tickets through human QA and merge commands.

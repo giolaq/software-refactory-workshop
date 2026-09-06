@@ -4,6 +4,10 @@ status: accepted
 
 # Validate agent supervision at the dispatch seam
 
+**Amended 2026-09-06:** Standard now uses deterministic dispatch and sends
+code-review-approved candidates directly to human review. The supervisor design
+below remains available in Assured and Autonomous Demo. Lean remains unchanged.
+
 ## Context
 
 Ticket agents need a way to report results to one coordinating agent, and that

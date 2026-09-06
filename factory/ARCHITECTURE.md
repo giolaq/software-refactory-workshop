@@ -162,9 +162,13 @@ modules must own a coherent policy or lifecycle phase.
   planning, QA policy, preflight, verification, and reset. A changed contract
   invalidates an in-progress plan before publication.
 - Profile topology determines which roles and controls are applicable.
-- Standard and Assured runs include a Supervisor role at each dispatch checkpoint.
-  It reads worker Handoff Receipts and proposes Ticket-specific dispatch or
-  block commands. Lean runs keep direct scheduler dispatch.
+- Lean and Standard schedule dependency-ready Tickets in number order, up to
+  the parallel limit. Assured and Autonomous Demo add a Supervisor role that
+  reads Handoff Receipts and proposes dispatch or block commands.
+- One runner owns a repository. CLI ticket actions acquire exclusive execution
+  access between worker waves; the runner reloads saved state before continuing.
+  Retry and human merge do not need a second event file. Setup and reset require
+  the runner to stop first. Read-only inspection remains available during work.
 - The orchestrator, not an agent, issues every Handoff Receipt, validates every
   Supervisor proposal, executes explicitly authorized GitHub mutations, and
   remains the only lifecycle authority.
