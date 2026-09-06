@@ -115,12 +115,15 @@ After verification, open the Ticket's **Code review** tab. It shows the
 reviewer adapter, candidate commit, `APPROVE` or `REQUEST_CHANGES` decision,
 file-and-line comments, publication mode, and structured review artifact.
 `REQUEST_CHANGES` returns the comments to implementation; the same PR is updated,
-gates rerun, and the new revision is reviewed. `APPROVE` enables a revision-bound
-Supervisor recommendation. In Lean, Standard, and Assured, a person must inspect
+gates rerun, and the new revision is reviewed. In Standard, `APPROVE` sends the
+candidate to human review. Assured adds a Supervisor recommendation. In Lean,
+Standard, and Assured, a person must inspect
 that exact revision and choose whether to merge it. The Code Review role does
 not edit or merge.
 
-The Ticket Summary also shows the **Non-authoritative merge steward**. It
+The Ticket Summary puts **Candidate evidence** and **Human merge decision**
+first. Open **Execution details** for adapter, triage, and timing records.
+The merge check
 distinguishes **ready for human merge**, **steward updating**, and **human
 decision required**. When the default branch moved, select **Synchronize and
 re-verify** only after reading the confirmation. A changed candidate revokes
@@ -153,8 +156,9 @@ integration replaceable, not to require hosted infrastructure for a local run.
 
 ## Inspect the Supervisor role
 
-Standard and Assured Factory Profiles use a supervisor before each dispatch
-wave. Ticket roles do not message one another or change the board directly.
+Standard schedules dependency-ready Tickets in number order, up to the parallel
+limit. It does not invoke a supervisor. Assured and Autonomous Demo use a
+supervisor before each dispatch wave. Ticket roles do not message one another or change the board directly.
 They finish their assignment, and the orchestrator records the result as a
 Handoff Receipt. At the next checkpoint the supervisor receives:
 
@@ -327,6 +331,11 @@ terminal. This previews the managed checkout, not unmerged ticket worktrees.
 If an action fails, read the operation output first. The same command is shown
 above it, so you can copy it into a terminal when deeper diagnosis is useful.
 
+Only one runner can own a repository. A ticket action submitted while workers
+are active waits for their wave to finish before changing state. Keep the page
+open until it reports completion. You can still inspect the run while waiting.
+Stop the runner before changing setup or resetting; do not launch another runner.
+
 If GitHub fails while approved tickets are being published, the alignment
 decision remains recorded and Planning shows **Retry ticket publication**.
 Retrying is idempotent: issues carrying the same plan-and-slice marker are
@@ -350,13 +359,17 @@ uncertain work requires the normal recovery checks. A retry may retain an
 already-approved candidate without creating another commit; it still reruns
 verification and review before returning to the human merge decision.
 
-If review asks for browser evidence, record the candidate revision, checks, and
-results in a Markdown file under the target repository's `.factory/reviews/`.
-Reference that relative path in the retry reason. The Factory includes the
-report text and hash in the isolated implementation, code-review, and supervisor
-handoffs. Reports are limited to 20 KB each and are evidence, not merge approval.
-If only evidence changed, include the full candidate revision in the report.
-The same code can then return through verification and independent review
+If review asks for browser evidence, paste the full tested commit SHA, checks, and
+results into **Evidence for review** in the retry panel. Keep the retry reason
+short: explain what changed. In the CLI, use `retry ISSUE --reason "..."
+--evidence-file .factory/reviews/browser.md`; the file must be inside the target
+repository and at most 20 KB. The report must name the full current candidate
+SHA; copy it from the review record. Paths in retry prose are not attachments.
+
+The Factory snapshots reports with an author, content hash, and the candidate
+they were submitted for. That association is not proof that a check was run.
+Inspect **Summary → Candidate evidence**, then **Tests** and **Code review**.
+A new report can send unchanged code back through verification and independent review
 without a cosmetic commit. Stopping a repair at a clean, already-reviewed head
 preserves the candidate but requires an operator retry; it does not approve it.
 If the agent committed a clean repair just before stopping, restart can preserve

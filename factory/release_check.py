@@ -263,7 +263,7 @@ def validate_standard_rehearsal(manifest: dict, state: dict) -> list[str]:
     if not review_retry or review_retry.get("attempt") != 2:
         failures.append("the deterministic code-review comment did not return once to implementation")
     required_roles = {
-        "supervisor", "qa", "implementation", "verification", "code_review", "human_review",
+        "qa", "implementation", "verification", "code_review", "human_review",
     }
     for ticket in tickets:
         number = ticket.get("number", "?")
@@ -635,7 +635,7 @@ The implementation passes every configured gate and is merged through a pull req
         if (repo / reference).is_file()
     }
     if not {
-        "supervisor", "qa", "implementation", "verification", "code_review", "human_review",
+        "qa", "implementation", "verification", "code_review", "human_review",
     } <= receipt_roles:
         raise RuntimeError("live smoke is missing required Handoff Receipts")
     if ticket.get("code_review", {}).get("result", {}).get("decision") != "APPROVE":

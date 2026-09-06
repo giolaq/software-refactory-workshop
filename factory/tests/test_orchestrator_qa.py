@@ -175,8 +175,11 @@ class QaPolicyTests(unittest.TestCase):
             self.assertIn('"qa_commit": "' + "c" * 40, prompts[3].read_text())
             report = repo / ".factory/reviews/browser.md"
             report.parent.mkdir(parents=True, exist_ok=True)
-            report.write_text("OPERATOR BROWSER EVIDENCE")
-            ticket["last_retry_reason"] = "Read .factory/reviews/browser.md"
+            report.write_text("OPERATOR BROWSER EVIDENCE for " + "a" * 40)
+            from factory_contracts import capture_review_evidence
+            ticket["review_evidence"] = [capture_review_evidence(
+                repo, report, author_role="operator", revision="a" * 40, source_root=repo,
+            )]
             with patch("orchestrator.delivery_planning_context", return_value="APPROVED CONTRACT DEFINITIONS"):
                 self.assertIn("OPERATOR BROWSER EVIDENCE", factory.make_prompt(ticket, "").read_text())
                 self.assertIn("OPERATOR BROWSER EVIDENCE", factory.make_code_review_prompt(ticket, "a" * 40, "b" * 40, [], "").read_text())

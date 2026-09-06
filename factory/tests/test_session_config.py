@@ -234,8 +234,10 @@ class SessionConfigTests(unittest.TestCase):
         self.assertEqual(lean, {"cursor", "claude"})
         self.assertEqual(
             standard,
-            {"cursor", "claude", "qa-wrapper", "supervisor-wrapper", "review-wrapper"},
+            {"cursor", "claude", "qa-wrapper", "review-wrapper"},
         )
+        self.assertIn("supervisor-wrapper", required_agent_names(cfg, "assured", "cursor", None, None, "claude"))
+        self.assertIn("supervisor-wrapper", required_agent_names(cfg, "autonomous-demo", "cursor", None, None, "claude"))
 
 
 if __name__ == "__main__":

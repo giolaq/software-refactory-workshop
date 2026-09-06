@@ -10,67 +10,47 @@ from unittest.mock import Mock, patch
 FACTORY = Path(__file__).parents[1] / "orchestrator.py"
 sys.path.insert(0, str(Path(__file__).parents[1]))
 
-from factory_contracts import WORKSHOP_VERSION, handoff_receipt, validate_handoff_receipt, write_handoff_receipt, operator_review_evidence, capture_implementation_evidence
+from factory_contracts import WORKSHOP_VERSION, handoff_receipt, validate_handoff_receipt, write_handoff_receipt
 from release_check import audit_release, run_live_github_smoke, validate_standard_rehearsal
 
 
 class FactoryContractTests(unittest.TestCase):
-    def test_worker_handoff_is_revision_bound_redacted_and_snapshotted(self):
-        with tempfile.TemporaryDirectory() as directory:
-            repo, worktree = Path(directory) / "repo", Path(directory) / "worker"
-            source = worktree / ".factory/review-handoff.md"
-            source.parent.mkdir(parents=True)
-            head = "a" * 40
-            self.assertEqual(capture_implementation_evidence(repo, worktree, 8, head), {})
-            secret = "ghp_" + "x" * 25
-            source.write_text(f"Candidate {head}: tests passed. {secret}")
-            first = capture_implementation_evidence(repo, worktree, 8, head)
-            self.assertEqual(first["author_role"], "implementation")
-            self.assertEqual(first["candidate_head"], head)
-            self.assertNotIn(secret, json.dumps(first))
-            self.assertEqual((repo / first["artifact"]).read_text(), first["content"])
-            source.write_text(f"Candidate {head}: updated evidence")
-            second = capture_implementation_evidence(repo, worktree, 8, head)
-            self.assertNotEqual(first["artifact"], second["artifact"])
-            self.assertEqual((repo / first["artifact"]).read_text(), first["content"])
-            for content in ["stale " + "b" * 40, head + "x" * 20001]:
-                source.write_text(content)
-                self.assertIn("error", capture_implementation_evidence(repo, worktree, 8, head))
-            source.unlink()
-            outside = Path(directory) / "private.md"
-            outside.write_text(f"Private {head}")
-            source.symlink_to(outside)
-            rejected = capture_implementation_evidence(repo, worktree, 8, head)
-            self.assertIn("error", rejected)
-            self.assertNotIn("content", rejected)
-
-    def test_operator_evidence_is_embedded_only_from_contained_referenced_reports(self):
+    def test_explicit_evidence_uses_one_revision_bound_redacted_snapshot(self):
+        from factory_contracts import capture_review_evidence
         with tempfile.TemporaryDirectory() as directory:
             repo = Path(directory) / "repo"
-            reports = repo / ".factory/reviews"
-            reports.mkdir(parents=True)
-            (reports / "browser.md").write_text("Candidate abc: 375px overflow check passed.")
-            (reports / "unreferenced.md").write_text("Do not collect unrelated reports.")
-            ticket = {"last_retry_reason": "Read .factory/reviews/browser.md and .factory/reviews/missing.md"}
-            evidence = operator_review_evidence(repo, ticket)
-            self.assertEqual(evidence[0]["content"], "Candidate abc: 375px overflow check passed.")
-            self.assertEqual(len(evidence[0]["sha256"]), 64)
-            self.assertIn("error", evidence[1])
+            repo.mkdir()
+            source = repo / "report.md"
+            head = "a" * 40
+            secret = "ghp_" + "x" * 25
+            source.write_text(f"Observed checks for {head}. {secret}")
+            for author in ("operator", "implementation"):
+                report = capture_review_evidence(repo, source, author_role=author, revision=head, source_root=repo)
+                self.assertEqual(report["author_role"], author)
+                self.assertEqual(report["candidate_head"], head)
+                self.assertNotIn(secret, json.dumps(report))
+                self.assertEqual((repo / report["artifact"]).read_text(), report["content"])
+            first = report
+            source.write_text(f"Additional observed evidence for {head}")
+            updated = capture_review_evidence(repo, source, author_role=author, revision=head, source_root=repo)
+            self.assertNotEqual(first["artifact"], updated["artifact"])
+            self.assertEqual((repo / first["artifact"]).read_text(), first["content"])
+            (repo / updated["artifact"]).write_text("tampered")
+            self.assertIn("snapshot has changed", capture_review_evidence(
+                repo, source, author_role=author, revision=head, source_root=repo,
+            )["error"])
+            invalid = capture_review_evidence(repo, source, author_role=author, revision="short", source_root=repo)
+            self.assertIn("error", invalid)
+            for value in ("", "x" * 20001, "Observed a different candidate " + "b" * 40):
+                source.write_text(value)
+                self.assertIn("error", capture_review_evidence(repo, source, author_role=author, revision=head, source_root=repo))
+            source.unlink()
             outside = Path(directory) / "private.md"
-            outside.write_text("private contents")
-            (reports / "linked.md").symlink_to(outside)
-            result = operator_review_evidence(repo, {"last_retry_reason": "Read .factory/reviews/linked.md"})
-            self.assertIn("error", result[0])
-            self.assertNotIn("private contents", json.dumps(result))
-            (reports / "large.md").write_text("x" * 20001)
-            self.assertIn("error", operator_review_evidence(repo, {
-                "last_retry_reason": "Read .factory/reviews/large.md",
-            })[0])
-            fake = "ghp_" + "x" * 25
-            (reports / "credentials.md").write_text("Diagnostic " + fake)
-            redacted = operator_review_evidence(repo, {"last_retry_reason": "Read .factory/reviews/credentials.md"})
-            self.assertNotIn(fake, json.dumps(redacted))
-            self.assertIn("[REDACTED]", redacted[0]["content"])
+            outside.write_text("Do not read me")
+            source.symlink_to(outside)
+            rejected = capture_review_evidence(repo, source, author_role=author, revision=head, source_root=repo)
+            self.assertIn("error", rejected)
+            self.assertNotIn("content", rejected)
 
     def test_receipt_preserves_runtime_artifacts_when_retry_reuses_filenames(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -248,7 +228,7 @@ class FactoryContractTests(unittest.TestCase):
             "rehearsal": {"tickets_path": ".factory/rehearsal/demo/tickets.json"},
         }
         receipt_roles = [
-            "supervisor", "qa", "implementation", "verification", "code_review", "human_review",
+            "qa", "implementation", "verification", "code_review", "human_review",
         ]
         state = {"tickets": [
             {
@@ -605,7 +585,7 @@ class FactoryContractTests(unittest.TestCase):
         )
         self.assertEqual(
             profiles["standard"]["execution_roles"],
-            ["supervisor", "qa", "implementation", "verification", "code_review", "human_review"],
+            ["qa", "implementation", "verification", "code_review", "human_review"],
         )
         self.assertEqual(
             profiles["assured"]["execution_roles"],

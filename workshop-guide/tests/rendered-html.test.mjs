@@ -70,6 +70,22 @@ test("both command paths use valid shell syntax and explicit inputs", async () =
   assert.match(source, /factory run --repo "\$TARGET"/);
 });
 
+test("product revision is optional and approval has its own copyable command", async () => {
+  const html = await (await render()).text();
+  const step = html.slice(html.indexOf('id="plan"'), html.indexOf('id="publish"'));
+  const commands = [...step.matchAll(/<pre><code>([\s\S]*?)<\/code><\/pre>/g)].map(m => m[1]);
+  assert.equal(commands.length, 3);
+  assert.match(commands[0], /factory plan/);
+  assert.match(commands[0], /factory review product/);
+  assert.doesNotMatch(commands[0], /factory revise|factory approve-product/);
+  assert.match(step, /<h4>Optional: request changes before approval<\/h4>/);
+  assert.match(commands[1], /factory revise[\s\S]*factory review product/);
+  assert.doesNotMatch(commands[1], /factory approve-product/);
+  assert.match(commands[2], /factory approve-product/);
+  assert.doesNotMatch(commands[2], /factory revise/);
+  assert.match(step, /Approve only after reading the latest Product Review/);
+});
+
 test("the main exercise is the full product transformation in both modes", async () => {
   const html = await (await render()).text();
   assert.match(html, /Transform Pocket Cinema into TableStory/);
@@ -153,4 +169,8 @@ test("guide has accessible structure and local instructional images", async () =
   for (const tag of images) assert.match(tag, /\balt="[^"]+"/);
   assert.match(html, /screenshots\/control-center-ticket-tests\.jpg/);
   assert.match(html, /screenshots\/control-center-evidence\.jpg/);
+  assert.match(html, /screenshots\/control-center-product-approved\.jpg/);
+  assert.match(html, /screenshots\/control-center-create-tickets\.jpg/);
+  assert.match(html, /does not start technical planning or coding/);
+  assert.match(html, /Publishing tickets does not start delivery/);
 });

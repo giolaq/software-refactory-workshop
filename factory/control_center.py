@@ -1619,7 +1619,7 @@ class ControlCenter:
         decisions = self.operator_decisions(planning, factory)
         supervisor = read_json(self.repo / ".factory" / "supervisor" / "state.json", {})
         if factory.get("supervisor_agent") == "disabled" or (
-            not factory.get("supervisor_agent") and config.get("profile") == "lean"
+            not factory.get("supervisor_agent") and config.get("profile", "standard") in {"lean", "standard"}
         ):
             supervisor = {"enabled": False, "status": "disabled", "events": []}
         return {
@@ -2319,6 +2319,14 @@ class ControlCenter:
             if project and not mock:
                 command += ["--project-number", str(project)]
             command += ["--reason", reason]
+            evidence = self._string(payload, "evidence", max_length=20000)
+            if evidence:
+                if len(evidence.encode("utf-8")) > 20000:
+                    raise InputError("Evidence must be 20 KB or smaller.")
+                evidence_path = self.repo / ".factory/control-center" / f"review-evidence-{uuid.uuid4().hex}.md"
+                evidence_path.parent.mkdir(parents=True, exist_ok=True)
+                evidence_path.write_text(evidence)
+                command += ["--evidence-file", str(evidence_path)]
             if budget_lines:
                 command += [
                     "--budget-lines", str(budget_lines),

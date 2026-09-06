@@ -45,7 +45,7 @@ from codex_cli import (
 from orchestrator import (
     Factory,
     StateStore,
-    apply_retry_event_to_ticket,
+    apply_ticket_retry,
     approve_qa_tests,
     create_recovery_checkpoint,
     human_merge_ticket,
@@ -459,6 +459,38 @@ class RuntimeTests(unittest.TestCase):
             )
             backend.load_recovery_state.assert_called_once_with()
 
+    def test_standard_schedules_ready_tickets_without_a_supervisor(self):
+        with tempfile.TemporaryDirectory() as directory:
+            repo = Path(directory)
+            install_approved_charter(repo)
+            args = self.factory_args(repo)
+            args.profile, args.no_qa, args.max_parallel = "standard", False, 2
+            factory = Factory(args)
+            factory.human_attention_snapshot = mock.Mock(return_value={"dispatch_paused": False})
+            self.assertIsNone(factory.supervisor_agent)
+            candidates = [{"number": 9}, {"number": 2}, {"number": 5}]
+            self.assertEqual([t["number"] for t in factory.coordinate_ready(candidates)], [2, 5])
+
+    def test_human_handoff_requires_exact_code_review_and_does_not_republish(self):
+        factory = Factory.__new__(Factory)
+        factory.review_agent = "reviewer"
+        factory.git = mock.Mock(return_value=SimpleNamespace(stdout="a" * 40))
+        factory.publish_candidate = mock.Mock()
+        factory.transition = mock.Mock()
+        factory._sync_store = mock.Mock()
+        ticket = {"history": [], "pr_url": "https://github.test/pull/1", "code_review": {
+            "head": "b" * 40, "status": "approved", "result": {"decision": "APPROVE"},
+        }}
+        with self.assertRaisesRegex(ValueError, "exact candidate"):
+            factory.human_publish(ticket, Path("/unused"))
+        factory.transition.assert_not_called()
+        ticket["code_review"]["head"] = "a" * 40
+        factory.human_publish(ticket, Path("/unused"))
+        factory.publish_candidate.assert_not_called()
+        self.assertEqual(ticket["approved_head"], "a" * 40)
+        self.assertEqual(ticket["merge_authority"], "human")
+        factory.transition.assert_called_once()
+
     def test_factory_run_is_complete_only_when_every_ticket_is_done(self):
         factory = Factory.__new__(Factory)
         factory.tickets = {
@@ -470,62 +502,24 @@ class RuntimeTests(unittest.TestCase):
         factory.tickets[2]["status"] = "Done"
         self.assertTrue(factory.delivery_complete())
 
-    def test_running_factory_reconciles_a_companion_human_merge_event(self):
+    def test_checkpoint_reloads_canonical_merge_even_with_the_same_timestamp(self):
         with tempfile.TemporaryDirectory() as directory:
             repo = Path(directory)
-            event_dir = repo / ".factory/merge-events"
-            event_dir.mkdir(parents=True)
-            approved_head = "a" * 40
-            merged_head = "b" * 40
-            receipt = ".factory/receipts/human-review.json"
-            (event_dir / "3.json").write_text(json.dumps({
-                "schema_version": 1,
-                "ticket": 3,
-                "approved_head": approved_head,
-                "merged_head": merged_head,
-                "merged_at": "2026-08-24T21:30:00+00:00",
-                "receipt": receipt,
-            }))
-            ticket = {
-                "number": 3,
-                "status": "In Review",
-                "phase": "in-review",
-                "approved_head": approved_head,
-                "receipts": [],
-                "history": [],
-                "failure": "",
-            }
-            factory = Factory.__new__(Factory)
-            factory.repo = repo
+            install_approved_charter(repo)
+            factory = Factory(self.factory_args(repo))
+            ticket = {"number": 3, "status": "In Review", "approved_head": "a" * 40, "receipts": []}
+            factory.store.data.update(updated_at="same-second", tickets=[ticket])
             factory.tickets = {3: ticket}
-            factory._sync_store = mock.Mock()
-
-            factory.apply_human_merge_events()
-
-            self.assertEqual(ticket["status"], "Done")
-            self.assertEqual(ticket["merge_executed_by"], "human")
-            self.assertEqual(ticket["receipts"], [receipt])
-            self.assertFalse((event_dir / "3.json").exists())
-            factory._sync_store.assert_called_once_with()
-
-            # GitHub polling can observe the merge before its companion event.
-            ticket.update(status="Done", merge_executed_by="", receipts=[], pr_merge_commit=merged_head)
-            (event_dir / "3.json").write_text(json.dumps({
-                "ticket": 3, "approved_head": approved_head,
-                "merged_head": merged_head, "receipt": receipt,
-            }))
-            factory.apply_human_merge_events()
-            self.assertEqual(ticket["merge_executed_by"], "human")
-            self.assertEqual(ticket["receipts"], [receipt])
-
-            (event_dir / "3.json").write_text(json.dumps({
-                "ticket": 3, "approved_head": approved_head,
-                "merged_head": "c" * 40, "receipt": receipt,
-            }))
-            factory.transition = mock.Mock()
-            factory.apply_human_merge_events()
-            self.assertIn("does not match", ticket["failure"])
-            factory.transition.assert_called_once()
+            completed = {**ticket, "status": "Done", "merge_executed_by": "human",
+                         "receipts": [".factory/receipts/human-review.json"]}
+            canonical = {**factory.store.data, "tickets": [completed]}
+            (repo / ".factory").mkdir(exist_ok=True)
+            (repo / ".factory/state.json").write_text(json.dumps(canonical))
+            factory.reload_checkpoint()
+            self.assertEqual(factory.tickets[3], completed)
+            self.assertEqual(factory.store.data, canonical)
+            factory.reload_checkpoint()
+            self.assertEqual(factory.tickets[3]["receipts"], completed["receipts"])
 
     def test_retry_preserves_a_verification_candidate_and_qa_tests(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -661,50 +655,9 @@ class RuntimeTests(unittest.TestCase):
             self.assertEqual(saved["budget_override"]["lines"], 10)
             self.assertEqual(saved["budget_override"]["charter_limit"], 3)
             self.assertTrue(saved["qa_approved"])
-            event = json.loads((repo / ".factory/retry-events/4.json").read_text())
-            self.assertEqual(event["budget_override"]["reason"], saved["budget_override"]["reason"])
+            self.assertEqual(saved["budget_override"]["reason"], "Greenfield browser workflow remains one approved outcome")
+            self.assertFalse((repo / ".factory/retry-events").exists())
 
-    def test_running_factory_consumes_retry_event(self):
-        with tempfile.TemporaryDirectory() as directory:
-            repo = Path(directory)
-            event_dir = repo / ".factory/retry-events"
-            event_dir.mkdir(parents=True)
-            event = {
-                "schema_version": 1,
-                "event_id": "retry-event-7",
-                "ticket": 7,
-                "created_at": "2026-08-25T12:00:00+00:00",
-                "retry_reason": "The repaired gate should now pass verification",
-                "failure": "required gate failed",
-                "budget_override": None,
-            }
-            marker = event_dir / "7.json"
-            marker.write_text(json.dumps(event))
-            ticket = {
-                "number": 7,
-                "status": "Blocked",
-                "phase": "build",
-                "failure": "required gate failed",
-                "attempt": 3,
-                "history": [],
-            }
-            factory = Factory.__new__(Factory)
-            factory.repo = repo
-            factory.tickets = {7: ticket}
-            factory.backend = None
-            factory._sync_store = mock.Mock()
-
-            factory.apply_retry_events()
-
-            self.assertEqual(ticket["status"], "Ready")
-            self.assertEqual(ticket["last_retry_event"], "retry-event-7")
-            self.assertEqual(
-                ticket["last_retry_reason"],
-                "The repaired gate should now pass verification",
-            )
-            self.assertIn("retry reason", ticket["history"][-1]["note"])
-            self.assertFalse(marker.exists())
-            factory._sync_store.assert_called_once_with()
 
     def test_live_retry_refreshes_an_edited_github_ticket_and_clears_stale_evidence(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -789,9 +742,8 @@ class RuntimeTests(unittest.TestCase):
             self.assertEqual(saved["pr_url"], "")
             self.assertEqual(saved["receipts"], [])
             self.assertIsNone(saved["budget_override"])
-            event = json.loads((repo / ".factory/retry-events/7.json").read_text())
-            self.assertTrue(event["spec_changed"])
-            self.assertEqual(event["ticket_refresh"]["body"], corrected_body)
+            self.assertEqual(saved["body"], corrected_body)
+            self.assertEqual(saved["review_evidence"], [])
             backend.set_status.assert_called_once()
 
     def test_restart_detects_an_edited_live_ticket_and_discards_old_spec_evidence(self):
@@ -971,15 +923,13 @@ class RuntimeTests(unittest.TestCase):
                 assume_yes=True,
             )
 
-            event = json.loads((repo / ".factory/retry-events/5.json").read_text())
-            self.assertTrue(event["reload_project_configuration"])
             running = Factory.__new__(Factory)
             running.repo = repo
             running.tickets = {5: running_ticket}
-            running._sync_store = mock.Mock()
-            running.apply_retry_events()
+            running.store = SimpleNamespace(data={"tickets": [running_ticket]})
+            running.reload_checkpoint()
             self.assertIn("demo-app/tests", running.cfg["qa"]["test_roots"])
-            self.assertFalse((repo / ".factory/retry-events/5.json").exists())
+            self.assertEqual(running.tickets[5]["status"], "Ready")
 
     def test_recovery_classifier_never_offers_retry_for_claim_or_dependency_blockers(self):
         claim = ticket_recovery({
@@ -1275,7 +1225,7 @@ class RuntimeTests(unittest.TestCase):
                 "spec_changed": False,
                 "force_repository_base": False,
             }
-            note = apply_retry_event_to_ticket(repo, ticket, event)
+            note = apply_ticket_retry(repo, ticket, event)
 
             self.assertEqual(ticket["status"], "Ready")
             self.assertEqual(ticket["reverify_candidate"], candidate)
@@ -1328,7 +1278,7 @@ class RuntimeTests(unittest.TestCase):
         ticket.update(number=5, phase="implementation", status="Blocked", qa_commit="qa",
                       qa_tests={"tests/test_5.py": "blob"}, branch="factory/5", base_sha="base")
         with mock.patch("orchestrator.candidate_worktree_matches", return_value=True):
-            apply_retry_event_to_ticket(Path("/unused"), ticket, {
+            apply_ticket_retry(Path("/unused"), ticket, {
                 "event_id": "reviewed-candidate-retry",
                 "failure": "Agent produced no changes or commits.",
                 "retry_reason": "Recheck the already approved exact candidate",
@@ -1336,40 +1286,31 @@ class RuntimeTests(unittest.TestCase):
         self.assertEqual(ticket["qa_commit"], "qa")
         self.assertEqual(ticket["branch"], "factory/5")
 
-    def test_evidence_only_retry_requires_explicit_readable_exact_head_report(self):
+    def test_evidence_only_retry_requires_explicit_exact_candidate_report(self):
         head = "a" * 40
         ticket = {"qa_approved": True, "code_review": {
             "status": "changes_requested", "head": head,
-        }}
-        with tempfile.TemporaryDirectory() as directory:
-            repo = Path(directory)
-            report = repo / ".factory/reviews/browser.md"
-            report.parent.mkdir(parents=True)
-            report.write_text(f"Browser observation for {head}")
-            self.assertFalse(candidate_has_new_review_evidence(repo, ticket, head))
-            ticket["last_retry_reason"] = "Review .factory/reviews/browser.md"
+        }, "last_retry_reason": "Read .factory/reviews/browser.md"}
+        repo = Path("/unused")
+        self.assertFalse(candidate_has_new_review_evidence(repo, ticket, head))
+        for author in ("operator", "implementation"):
+            ticket["review_evidence"] = [{"author_role": author, "candidate_head": head,
+                                          "content": "Browser observation", "sha256": "report-hash"}]
             self.assertTrue(candidate_has_new_review_evidence(repo, ticket, head))
             self.assertEqual(implementation_attempt_failure(
                 "Browser evidence supplied; code unchanged", 0, 2, head, head, head,
                 allow_unchanged_candidate=candidate_has_new_review_evidence(repo, ticket, head),
             ), "")
-            self.assertIn("did not change", implementation_attempt_failure(
-                "No evidence", 0, 2, head, head, head,
-            ))
             self.assertFalse(candidate_has_new_review_evidence(repo, ticket, "b" * 40))
             self.assertFalse(candidate_has_new_review_evidence(repo, {**ticket, "qa_approved": False}, head))
-            report.write_text("Unbound observation")
+            ticket["review_evidence"][0]["error"] = "invalid"
             self.assertFalse(candidate_has_new_review_evidence(repo, ticket, head))
-            report.unlink()
-            self.assertFalse(candidate_has_new_review_evidence(repo, ticket, head))
-            ticket["implementation_review_evidence"] = {
-                "candidate_head": head, "content": f"Implementation checks for {head}",
-            }
-            self.assertTrue(candidate_has_new_review_evidence(repo, ticket, head))
-            ticket["implementation_review_evidence"]["candidate_head"] = "b" * 40
-            self.assertFalse(candidate_has_new_review_evidence(repo, ticket, head))
-            ticket["implementation_review_evidence"].update(candidate_head=head, error="invalid")
-            self.assertFalse(candidate_has_new_review_evidence(repo, ticket, head))
+        ticket["review_evidence"][0].pop("error")
+        ticket["code_review"]["evidence_sha256"] = ["report-hash"]
+        self.assertFalse(candidate_has_new_review_evidence(repo, ticket, head))
+        self.assertIn("did not change", implementation_attempt_failure(
+            "No evidence", 0, 2, head, head, head,
+        ))
 
     def test_review_checkpoint_recovery_keeps_candidate_but_requires_operator_retry(self):
         ticket = {"number": 6, "qa_approved": True, "phase": "implementation",
@@ -1538,13 +1479,8 @@ class RuntimeTests(unittest.TestCase):
             self.assertFalse(saved["qa_approved"])
             self.assertEqual(saved["receipts"], [])
             self.assertIn("QA_EVIDENCE_DEFECT:", saved["qa_retry_context"])
-            event = json.loads(
-                (repo / ".factory/retry-events/6.json").read_text()
-            )
-            self.assertTrue(event["reset_qa"])
-            self.assertTrue(event["force_repository_base"])
             self.assertIn(
-                "protected QA tests", event["qa_retry_context"],
+                "protected QA tests", saved["qa_retry_context"],
             )
 
             saved.update(
@@ -1554,7 +1490,6 @@ class RuntimeTests(unittest.TestCase):
                 qa_retry_context="",
             )
             state.write_text(json.dumps({"tickets": [saved]}))
-            (repo / ".factory/retry-events/6.json").unlink()
 
             retry_ticket(
                 repo,
@@ -2066,8 +2001,6 @@ class RuntimeTests(unittest.TestCase):
             with mock.patch.object(factory, "load_tickets", side_effect=load_done_ticket), \
                     mock.patch.object(factory, "start_issue_listener"), \
                     mock.patch.object(factory, "poll_issue_listener") as poll, \
-                    mock.patch.object(factory, "apply_retry_events"), \
-                    mock.patch.object(factory, "apply_human_merge_events"), \
                     mock.patch.object(factory, "sync_merged"), \
                     mock.patch.object(factory, "apply_qa_revision_events"), \
                     mock.patch.object(factory, "apply_qa_approvals"), \
@@ -3440,11 +3373,11 @@ class RuntimeTests(unittest.TestCase):
             human_merge_ticket(repo, 3, mock=True, project_number=None, assume_yes=True)
 
             completed = json.loads((repo / ".factory/state.json").read_text())["tickets"][0]
-            merge_event = json.loads((repo / ".factory/merge-events/3.json").read_text())
             receipts = [json.loads((repo / path).read_text()) for path in completed["receipts"]]
             self.assertEqual(completed["status"], "Done", completed.get("failure"))
-            self.assertEqual(merge_event["approved_head"], completed["approved_head"])
-            self.assertRegex(merge_event["merged_head"], r"^[a-f0-9]{40}$")
+            self.assertEqual(receipts[-1]["input_revisions"]["approved_commit"], completed["approved_head"])
+            self.assertRegex(receipts[-1]["output_revisions"]["merged_commit"], r"^[a-f0-9]{40}$")
+            self.assertFalse((repo / ".factory/merge-events").exists())
             self.assertEqual(receipts[-1]["role"], "human_review")
             self.assertFalse((repo / "demo-app/rehearsal-attempt.txt").exists())
 

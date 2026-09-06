@@ -154,7 +154,7 @@
                 <label>Planning<select name="planning_agent" data-agent-select="planning"></select></label>
                 <label>Implementation<select name="agent" data-agent-select="implementation"></select></label>
                 <label>Independent QA (Standard/Assured)<select name="qa_agent" data-agent-select="qa"></select></label>
-                <label>Supervisor (Standard/Assured)<select name="supervisor_agent" data-agent-select="supervisor"></select></label>
+                <label>Supervisor (Assured/Autonomous Demo)<select name="supervisor_agent" data-agent-select="supervisor"></select></label>
                 <label>Code review (Standard/Assured)<select name="review_agent" data-agent-select="review"></select></label>
                 <label data-live-setting>GitHub Project number<input name="project_number" type="number" min="1" placeholder="Create during approval"></label>
               </div>
@@ -243,7 +243,7 @@
       <div class="supervisor-grid">
         <section class="surface supervisor-latest">
           <div class="surface-heading"><div><span class="section-label">Latest decision</span><h2 id="supervisor-summary">No coordination decision yet</h2></div><span class="updated" id="supervisor-updated">—</span></div>
-          <p id="supervisor-explanation">Run the Standard or Assured Factory Profile to activate the supervisor.</p>
+          <p id="supervisor-explanation">Standard uses deterministic scheduling. Assured and Autonomous Demo add the supervisor.</p>
           <div class="supervisor-commands" id="supervisor-commands"><p class="empty-state">No dispatch commands recorded.</p></div>
           <div class="form-actions" id="supervisor-artifacts"></div>
         </section>

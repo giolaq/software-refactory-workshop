@@ -275,13 +275,14 @@ verification responsibility, and Handoff Receipt. `factory/policy.json`
 defines versioned repository rules. An Agent Adapter fills a role; changing its
 CLI or model does not change the role contract.
 
-Standard and Assured profiles use a Supervisor role before each ready-ticket
-wave. Lean deliberately omits it. The supervisor reads recent worker Handoff
+Lean and Standard schedule ready Tickets in number order without a supervisor
+invocation. Assured and Autonomous Demo use a Supervisor role before each
+ready-ticket wave. The supervisor reads recent worker Handoff
 Receipts, proposes a bounded dispatch or block decision, and supplies a concise
 instruction to each selected Ticket. It cannot edit code, change Ticket scope
 or dependencies, override gates, approve code, or mutate lifecycle state. After
 an independent Code Review role approves an exact revision, it may separately
-recommend `MERGE` or `BLOCK`. For Standard and Assured, `MERGE` is only a
+recommend `MERGE` or `BLOCK`. For Assured, `MERGE` is only a
 recommendation: the run stops at the human exact-revision merge gate. The
 orchestrator validates and records the recommendation without executing it.
 

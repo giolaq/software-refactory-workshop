@@ -191,7 +191,7 @@ def render_session_config(value: dict) -> str:
         ("Planning", value.get("planning_agent", "codex").title()),
         ("Implementation", value.get("agent", "codex").title()),
         ("QA", value.get("qa_agent", "codex").title()),
-        ("Supervisor", value.get("supervisor_agent", "codex").title()),
+        ("Coordination", "Deterministic" if value.get("profile", "standard") in {"lean", "standard"} else value.get("supervisor_agent", "codex").title()),
         ("Code review", value.get("review_agent", "codex").title()),
         ("Test approval", "Required" if value.get("review_qa_tests") else "Not required"),
         ("Parallel jobs", str(value.get("max_parallel", 1))),

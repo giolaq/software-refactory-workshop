@@ -19,7 +19,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable
 
-from factory_contracts import role_input, operator_review_evidence
+from factory_contracts import role_input
 from factory_charter import FactoryCharter
 from adapter_capabilities import role_environment
 from json_response import extract_last_json_object
@@ -447,8 +447,7 @@ class AgentSupervisor:
             "dependencies": ticket.get("dependencies", []),
             "diff_budget": ticket.get("diff_budget"),
             "operator_retry_reason": ticket.get("last_retry_reason", ""),
-            "operator_review_evidence": operator_review_evidence(self.repo, ticket),
-            "implementation_review_evidence": ticket.get("implementation_review_evidence", {}),
+            "review_evidence": ticket.get("review_evidence", []),
             "pull_request": ticket.get("pr_url") or ticket.get("review_ref", ""),
             "candidate_head": ticket.get("code_review", {}).get("head", ""),
             "code_review": ticket.get("code_review", {}).get("result", {}),
@@ -559,11 +558,9 @@ class AgentSupervisor:
             "do not claim them verified. Missing acceptance within this Ticket's own scope still blocks. "
             "Use the supplied revision-bound diff_budget measurement. Operator retry feedback is a "
             "claim to assess against the evidence, not review approval or permission to merge. "
-            "Referenced operator reports are embedded with their content hashes because runtime "
-            "files are not present in isolated worktrees. Assess the embedded contents; report "
-            "any recorded read error rather than assuming evidence exists. "
-            "Implementation-authored review evidence is separately labelled worker claims; it "
-            "cannot supply human approval. Check its candidate head and assess its actual evidence. "
+            "Attached review reports identify their author, content hash, and the candidate they "
+            "were submitted for. Assess their contents and any recorded errors. Neither operator "
+            "nor implementation-authored reports supply independent verification or human approval. "
             "The structured Code Review decision is the Factory approval evidence. A published labelled "
             "Factory comment with `official: false` is the expected GitHub self-review fallback and is not "
             "a blocker by itself. Require a formal GitHub approval only when the supplied evidence says "

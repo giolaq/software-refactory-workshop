@@ -1,6 +1,6 @@
 {
-  "capturedAt": "2026-09-05T11:11:01.074Z",
-  "baseRevision": "b80bf38ca55bfae461f9c738ae8c5688a592f94a",
+  "capturedAt": "2026-09-06T14:42:42.768Z",
+  "baseRevision": "009d76ccf308282664db5ffe64eaafa3696576ea",
   "workingTreeChanges": true,
   "scenario": "Disposable Standard Rehearsal; mock providers; not Live GitHub evidence",
   "viewport": {
@@ -8,21 +8,23 @@
     "height": 980
   },
   "sources": {
-    "factory/control_center.py": "2d1d7a727e3051490cb62ce4635708fe82ae70b6f42385c832fd18f6f35168d2",
-    "factory/control_center/app.js": "01a6b198badc544c28d6e956b7d608cab706cb8fee0581a35c7f4c41246e58b8",
-    "factory/control_center/index.html": "93159bfcc84ac1b5d930215df5ecab84abda47eeb9fdcd411934e3ad5b93d666",
+    "factory/control_center.py": "adff1211857bbdc75aed55b290ba23fee347e7f7cce9df886a200c1d722defb7",
+    "factory/control_center/app.js": "c34f83592602c1e9b272be13f9a7331952531038b81f9b927e6c08d8f4b8b876",
+    "factory/control_center/index.html": "b0e7d20c4f004202bb2b643e81573eade6fd26a888d77f0e2a2ad5e8ecbc3bee",
     "factory/control_center/styles.css": "b1401a3a1d3e12e7ed557b97b0a84e1792f83270a60e88c067cab17214c3ab93",
-    "factory/tests/serve_workshop_fixture.py": "1fd9a2f00b5d48c376bac8271048dbd4e7a4b33ea1040b0a23fb32eaa39c7d74"
+    "factory/tests/serve_workshop_fixture.py": "22fd4ef8fac7f9c1bbe4f2e2a474d4be1ec0be252dc8cf2dafb403941cf902fb"
   },
   "images": {
     "workshop-guide/public/screenshots/control-center-connect.jpg": "12c9a0e79a8b6e3e042418f211b6177f99ecbfa065b9949c2636cb6718863b49",
-    "workshop-guide/public/screenshots/control-center-prd.jpg": "856dfbe2bec1f7c550e2ce6ad48e9c88b99dc5e1c2454ede1c6db3d92dff0110",
-    "workshop-guide/public/screenshots/control-center-planning.jpg": "10d92f495ad59e41f35bb11e4b20bf765c7f9adefe07ff7596da03cf8e33263b",
-    "workshop-guide/public/screenshots/control-center-overview.jpg": "67d8ce50aed16d9ad5a26de618c83746d56eaff9501568a80b3c7b7713db64ae",
+    "workshop-guide/public/screenshots/control-center-prd.jpg": "d31a10f8c69e985025c3e44d06d72a43defe0cda5a6296bfd3a4abfcd1e1be69",
+    "workshop-guide/public/screenshots/control-center-planning.jpg": "e5cd8fec81db64c4e3e329164ee4c538c25116604de3d1324dc8231083d54f77",
+    "workshop-guide/public/screenshots/control-center-product-approved.jpg": "10eda3e2e2da8f2d02f9ca080bdc4d298acda40cf4ca9177e4ddaf27bc80edc8",
+    "workshop-guide/public/screenshots/control-center-create-tickets.jpg": "eb85c3cf3e57187a18a4911c25ab20760c2bfa7e87eb787ee811118f0aefd8d7",
+    "workshop-guide/public/screenshots/control-center-overview.jpg": "ef9ab5097960f98047645d2d03000e8cde8df16e454e38200b0e47c712dbcd63",
     "workshop-guide/public/screenshots/control-center-tickets.jpg": "25b65c4b9355820dbf6377b64b7da7a289597df7aae3024bb13423a2bf206f14",
-    "workshop-guide/public/screenshots/control-center-ticket-tests.jpg": "fb87da7e4223e32ba3dda1eb2521aa90fd1741086a6dc0442116911fcf867ccd",
-    "workshop-guide/public/screenshots/control-center-qa-decision.jpg": "c3728817971cbbafb2309687dd1a4873457c8381651f9cf0615e1cf296473568",
-    "workshop-guide/public/screenshots/control-center-human-merge.jpg": "2f7d9f857a070bf65542139889239df62470c9cac9a5d23f89ee811185c8e56d",
-    "workshop-guide/public/screenshots/control-center-evidence.jpg": "e9aff0b56231ab5dd340db1299ea3c04fe07bb2224c0252187335750d2ae1b2c"
+    "workshop-guide/public/screenshots/control-center-ticket-tests.jpg": "024fa719acd4ad67e3a5296fa93431fb9b9e221c0a06b53f50e8b5070ec69e10",
+    "workshop-guide/public/screenshots/control-center-qa-decision.jpg": "73319c50610850e922641014693a5a0ac6cdb528a6fc26598ffd75b3dbfd5e9d",
+    "workshop-guide/public/screenshots/control-center-human-merge.jpg": "c906d249716610e9b5ea11b46e7d38e88658e4f328ce4902d09c6a36af018e8b",
+    "workshop-guide/public/screenshots/control-center-evidence.jpg": "04c019c5a8bcc31b1261f29cb12c6400d3c84fd0032dfb51a7c65be0764d4bad"
   }
 }

@@ -796,7 +796,7 @@ function renderTickets(factory, planning = {}, operation = {}) {
 
 function renderSupervisor(supervisor, factory, config) {
   const configuredAgent = factory.supervisor_agent || config.supervisor_agent;
-  const status = supervisor.status || (configuredAgent === "disabled" || config.profile === "lean" ? "disabled" : "waiting");
+  const status = supervisor.status || (configuredAgent === "disabled" || ["lean", "standard"].includes(config.profile || "standard") ? "disabled" : "waiting");
   const badge = $("#supervisor-status");
   badge.textContent = status;
   badge.className = `operation-status ${status === "ready" ? "succeeded" : status === "running" ? "running" : status === "failed" ? "failed" : "idle"}`;
@@ -804,7 +804,7 @@ function renderSupervisor(supervisor, factory, config) {
   const latest = supervisor.latest;
   if (!latest) {
     $("#supervisor-summary").textContent = status === "disabled" ? "Supervisor is not part of this profile" : "No coordination decision yet";
-    $("#supervisor-explanation").textContent = supervisor.error || (status === "disabled" ? "Choose the Standard or Assured Factory Profile to coordinate ticket workers." : "The supervisor runs automatically when dependency-ready tickets are available.");
+    $("#supervisor-explanation").textContent = supervisor.error || (status === "disabled" ? "Standard schedules dependency-ready tickets in number order. Assured and Autonomous Demo add agent supervision." : "The supervisor runs automatically when dependency-ready tickets are available.");
     $("#supervisor-updated").textContent = supervisor.updated_at ? formatTime(supervisor.updated_at) : "—";
     $("#supervisor-commands").innerHTML = '<p class="empty-state">No dispatch commands recorded.</p>';
     $("#supervisor-reports").innerHTML = '<p class="empty-state">No Handoff Receipts considered yet.</p>';
@@ -965,7 +965,7 @@ async function action(name, extra = {}) {
     const destructive = ["publish-plan", "approve-product", "approve-stage", "approve-tests", "request-test-changes", "retry", "save-ticket-and-retry", "release-claim", "approve-intake"].includes(name);
     if (destructive && !window.confirm("Record this decision and continue?")) return;
     app.pendingActions.add(key);
-    pendingMessage = toast(`Submitting ${name.replaceAll("-", " ")}${extra.issue ? ` for ticket #${extra.issue}` : ""}… GitHub synchronization can take a moment.`, false, 0);
+    pendingMessage = toast(`Submitting ${name.replaceAll("-", " ")}${extra.issue ? ` for ticket #${extra.issue}` : ""}… If workers are running, this action waits for their wave to finish. GitHub synchronization may also take a moment.`, false, 0);
     const operation = await request(`/api/actions/${name}`, { method: "POST", body: JSON.stringify(basePayload(extra)) });
     if (operation.companion) {
       toast(`${operation.companion.title} completed.`);
@@ -1110,6 +1110,7 @@ function captureDrawerPosition() {
     drawerLeft: drawer.scrollLeft,
     drawerNearBottom: drawer.scrollHeight - drawer.scrollTop - drawer.clientHeight < 40,
     tabsLeft: $(".drawer-tabs").scrollLeft,
+    openDetails: $$("details[open] > summary", content).map(element => element.textContent),
     pre: $$("pre", content).map((element) => ({
       top: element.scrollTop,
       left: element.scrollLeft,
@@ -1135,6 +1136,9 @@ function restoreDrawerPosition(position) {
   if (!position) return;
   const drawer = $("#ticket-drawer");
   const content = $("#drawer-content");
+  $$("details", content).forEach(element => {
+    element.open = position.openDetails.includes(element.querySelector("summary")?.textContent);
+  });
   position.fields.forEach((saved) => {
     const field = $$("input, textarea, select", content).find((element) => (element.id || element.name) === saved.key);
     if (!field) return;
@@ -1171,6 +1175,15 @@ function replaceDrawerContent(content, html, preservePosition) {
   const position = preservePosition ? captureDrawerPosition() : null;
   content.innerHTML = html;
   restoreDrawerPosition(position);
+}
+
+function candidateEvidence(ticket) {
+  const qa = ticket.qa_evidence || {};
+  const review = ticket.code_review || {};
+  const gates = ticket.gate_results || [];
+  const reports = ticket.review_evidence || [];
+  if (!review.head && !qa.focused_test_command && !gates.length && !reports.length) return "";
+  return `<section class="detail-panel"><h3>Candidate evidence</h3><p>Reviewed revision <code>${esc(review.head || "not reviewed")}</code></p><p>Before: ${esc(qa.red?.result || "not recorded")} · After: ${esc(qa.green?.result || "not recorded")} · Review: ${esc(review.result?.decision || "pending")}</p><p>${gates.length ? gates.map(gate => `${esc(gate.name)}: ${esc(gate.classification || "unknown")}`).join(" · ") : "No gate results recorded."}</p><p>Inspect test output in Tests and findings in Code review before deciding.</p>${reports.map(report => `<details><summary>${esc(report.author_role)} report · submitted for ${esc((report.candidate_head || "").slice(0, 12))}</summary><p>Authored claims, not independent verification or approval.</p><p>Content SHA-256: <code>${esc(report.sha256 || "not captured")}</code></p><pre>${esc(report.error || report.content || "No content")}</pre></details>`).join("")}</section>`;
 }
 
 function qaDecisionPanel(ticket) {
@@ -1210,8 +1223,13 @@ async function renderDrawer({ preservePosition = false } = {}) {
   if (!ticket) return;
   $("#drawer-issue").textContent = `#${ticket.number} · ${ticket.status}`;
   $("#ticket-drawer-title").textContent = ticket.title;
+  const hasSupervisor = app.snapshot?.supervisor?.status !== "disabled";
+  if (!hasSupervisor && app.drawerTab === "supervisor") app.drawerTab = "summary";
   const requestedTab = app.drawerTab;
-  $$('.drawer-tabs button').forEach((button) => button.classList.toggle("active", button.dataset.drawerTab === app.drawerTab));
+  $$('.drawer-tabs button').forEach((button) => {
+    button.hidden = button.dataset.drawerTab === "supervisor" && !hasSupervisor;
+    button.classList.toggle("active", button.dataset.drawerTab === app.drawerTab);
+  });
   const content = $("#drawer-content");
   if (app.drawerTab === "summary") {
     const claimOwner = ticket.remote_claim?.owner_run_id || ticket.remote_claim?.run_id;
@@ -1390,6 +1408,10 @@ async function renderDrawer({ preservePosition = false } = {}) {
         <h3 id="recovery-title">${esc(recoveryInfo.title || "Retry from the safest checkpoint")}</h3>
         ${recoveryGuidance("The Factory will preserve eligible QA evidence and candidate work, then rerun verification.")}
         ${retryReasonField()}
+        <label>Evidence for review (optional)
+          <textarea id="retry-evidence" rows="4" maxlength="20000" placeholder="Paste what you checked, the revision you tested, and the actual results."></textarea>
+        </label>
+        <p class="field-help">The report is attached to the candidate for review. It is not approval. No file paths are needed in the retry reason.</p>
         <div class="form-actions">
           <button class="button button-primary" type="button" data-ticket-action="retry">Retry ticket</button>
         </div>
@@ -1398,13 +1420,13 @@ async function renderDrawer({ preservePosition = false } = {}) {
     const qaDecision = ticket.status === "QA Review" ? '<section class="detail-panel"><h3>Acceptance Test decision</h3><button class="button button-primary" type="button" data-open-tests>Inspect tests and decide</button></section>' : "";
     const stewardReady = !mergeSteward.state || mergeSteward.state === "ready-for-human-merge";
     const actions = ticket.status === "In Review" && ticket.merge_authority === "human" && mergeState.allowed && stewardReady ? `<button class="button button-primary" type="button" data-ticket-action="merge">Merge exact revision</button>` : "";
-    const merge = ticket.status === "In Review" ? `<section class="detail-panel"><span class="section-label">Non-authoritative merge steward</span><h3>${esc((mergeSteward.state || "human-decision-required").replaceAll("-", " "))}</h3><p><span class="pill">${esc(ticket.merge_authority || "human")}</span> Approved head <code>${esc(ticket.approved_head || "not recorded")}</code></p><p>${esc((mergeSteward.reasons || [ticket.supervisor_merge_decision || "Inspect the exact-revision evidence before deciding."]).join(" "))}</p>${mergeSteward.state === "steward-updating" ? '<div class="form-actions"><button class="button" type="button" data-ticket-action="steward-sync">Synchronize and re-verify</button></div><p class="field-help">A changed head revokes gates and Code Review. The steward never merges.</p>' : ""}</section>` : "";
+    const merge = ticket.status === "In Review" ? `<section class="detail-panel"><span class="section-label">Human merge decision</span><h3>${esc((mergeSteward.state || "human-decision-required").replaceAll("-", " "))}</h3><p><span class="pill">${esc(ticket.merge_authority || "human")}</span> Approved head <code>${esc(ticket.approved_head || "not recorded")}</code></p><p>${esc((mergeSteward.reasons || [ticket.supervisor_merge_decision || "Inspect the exact-revision evidence before deciding."]).join(" "))}</p>${mergeSteward.state === "steward-updating" ? '<div class="form-actions"><button class="button" type="button" data-ticket-action="steward-sync">Synchronize and re-verify</button></div><p class="field-help">A changed head revokes gates and Code Review. The steward never merges.</p>' : ""}</section>` : "";
     const triage = ticket.triage || {};
     const controls = triage.controls || {};
     const metrics = ticket.metrics || {};
     const timing = `<section class="detail-panel"><h3>Time by owner</h3><div class="detail-grid"><p><b>${esc(metrics.agent_seconds || 0)}s</b><br><small>Agent execution</small></p><p><b>${esc(metrics.gate_seconds || ticket.verification_duration_seconds || 0)}s</b><br><small>Verification overhead</small></p><p><b>${esc(metrics.human_wait_seconds || 0)}s</b><br><small>Human wait</small></p><p><b>${esc(metrics.retry_count || 0)}</b><br><small>Retries · ${esc(metrics.verifier_rejections || 0)} verifier rejections</small></p></div></section>`;
     const retryDecision = ticket.last_retry_reason ? `<section class="detail-panel"><h3>Latest retry reason</h3><p>${esc(ticket.last_retry_reason)}</p></section>` : "";
-    replaceDrawerContent(content, `${recovery}${intakePanel}<div class="detail-grid"><section class="detail-panel"><h3>Implementation</h3><p><span class="pill">${esc(ticket.agent)}</span> attempt ${ticket.attempt || 0}</p></section><section class="detail-panel"><h3>Independent QA</h3><p><span class="pill">${esc(ticket.qa_agent || "disabled")}</span> attempt ${ticket.qa_attempt || 0}</p></section></div><section class="detail-panel"><h3>Triage and controls</h3><p><span class="pill">${esc(triage.result || "not run")}</span> ${esc(controls.risk || "unclassified")} risk · ${esc(ticket.verification_level || controls.gate_level || "unselected")} verification</p><p>${esc(controls.reason || triage.reason || "Controls are selected before dispatch and checked again from the actual diff.")}</p></section>${timing}${retryDecision}${merge}${qaDecision}<section class="detail-panel"><h3>Specification</h3><pre>${esc(section(ticket.body, "Spec"))}</pre></section><section class="detail-panel"><h3>Acceptance criteria</h3><pre>${esc(section(ticket.body, "Acceptance criteria"))}</pre></section>${ticket.failure ? `<section class="detail-panel"><h3>Last failure</h3><pre>${esc(ticket.failure)}</pre></section>` : ""}<div class="form-actions">${actions}${ticket.issue_url ? `<a class="button" href="${esc(ticket.issue_url)}" target="_blank" rel="noreferrer">Open issue</a>` : ""}${ticket.pr_url ? `<a class="button" href="${esc(ticket.pr_url)}" target="_blank" rel="noreferrer">Open pull request</a>` : ""}</div>`, preservePosition);
+    replaceDrawerContent(content, `${recovery}${intakePanel}${candidateEvidence(ticket)}${merge}${qaDecision}<div class="form-actions">${actions}${ticket.issue_url ? `<a class="button" href="${esc(ticket.issue_url)}" target="_blank" rel="noreferrer">Open issue</a>` : ""}${ticket.pr_url ? `<a class="button" href="${esc(ticket.pr_url)}" target="_blank" rel="noreferrer">Open pull request</a>` : ""}</div><details class="detail-panel"><summary>Execution details</summary><div class="detail-grid"><section class="detail-panel"><h3>Implementation</h3><p><span class="pill">${esc(ticket.agent)}</span> attempt ${ticket.attempt || 0}</p></section><section class="detail-panel"><h3>Independent QA</h3><p><span class="pill">${esc(ticket.qa_agent || "disabled")}</span> attempt ${ticket.qa_attempt || 0}</p></section></div><section class="detail-panel"><h3>Triage and controls</h3><p><span class="pill">${esc(triage.result || "not run")}</span> ${esc(controls.risk || "unclassified")} risk · ${esc(ticket.verification_level || controls.gate_level || "unselected")} verification</p><p>${esc(controls.reason || triage.reason || "Controls are selected before dispatch and checked again from the actual diff.")}</p></section>${timing}</details>${retryDecision}<section class="detail-panel"><h3>Specification</h3><pre>${esc(section(ticket.body, "Spec"))}</pre></section><section class="detail-panel"><h3>Acceptance criteria</h3><pre>${esc(section(ticket.body, "Acceptance criteria"))}</pre></section>${ticket.failure ? `<section class="detail-panel"><h3>Last failure</h3><pre>${esc(ticket.failure)}</pre></section>` : ""}`, preservePosition);
     $("[data-open-tests]", content)?.addEventListener("click", () => { app.drawerTab = "tests"; renderDrawer(); });
     const submitRetry = (resetQa = false) => {
       const reason = $("#retry-reason", content)?.value.trim() || "";
@@ -1413,7 +1435,8 @@ async function renderDrawer({ preservePosition = false } = {}) {
         $("#retry-reason", content)?.focus();
         return;
       }
-      action("retry", { issue: ticket.number, reason, reset_qa: resetQa });
+      const evidence = $("#retry-evidence", content)?.value.trim() || "";
+      action("retry", { issue: ticket.number, reason, evidence, reset_qa: resetQa });
     };
     $('[data-ticket-action="retry"]', content)?.addEventListener("click", () => submitRetry());
     $('[data-ticket-action="retry-reset-qa"]', content)?.addEventListener("click", () => submitRetry(true));
@@ -1493,7 +1516,7 @@ async function renderDrawer({ preservePosition = false } = {}) {
     const findings = result.findings || [];
     const publication = review.publication || {};
     const publicationText = !publication.published ? "Not published" : publication.official ? "Formal GitHub review" : publication.mode === "rehearsal" ? "Rehearsal decision" : "Factory PR comment (not a branch-protection approval)";
-    replaceDrawerContent(content, `<section class="detail-panel"><h3>${esc(result.decision || review.status || "Code review")}</h3><p>${esc(result.summary || review.failure || "No summary recorded.")}</p><p><span class="pill">${esc(review.agent || "unknown")}</span> candidate ${esc((review.head || "").slice(0, 8) || "—")}</p><p>${esc(publicationText)}</p></section><section class="detail-panel"><h3>Review comments</h3>${findings.length ? findings.map((finding) => `<div class="gate-result"><strong class="${finding.severity === "blocking" ? "fail" : "pass"}">${esc(finding.severity.toUpperCase())} · ${esc(finding.path)}${finding.line ? `:${finding.line}` : ""}</strong><p>${esc(finding.message)}</p></div>`).join("") : "No comments reported. The candidate is eligible for a revision-bound Supervisor recommendation and human merge decision."}</section>${review.artifact ? `<button class="text-button" type="button" data-review-artifact="${esc(review.artifact)}">Open structured review artifact</button>` : ""}`, preservePosition);
+    replaceDrawerContent(content, `<section class="detail-panel"><h3>${esc(result.decision || review.status || "Code review")}</h3><p>${esc(result.summary || review.failure || "No summary recorded.")}</p><p><span class="pill">${esc(review.agent || "unknown")}</span> candidate ${esc((review.head || "").slice(0, 8) || "—")}</p><p>${esc(publicationText)}</p></section><section class="detail-panel"><h3>Review comments</h3>${findings.length ? findings.map((finding) => `<div class="gate-result"><strong class="${finding.severity === "blocking" ? "fail" : "pass"}">${esc(finding.severity.toUpperCase())} · ${esc(finding.path)}${finding.line ? `:${finding.line}` : ""}</strong><p>${esc(finding.message)}</p></div>`).join("") : "No comments reported. Inspect the exact revision and verification before your merge decision. Assured also requires a Supervisor recommendation."}</section>${review.artifact ? `<button class="text-button" type="button" data-review-artifact="${esc(review.artifact)}">Open structured review artifact</button>` : ""}`, preservePosition);
     $('[data-review-artifact]', content)?.addEventListener("click", (event) => openArtifact(event.currentTarget.dataset.reviewArtifact));
     return;
   }
