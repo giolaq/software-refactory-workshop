@@ -1,6 +1,6 @@
 # Facilitator runbook
 
-Runtime reference: workshop-v1.2.1. Freeze a tested session release and matching
+Runtime reference: workshop-v1.2.2. Freeze a tested session release and matching
 guide before sending the invitation.
 
 Use the [three-hour plan](WORKSHOP_PLAN_3_HOURS.md) for timing and the

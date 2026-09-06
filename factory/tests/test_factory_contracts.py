@@ -131,7 +131,7 @@ class FactoryContractTests(unittest.TestCase):
             capture_output=True,
             check=True,
         )
-        self.assertEqual(result.stdout.strip(), "factory workshop-v1.2.1")
+        self.assertEqual(result.stdout.strip(), "factory workshop-v1.2.2")
 
     def test_release_check_audits_clean_versioned_tree(self):
         with tempfile.TemporaryDirectory() as directory:

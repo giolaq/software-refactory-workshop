@@ -50,7 +50,7 @@ def capture_review_evidence(
     return report
 
 
-WORKSHOP_VERSION = "workshop-v1.2.1"
+WORKSHOP_VERSION = "workshop-v1.2.2"
 PROFILES = {
     "lean": {
         "name": "Lean",
