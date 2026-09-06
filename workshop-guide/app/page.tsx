@@ -790,7 +790,7 @@ gh project view "$PROJECT_NUMBER" --owner "@me" --web
 
       <footer>
         <span className="footer-brand"><span className="brand-mark" aria-hidden="true"><i /><i /><i /><i /></span>Software (re)-Factory</span>
-        <span>Setup. Plan. Deliver. Review. · workshop-v1.2.1</span>
+        <span>Setup. Plan. Deliver. Review. · workshop-v1.2.2</span>
       </footer>
     </>
   );

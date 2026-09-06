@@ -1,6 +1,6 @@
 # Software (re)-Factory Workshop
 
-Release: `workshop-v1.2.1`
+Release: `workshop-v1.2.2`
 
 This repository contains the reference factory orchestrator and the Pocket
 Cinema refactoring workpiece. A four-expert planning pipeline turns each PRD
@@ -10,6 +10,16 @@ contracts before a human can publish tickets.
 Pocket Cinema is the deterministic workshop pack. In Live mode, the same
 factory can target a separate existing Git repository and any PRD after
 `factory init --repo /path/to/project` creates its reviewable Project Contract.
+
+## v1.2.2 highlights
+
+- Standard delivery uses one deterministic scheduler and unified,
+  revision-bound review evidence; Assured and Autonomous Demo keep their
+  supervisor capabilities.
+- The workshop guide now separates product-plan review, optional revision, and
+  approval so attendees approve the version they actually read.
+- The Control Center keeps the candidate evidence and exact-revision merge
+  decision visible before lower-level execution details.
 
 ## v1.2.0 highlights
 

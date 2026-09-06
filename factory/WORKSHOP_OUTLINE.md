@@ -1,6 +1,6 @@
 # Software (re)-Factory workshop
 
-Runtime reference: workshop-v1.2.1. The organizer supplies the tested session
+Runtime reference: workshop-v1.2.2. The organizer supplies the tested session
 release tag and matching guide URL; branch previews are not published releases.
 
 ## Attendee invitation
