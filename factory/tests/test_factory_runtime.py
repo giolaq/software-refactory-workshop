@@ -11,6 +11,22 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
 
+
+def install_delivery_plan(repo, plan_id):
+    """Minimal approved inputs for delivery-only fixtures; planning has its own tests."""
+    from planning_pipeline import STAGES
+    run = repo / ".factory/plans" / plan_id
+    run.mkdir(parents=True)
+    hashes = {}
+    for stage, filename, _ in STAGES:
+        content = json.dumps({"fixture": "Delivery behavior is specified in the test Ticket."})
+        (run / f"{filename}.json").write_text(content)
+        hashes[stage] = hashlib.sha256(content.encode()).hexdigest()
+    (run / "manifest.json").write_text(json.dumps({
+        "plan_id": plan_id, "profile": "standard",
+        "approvals": {"alignment": {"artifact_hashes": hashes}},
+    }))
+
 sys.path.insert(0, str(Path(__file__).parents[1]))
 
 from doctor import (
@@ -28,6 +44,7 @@ from codex_cli import (
 )
 from orchestrator import (
     Factory,
+    StateStore,
     apply_retry_event_to_ticket,
     approve_qa_tests,
     create_recovery_checkpoint,
@@ -40,6 +57,11 @@ from orchestrator import (
     publish_repository_setup,
     recovery_checkpoints,
     recover_interrupted_reverification,
+    recover_unstarted_implementation,
+    approved_candidate_unchanged,
+    candidate_has_new_review_evidence,
+    recover_reviewed_checkpoint,
+    repository_sync_lock,
     recover_latest_state,
     recover_remote_ticket_state,
     release_ticket_claim,
@@ -78,6 +100,73 @@ def install_approved_charter(repo: Path, merge_authority: str = "human") -> None
 
 
 class RuntimeTests(unittest.TestCase):
+    def test_repository_sync_lock_excludes_other_processes_and_releases(self):
+        with tempfile.TemporaryDirectory() as directory:
+            repo = Path(directory)
+            script = (
+                "import fcntl, sys; "
+                "stream=open(sys.argv[1], 'a'); "
+                "fcntl.flock(stream.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)"
+            )
+            command = [sys.executable, "-c", script, str(repo / ".factory/repository-sync.lock")]
+            with repository_sync_lock(repo):
+                blocked = subprocess.run(command, capture_output=True, text=True)
+                self.assertNotEqual(blocked.returncode, 0)
+                self.assertIn("BlockingIOError", blocked.stderr)
+            released = subprocess.run(command, capture_output=True, text=True)
+            self.assertEqual(released.returncode, 0, released.stderr)
+
+    def test_retry_save_does_not_restore_an_unrelated_stale_ticket(self):
+        with tempfile.TemporaryDirectory() as directory:
+            repo = Path(directory)
+            original = StateStore(repo)
+            original.data["tickets"] = [{"number": 3, "status": "Blocked"},
+                                        {"number": 5, "status": "Verifying"}]
+            original.save()
+            retry = StateStore(repo)
+            scheduler = StateStore(repo)
+            scheduler.data["tickets"][1]["status"] = "In Review"
+            scheduler.data["tickets"][1]["receipts"] = ["new-review"]
+            scheduler.save()
+            retry.data["tickets"][0]["status"] = "Ready"
+            retry.save_ticket(retry.data["tickets"][0])
+            tickets = StateStore(repo).data["tickets"]
+            self.assertEqual(tickets[0]["status"], "Ready")
+            self.assertEqual(tickets[1]["status"], "In Review")
+            self.assertEqual(tickets[1]["receipts"], ["new-review"])
+
+    def test_separate_process_ticket_writes_preserve_both_updates(self):
+        with tempfile.TemporaryDirectory() as directory:
+            repo = Path(directory)
+            store = StateStore(repo)
+            store.data["tickets"] = [{"number": 3}, {"number": 5}]
+            store.save()
+            script = (
+                "import sys; from pathlib import Path; "
+                "sys.path.insert(0, sys.argv[3]); from orchestrator import StateStore; "
+                "store=StateStore(Path(sys.argv[1])); number=int(sys.argv[2]); "
+                "[store.save_ticket({'number':number,'counter':i}) for i in range(20)]"
+            )
+            children = [subprocess.Popen(
+                [sys.executable, "-c", script, str(repo), str(number), str(Path(__file__).parents[1])],
+                stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+            ) for number in (3, 5)]
+            for child in children:
+                _, error = child.communicate(timeout=15)
+                self.assertEqual(child.returncode, 0, error)
+            self.assertEqual({t["number"]: t["counter"] for t in StateStore(repo).data["tickets"]},
+                             {3: 19, 5: 19})
+            self.assertEqual(list((repo / ".factory").glob(".state-*.tmp")), [])
+
+    def test_rejected_red_evidence_offers_qa_regeneration(self):
+        recovery = ticket_recovery({
+            "number": 1, "status": "Blocked", "phase": "qa",
+            "failure": "QA acceptance-test phase failed: Causal Acceptance Test evidence failed: unrelated reason",
+            "qa_evidence": {"red": {"result": "RED NOT PROVED"}},
+        })
+        self.assertEqual(recovery["kind"], "qa_evidence")
+        self.assertTrue(recovery["qa_reset_allowed"])
+
     def test_remote_done_waits_for_local_exact_revision_reconciliation(self):
         blocked = {
             "status": "Blocked",
@@ -418,6 +507,25 @@ class RuntimeTests(unittest.TestCase):
             self.assertEqual(ticket["receipts"], [receipt])
             self.assertFalse((event_dir / "3.json").exists())
             factory._sync_store.assert_called_once_with()
+
+            # GitHub polling can observe the merge before its companion event.
+            ticket.update(status="Done", merge_executed_by="", receipts=[], pr_merge_commit=merged_head)
+            (event_dir / "3.json").write_text(json.dumps({
+                "ticket": 3, "approved_head": approved_head,
+                "merged_head": merged_head, "receipt": receipt,
+            }))
+            factory.apply_human_merge_events()
+            self.assertEqual(ticket["merge_executed_by"], "human")
+            self.assertEqual(ticket["receipts"], [receipt])
+
+            (event_dir / "3.json").write_text(json.dumps({
+                "ticket": 3, "approved_head": approved_head,
+                "merged_head": "c" * 40, "receipt": receipt,
+            }))
+            factory.transition = mock.Mock()
+            factory.apply_human_merge_events()
+            self.assertIn("does not match", ticket["failure"])
+            factory.transition.assert_called_once()
 
     def test_retry_preserves_a_verification_candidate_and_qa_tests(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -1205,6 +1313,142 @@ class RuntimeTests(unittest.TestCase):
                 "Recovered interrupted re-verification",
                 ticket["history"][-1]["note"],
             )
+
+    def test_unchanged_approved_candidate_can_return_to_verification(self):
+        head = "a" * 40
+        ticket = {"qa_approved": True, "code_review": {
+            "status": "approved", "head": head, "result": {"decision": "APPROVE"},
+        }}
+        self.assertTrue(approved_candidate_unchanged(ticket, head))
+        self.assertFalse(approved_candidate_unchanged(ticket, "b" * 40))
+        self.assertFalse(approved_candidate_unchanged({**ticket, "qa_approved": False}, head))
+        for review in [None, {}, {"head": head, "status": "changes_requested",
+                                  "result": {"decision": "REQUEST_CHANGES"}}]:
+            self.assertFalse(approved_candidate_unchanged({**ticket, "code_review": review}, head))
+        ticket.update(number=5, phase="implementation", status="Blocked", qa_commit="qa",
+                      qa_tests={"tests/test_5.py": "blob"}, branch="factory/5", base_sha="base")
+        with mock.patch("orchestrator.candidate_worktree_matches", return_value=True):
+            apply_retry_event_to_ticket(Path("/unused"), ticket, {
+                "event_id": "reviewed-candidate-retry",
+                "failure": "Agent produced no changes or commits.",
+                "retry_reason": "Recheck the already approved exact candidate",
+            })
+        self.assertEqual(ticket["qa_commit"], "qa")
+        self.assertEqual(ticket["branch"], "factory/5")
+
+    def test_evidence_only_retry_requires_explicit_readable_exact_head_report(self):
+        head = "a" * 40
+        ticket = {"qa_approved": True, "code_review": {
+            "status": "changes_requested", "head": head,
+        }}
+        with tempfile.TemporaryDirectory() as directory:
+            repo = Path(directory)
+            report = repo / ".factory/reviews/browser.md"
+            report.parent.mkdir(parents=True)
+            report.write_text(f"Browser observation for {head}")
+            self.assertFalse(candidate_has_new_review_evidence(repo, ticket, head))
+            ticket["last_retry_reason"] = "Review .factory/reviews/browser.md"
+            self.assertTrue(candidate_has_new_review_evidence(repo, ticket, head))
+            self.assertEqual(implementation_attempt_failure(
+                "Browser evidence supplied; code unchanged", 0, 2, head, head, head,
+                allow_unchanged_candidate=candidate_has_new_review_evidence(repo, ticket, head),
+            ), "")
+            self.assertIn("did not change", implementation_attempt_failure(
+                "No evidence", 0, 2, head, head, head,
+            ))
+            self.assertFalse(candidate_has_new_review_evidence(repo, ticket, "b" * 40))
+            self.assertFalse(candidate_has_new_review_evidence(repo, {**ticket, "qa_approved": False}, head))
+            report.write_text("Unbound observation")
+            self.assertFalse(candidate_has_new_review_evidence(repo, ticket, head))
+            report.unlink()
+            self.assertFalse(candidate_has_new_review_evidence(repo, ticket, head))
+            ticket["implementation_review_evidence"] = {
+                "candidate_head": head, "content": f"Implementation checks for {head}",
+            }
+            self.assertTrue(candidate_has_new_review_evidence(repo, ticket, head))
+            ticket["implementation_review_evidence"]["candidate_head"] = "b" * 40
+            self.assertFalse(candidate_has_new_review_evidence(repo, ticket, head))
+            ticket["implementation_review_evidence"].update(candidate_head=head, error="invalid")
+            self.assertFalse(candidate_has_new_review_evidence(repo, ticket, head))
+
+    def test_review_checkpoint_recovery_keeps_candidate_but_requires_operator_retry(self):
+        ticket = {"number": 6, "qa_approved": True, "phase": "implementation",
+                  "status": "In Progress", "failure": "Code Review requested browser evidence",
+                  "code_review": {"status": "changes_requested", "head": "a" * 40}}
+        with mock.patch("orchestrator.candidate_worktree_matches", return_value=True), \
+                mock.patch("orchestrator.subprocess.run", return_value=SimpleNamespace(returncode=0, stdout="")), \
+                mock.patch("orchestrator.ticket_recovery", return_value={"action": "Review then retry"}):
+            self.assertFalse(recover_reviewed_checkpoint(Path("/unused"), ticket, specification_changed=True))
+            self.assertTrue(recover_reviewed_checkpoint(Path("/unused"), ticket, specification_changed=False))
+        self.assertEqual(ticket["status"], "Blocked")
+        self.assertEqual(ticket["phase"], "code-review")
+        self.assertEqual(ticket["code_review"]["status"], "changes_requested")
+        self.assertNotIn("approved_head", ticket)
+        with mock.patch("orchestrator.candidate_worktree_matches", return_value=True), \
+                mock.patch("orchestrator.subprocess.run", return_value=SimpleNamespace(returncode=0, stdout=" M app.js")):
+            self.assertFalse(recover_reviewed_checkpoint(Path("/unused"), ticket, specification_changed=False))
+
+    def test_restart_preserves_only_clean_exact_approved_qa_checkpoint(self):
+        with tempfile.TemporaryDirectory() as directory:
+            repo = Path(directory) / "repo"
+            repo.mkdir()
+            worktree = worktree_path(repo, 3)
+            worktree.mkdir()
+            git(worktree, "init")
+            git(worktree, "config", "user.name", "Factory Tests")
+            git(worktree, "config", "user.email", "factory@example.test")
+            (worktree / "test.py").write_text("assert False\n")
+            git(worktree, "add", "test.py")
+            git(worktree, "commit", "-m", "qa")
+            revision = git(worktree, "rev-parse", "HEAD")
+            qa_blob = git(worktree, "rev-parse", "HEAD:test.py")
+            original = dict(number=3, status="In Progress", phase="implementation",
+                            branch="factory/3", base_sha=revision, qa_commit=revision,
+                            qa_tests={"test.py": "hash"}, qa_approved=True, attempt=1)
+            for changes, spec_changed in [({"qa_approved": False}, False),
+                                          ({"phase": "qa"}, False), ({}, True)]:
+                ticket = {**original, **changes}
+                before = dict(ticket)
+                self.assertFalse(recover_unstarted_implementation(repo, ticket,
+                                 specification_changed=spec_changed))
+                self.assertEqual(ticket, before)
+            (worktree / "partial.py").write_text("work in progress\n")
+            self.assertFalse(recover_unstarted_implementation(repo, dict(original),
+                             specification_changed=False))
+            (worktree / "partial.py").unlink()
+            ticket = dict(original)
+            self.assertTrue(recover_unstarted_implementation(repo, ticket,
+                            specification_changed=False))
+            self.assertEqual(ticket["status"], "Backlog")
+            # A repair may commit immediately before the scheduler is stopped.
+            (worktree / "app.py").write_text("ready = True\n")
+            git(worktree, "add", "app.py")
+            git(worktree, "commit", "-m", "review repair")
+            repaired = git(worktree, "rev-parse", "HEAD")
+            repair_ticket = {**original, "qa_tests": {"test.py": qa_blob},
+                             "approved_head": revision,
+                             "code_review": {"status": "approved", "head": revision}}
+            self.assertTrue(recover_reviewed_checkpoint(repo, repair_ticket, specification_changed=False))
+            self.assertEqual(repair_ticket["reverify_candidate"], repaired)
+            self.assertEqual(repair_ticket["approved_head"], "")
+            self.assertEqual(repair_ticket["status"], "Blocked")
+            recovery = ticket_recovery(repair_ticket, repo)
+            self.assertNotIn("zero-skip", recovery["cause"])
+            self.assertIn("fresh", recovery["suggested_retry_reason"])
+            (worktree / "app.py").write_text("dirty = True\n")
+            self.assertFalse(recover_reviewed_checkpoint(repo, dict(repair_ticket), specification_changed=False))
+            (worktree / "test.py").write_text("assert True\n")
+            git(worktree, "add", ".")
+            git(worktree, "commit", "-m", "unauthorized test edit")
+            self.assertFalse(recover_reviewed_checkpoint(repo, dict(repair_ticket), specification_changed=False))
+            self.assertEqual(ticket["qa_commit"], revision)
+            self.assertTrue(ticket["qa_approved"])
+            self.assertEqual(ticket["attempt"], 0)
+            (worktree / "implementation.py").write_text("changed = True\n")
+            git(worktree, "add", "implementation.py")
+            git(worktree, "commit", "-m", "candidate")
+            self.assertFalse(recover_unstarted_implementation(repo, dict(original),
+                             specification_changed=False))
 
     def test_qa_harness_defect_stops_without_consuming_identical_retries(self):
         factory = Factory.__new__(Factory)
@@ -3052,6 +3296,8 @@ class RuntimeTests(unittest.TestCase):
             expected = git(repo, "rev-list", "--max-count=1", "--grep=^chore: establish", "HEAD")
             self.assertEqual(tagged, expected, proc.stdout + proc.stderr)
             self.assertNotEqual(tagged, rehearsal)
+            self.assertIn("choose Live for GitHub", proc.stdout)
+            self.assertIn("Rehearsal for a local simulation", proc.stdout)
 
     def test_start_over_clears_workshop_state_but_keeps_local_configuration(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -3110,6 +3356,7 @@ class RuntimeTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             repo = root / "repo"
+            install_delivery_plan(repo, "retry-demo")
             source = Path(__file__).parents[2]
             shutil.copytree(source / "factory", repo / "factory")
             shutil.copy2(source / "factory.project.toml", repo / "factory.project.toml")
@@ -3205,6 +3452,7 @@ class RuntimeTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             repo = root / "repo"
+            install_delivery_plan(repo, "review-loop")
             source = Path(__file__).parents[2]
             shutil.copytree(source / "factory", repo / "factory")
             shutil.copy2(source / "factory.project.toml", repo / "factory.project.toml")
@@ -3271,6 +3519,7 @@ class RuntimeTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             repo = root / "repo"
+            install_delivery_plan(repo, "autonomous-demo")
             source = Path(__file__).parents[2]
             shutil.copytree(source / "factory", repo / "factory")
             shutil.copy2(source / "factory.project.toml", repo / "factory.project.toml")
@@ -3375,6 +3624,7 @@ class RuntimeTests(unittest.TestCase):
         for profile_name, roles in expected_roles.items():
             with self.subTest(profile=profile_name), tempfile.TemporaryDirectory() as directory:
                 repo = Path(directory) / "repo"
+                install_delivery_plan(repo, f"{profile_name}-profile")
                 source = Path(__file__).parents[2]
                 shutil.copytree(source / "factory", repo / "factory")
                 shutil.copy2(source / "factory.project.toml", repo / "factory.project.toml")

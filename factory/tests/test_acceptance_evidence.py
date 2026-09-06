@@ -1,4 +1,6 @@
 import sys
+import subprocess
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -31,14 +33,33 @@ class AcceptanceEvidenceTests(unittest.TestCase):
             "tests/test_ticket_7_errors.py tests/test_ticket_7_search.py",
         )
 
-    def test_rejects_a_mixed_or_unsupported_focused_test_set(self):
-        with self.assertRaisesRegex(ValueError, "one supported test runner"):
-            focused_test_command(
-                ["tests/test_ticket_7_search.py", "tests/ticket-7-search.test.js"],
-                sys.executable,
-            )
+    def test_rejects_an_unsupported_focused_test_set(self):
         with self.assertRaisesRegex(ValueError, "supported focused test runner"):
             focused_test_command(["tests/Ticket7SearchTest.java"], sys.executable)
+
+    def test_mixed_runners_execute_both_and_never_hide_a_runner_failure(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            python_test = root / "test_ticket_7.py"
+            node_test = root / "ticket-7.test.cjs"
+            python_test.write_text("def test_behavior():\n    assert False, 'missing recipe'\n")
+            node_test.write_text("const test = require('node:test'); test('node behavior', () => {});\n")
+            command = focused_test_command([str(node_test), str(python_test)], sys.executable)
+            def execute():
+                result = subprocess.run(command, shell=True, cwd=root, text=True, capture_output=True)
+                return result, classify_focused_result(result.returncode, result.stdout + result.stderr)
+            result, classification = execute()
+            self.assertEqual(classification, "behavior_assertion", result.stdout + result.stderr)
+            self.assertIn("node behavior", result.stdout)
+            # An assertion in Python must not hide a separate non-assertion failure.
+            node_test.write_text("process.exit(1);\n")
+            result, classification = execute()
+            self.assertNotEqual(classification, "behavior_assertion", result.stdout + result.stderr)
+            self.assertNotEqual(classification, "pass")
+            python_test.write_text("def test_behavior():\n    assert True\n")
+            node_test.write_text("const test = require('node:test'); test('node behavior', () => {});\n")
+            result, classification = execute()
+            self.assertEqual(classification, "pass", result.stdout + result.stderr)
 
     def test_classifies_only_behavior_assertions_as_valid_red_evidence(self):
         self.assertEqual(
@@ -61,6 +82,7 @@ class AcceptanceEvidenceTests(unittest.TestCase):
         self.assertEqual(classify_focused_result(0, "1 passed"), "pass")
         self.assertEqual(classify_focused_result(0, "1 skipped"), "skipped")
         self.assertEqual(classify_focused_result(0, "# tests 1\n# skipped 1"), "skipped")
+        self.assertEqual(classify_focused_result(0, "ℹ tests 1\nℹ skipped 1"), "skipped")
         self.assertEqual(
             classify_focused_result(
                 0,

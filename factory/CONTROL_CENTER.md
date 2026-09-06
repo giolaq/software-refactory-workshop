@@ -171,6 +171,10 @@ excess parallelism, malformed output, and silent stalls. It then applies valid
 commands and remains the lifecycle authority. Before merge, it also confirms
 that gates pass, the decision was published, and the live PR head still matches.
 
+With human merge authority, `MERGE` means ready for your exact-revision review.
+It does not approve or execute the merge on your behalf. Pending human approval
+is a waiting state, not a supervisor blocker.
+
 Open **Supervisor** while a run is active. Read the latest summary from top to
 bottom: worker reports, dispatch/block/defer decisions, Ticket instructions,
 and the prompt and log used for that checkpoint. Open a Ticket's **Supervisor**
@@ -208,6 +212,10 @@ GitHub Issues and Projects remain the shared source of truth. The Control Center
 is the detailed operator view for the local prompts, worktrees, tests, and logs
 that GitHub does not contain. Live preflight also verifies agent authentication
 and runs the configured gates.
+
+When you reopen the page, an existing run restores its recorded mode. Check the
+mode in the sidebar before running an action; it matches the mode used by the
+buttons. Changing it does not convert existing Live or Rehearsal evidence.
 
 In **Setup → Connection**, paste the attendee's GitHub repository URL before saving Live
 configuration. Saving verifies access, clones or reuses that repository under
@@ -312,6 +320,10 @@ packet, then select **Download**. No Canvas is required. The optional **Run effo
 section shows recorded ticket execution, waiting time, and retries; provider
 usage and price are separate from these duration measurements.
 
+While the Factory runner is open, **Start app** is disabled. To inspect merged
+work without stopping agents, use **Copy command** and run it in a separate
+terminal. This previews the managed checkout, not unmerged ticket worktrees.
+
 If an action fails, read the operation output first. The same command is shown
 above it, so you can copy it into a terminal when deeper diagnosis is useful.
 
@@ -331,6 +343,32 @@ exception, rebuilds a stale PR revision, or routes an ownership/dependency
 decision without presenting a retry that will deterministically fail. The open
 drawer preserves its tab and scroll position while snapshots and Live logs
 refresh.
+
+Prefer stopping at a review checkpoint. If implementation has not changed the
+clean, approved QA revision, restart keeps that QA approval. Changed scope or
+uncertain work requires the normal recovery checks. A retry may retain an
+already-approved candidate without creating another commit; it still reruns
+verification and review before returning to the human merge decision.
+
+If review asks for browser evidence, record the candidate revision, checks, and
+results in a Markdown file under the target repository's `.factory/reviews/`.
+Reference that relative path in the retry reason. The Factory includes the
+report text and hash in the isolated implementation, code-review, and supervisor
+handoffs. Reports are limited to 20 KB each and are evidence, not merge approval.
+If only evidence changed, include the full candidate revision in the report.
+The same code can then return through verification and independent review
+without a cosmetic commit. Stopping a repair at a clean, already-reviewed head
+preserves the candidate but requires an operator retry; it does not approve it.
+If the agent committed a clean repair just before stopping, restart can preserve
+that descendant revision when protected tests still match. The repair must pass
+fresh verification and review; its predecessor's approval does not apply.
+
+Coding agents can also supply a report in their worktree at
+`.factory/review-handoff.md`. The report must name the full candidate revision
+and stay within 20 KB. The Factory redacts credentials, saves a content-hashed
+copy, and passes it to review and supervision as an implementation-authored
+claim. This is not independent verification or human approval. Runtime reports
+remain outside the committed application tree.
 
 For an exact File ownership blocker, Summary proposes the corrected GitHub
 Ticket body and a retry reason. The attendee can accept or edit both, then

@@ -16,6 +16,13 @@ def completed(returncode=0, stdout="", stderr=""):
 
 
 class GitHubReviewTests(unittest.TestCase):
+    def test_failed_auth_probe_preserves_network_diagnostic(self):
+        backend = GitHubBackend(Path.cwd())
+        backend.gh = mock.Mock(return_value=completed(1, stderr="api.github.com: connection reset by peer"))
+        with mock.patch("github_backend.shutil.which", return_value="/bin/gh"):
+            with self.assertRaisesRegex(GitHubError, "connection reset by peer"):
+                backend.preflight()
+
     def test_repository_issue_listing_is_independent_from_project_membership(self):
         backend = GitHubBackend(Path.cwd(), project_number=5)
         backend.owner, backend.name = "attendee", "product"

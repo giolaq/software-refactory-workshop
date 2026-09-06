@@ -15,6 +15,7 @@ from github_repository import (
     connect_github_repository,
     managed_checkout_path,
     parse_github_repository,
+    github_auth_failure,
 )
 from factory_charter import FactoryCharter
 from project_contract import ProjectContract
@@ -35,6 +36,14 @@ def git(repo: Path, *args: str) -> str:
 
 
 class GitHubRepositoryTests(unittest.TestCase):
+    def test_auth_failure_preserves_diagnostic_without_exposing_credentials(self):
+        token = "ghp_" + "x" * 36
+        message = github_auth_failure(completed(["gh"], 1, stderr=f"api.github.com: connection reset by peer {token}"))
+        self.assertIn("connection reset by peer", message)
+        self.assertNotIn("is not authenticated", message)
+        self.assertIn("gh auth status", message)
+        self.assertNotIn(token, message)
+
     def test_normalizes_https_ssh_and_owner_name_inputs(self):
         expected = "https://github.com/example/workshop"
         for value in (

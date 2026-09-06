@@ -17,7 +17,7 @@ human pilot or a Live provider benchmark.
 | Problem | Repair and retest |
 | --- | --- |
 | Missing files and generic failure text could count as RED evidence | Tightened classification; missing-file and mixed assertion/environment failures are rejected. Regenerated affected QA rather than approving old receipts. |
-| Rehearsal QA could ignore revision feedback | Added an explicit supported reference revision and a clear refusal for unsupported changes. Rehearsal is not an open-ended QA agent. |
+| Rehearsal QA could ignore revision feedback | Added an explicit supported reference revision and a clear refusal for unsupported changes. Rehearsal is not an open-ended QA adapter. |
 | Brand ticket delivered an unused stylesheet | Added the visible TableStory shell; tested the served stylesheet and checked the mobile rendering. |
 | My Cookbook displayed unsaved recipes | Filtered the collection and refreshed it after removal. Browser check: save one recipe, see exactly one, remove it, see zero. |
 | TV return navigation lost the originating focus; empty rails crashed | Saved and restored rail position, skipped empty rails, added navigation unit coverage, and exercised Enter, Escape, and Backspace. |

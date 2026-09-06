@@ -32,6 +32,7 @@ from adapter_capabilities import role_environment
 from codex_cli import codex_environment
 from cursor_cli import invoke_cursor
 from triage import classify_controls
+from adapter_diagnostics import agent_failure_detail
 
 
 PROMPT_VERSION = "2.0"
@@ -111,25 +112,51 @@ def append_log(path: Path, message: str):
         stream.write(f"[{now()}] {redact_credentials(message)}\n")
 
 
-def agent_failure_detail(output: str, limit: int = 2000) -> str:
-    """Prefer terminal provider errors over echoed prompts and CLI headers."""
-    redacted = redact_credentials(output.strip())
-    error_lines = []
-    for line in redacted.splitlines():
-        line = line.strip()
-        if re.match(r"(?i)^(?:error|fatal(?: error)?):", line):
-            if line not in error_lines:
-                error_lines.append(line)
-    if error_lines:
-        return "\n".join(error_lines[-5:])[:limit]
-    return redacted[-limit:]
-
-
 def claude_json_schema(path: Path) -> str:
     """Return the planning schema in the dialect accepted by Claude Code."""
     schema = read_json(path)
     schema.pop("$schema", None)
     return json.dumps(schema)
+
+
+def _run_codex_agent(command, repo, prompt, log, stage, *, env):
+    """Stream Codex events without echoing prompts or private reasoning."""
+    title = stage.replace("_", " ").title()
+    print(f"Codex {title} started.", flush=True)
+    with log.open("w") as stream, subprocess.Popen(
+        command, cwd=repo, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT, text=True, bufsize=1, env=env,
+    ) as process:
+        process.stdin.write(prompt)
+        process.stdin.close()
+        output = []
+        for line in process.stdout:
+            line = redact_credentials(line)
+            output.append(line)
+            stream.write(line)
+            stream.flush()
+            try:
+                event = json.loads(line)
+            except json.JSONDecodeError:
+                if re.search(r"(?i)(?:^|\s)(?:error|fatal)(?:\s|:)", line):
+                    print(line.strip()[:2000], flush=True)
+                continue
+            if not isinstance(event, dict):
+                continue
+            kind = event.get("type")
+            item = event.get("item") or {}
+            if kind == "thread.started":
+                print(f"Codex {title} session initialized.", flush=True)
+            elif kind == "item.started" and item.get("type") == "command_execution":
+                print(f"Codex is running: {item.get('command', 'repository inspection')[:1000]}", flush=True)
+            elif kind == "item.completed" and item.get("type") == "command_execution":
+                print(f"Codex command finished (exit {item.get('exit_code', '?')}).", flush=True)
+            elif kind == "turn.completed":
+                print(f"Codex {title} completed. Usage: {json.dumps(event.get('usage', {}))}", flush=True)
+            elif kind in {"error", "turn.failed"}:
+                print(f"Codex reported: {json.dumps(event)[:2000]}", flush=True)
+        process.wait()
+    return subprocess.CompletedProcess(command, process.returncode, "", "".join(output))
 
 
 def _run_claude_agent(
@@ -625,6 +652,45 @@ def _stage_paths(run_dir: Path, stage: str) -> tuple[Path, Path]:
     return run_dir / f"{filename}.json", run_dir / f"{filename}.md"
 
 
+def delivery_planning_context(repo: Path, plan_id: str) -> str:
+    """Carry approved definitions across the ignored-runtime/worktree boundary."""
+    if not plan_id:
+        return ""
+    if not re.fullmatch(r"[a-zA-Z0-9_-]+", plan_id):
+        raise ValueError("invalid planning identifier for Ticket delivery")
+    root = (repo / ".factory/plans").resolve()
+    run_dir = (root / plan_id).resolve()
+    if not run_dir.is_relative_to(root) or not (run_dir / "manifest.json").is_file():
+        raise ValueError(
+            f"Approved planning package {plan_id} is missing locally. Restore its recovery "
+            "checkpoint in this control checkout before retrying the Ticket."
+        )
+    manifest = load_manifest(run_dir)
+    approval = manifest.get("approvals", {}).get("alignment") or {}
+    hashes = approval.get("artifact_hashes") or {}
+    required = set(factory_profile(manifest.get("profile", "standard"))["planning_roles"])
+    if not required.issubset(hashes):
+        raise ValueError(f"Plan {plan_id} needs current alignment approval before Ticket delivery")
+    sections = [
+        f"## Approved planning context · {plan_id}\n"
+        "These definitions explain the Ticket's referenced contracts. Context does not expand this Ticket "
+        "to the entire product. Implement or test only its assigned scope; later slices remain separate.\n"
+    ]
+    for stage, _, title in STAGES:
+        # Publication adds issue metadata to the slice file. The dispatched Ticket
+        # is checked separately; only immutable definition artifacts are embedded.
+        if stage not in required or stage == "vertical_slices":
+            continue
+        path, _ = _stage_paths(run_dir, stage)
+        if not path.resolve().is_relative_to(run_dir) or not path.is_file() or sha_file(path) != hashes[stage]:
+            raise ValueError(
+                f"Plan {plan_id}: {title} is missing or changed after alignment approval. "
+                "Restore the approved artifact or review and republish the revised plan before retrying."
+            )
+        sections.append(f"### {title} · sha256 {hashes[stage]}\n```json\n{json.dumps(read_json(path), ensure_ascii=False)}\n```\n")
+    return "\n".join(sections)
+
+
 def _render_stage(stage: str, value: dict, plan_id: str, json_path: Path) -> str:
     if stage == "product_review":
         return render_product(value, plan_id)
@@ -923,12 +989,12 @@ def _run_stage_agent_impl(
             schema = Path(__file__).with_name("planning_schemas") / f"{stage}.json"
         if planning_agent == "codex":
             command = [
-                agent_bin, "exec", "--sandbox", "read-only", "--ephemeral",
+                agent_bin, "exec", "--json", "--sandbox", "read-only", "--ephemeral",
                 "--ignore-user-config", "--ignore-rules", "--output-schema", str(schema),
                 "-o", str(raw), "-",
             ]
-            result = subprocess.run(
-                command, cwd=repo, input=prompt, text=True, capture_output=True,
+            result = _run_codex_agent(
+                command, repo, prompt, log, stage,
                 env=codex_environment(),
             )
         elif planning_agent == "claude":
@@ -974,8 +1040,6 @@ def _run_stage_agent_impl(
                 raw.write_text(result.stdout)
         else:
             raise ValueError(f"unsupported planning adapter: {planning_agent}")
-        if planning_agent == "codex":
-            log.write_text(result.stdout + result.stderr)
         if result.returncode:
             detail = agent_failure_detail(result.stderr or result.stdout)
             if detail:
@@ -1071,6 +1135,8 @@ def _run_stage_agent(
     feedback: str | None = None,
 ) -> dict:
     """Run a planning role and retain a structured failure handoff when it blocks."""
+    manifest["stages"][stage]["status"] = "running"
+    save_manifest(repo, run_dir, manifest)
     try:
         return _run_stage_agent_impl(
             repo,

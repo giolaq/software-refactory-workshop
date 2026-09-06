@@ -44,6 +44,7 @@ test("prerequisites and recovery identify the supported environment", async () =
     "Use Cursor CLI", "agent login", "No module named pytest",
     "same Python", "requirements.txt", "factory.project.toml",
     "CONTROL", "TARGET", "session release tag",
+    "FACTORY_CODEX_BIN", "codex exec --help", "older Codex installation",
   ]) assert.ok(html.includes(phrase), "missing prerequisite/recovery: " + phrase);
 });
 
