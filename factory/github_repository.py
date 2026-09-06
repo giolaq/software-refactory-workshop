@@ -12,6 +12,7 @@ from pathlib import Path
 
 from factory_charter import FactoryCharter
 from project_contract import DEFAULT_TEST_PATTERNS, ProjectContract
+from sensitive_data import redact_credentials
 
 
 OWNER = r"[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})"
@@ -76,13 +77,22 @@ def _run(command: list[str], repo: Path, *, runner=None):
     return invoke(command, cwd=repo, text=True, capture_output=True)
 
 
+def github_auth_failure(result) -> str:
+    diagnostic = redact_credentials((result.stderr or result.stdout or "No diagnostic returned.").strip())
+    return (
+        f"GitHub authentication check failed: {diagnostic[:1600]}\n"
+        "Run `gh auth status` and resolve the reported cause. Use `gh auth login` "
+        "only if it reports missing or invalid credentials."
+    )
+
+
 def _accessible_repository(repo: Path, raw: str, *, runner=None) -> tuple[GitHubRepository, GitHubRepository]:
     requested = parse_github_repository(raw)
     if not shutil.which("gh"):
         raise GitHubRepositoryError("GitHub CLI not found. Install `gh`, then run `gh auth login`.")
     auth = _run(["gh", "auth", "status"], repo, runner=runner)
     if auth.returncode:
-        raise GitHubRepositoryError("GitHub CLI is not authenticated. Run `gh auth login`.")
+        raise GitHubRepositoryError(github_auth_failure(auth))
     viewed = _run(
         ["gh", "repo", "view", requested.slug, "--json", "nameWithOwner"],
         repo,

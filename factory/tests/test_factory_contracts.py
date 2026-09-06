@@ -10,11 +10,112 @@ from unittest.mock import Mock, patch
 FACTORY = Path(__file__).parents[1] / "orchestrator.py"
 sys.path.insert(0, str(Path(__file__).parents[1]))
 
-from factory_contracts import WORKSHOP_VERSION, handoff_receipt, validate_handoff_receipt
+from factory_contracts import WORKSHOP_VERSION, handoff_receipt, validate_handoff_receipt, write_handoff_receipt, operator_review_evidence, capture_implementation_evidence
 from release_check import audit_release, run_live_github_smoke, validate_standard_rehearsal
 
 
 class FactoryContractTests(unittest.TestCase):
+    def test_worker_handoff_is_revision_bound_redacted_and_snapshotted(self):
+        with tempfile.TemporaryDirectory() as directory:
+            repo, worktree = Path(directory) / "repo", Path(directory) / "worker"
+            source = worktree / ".factory/review-handoff.md"
+            source.parent.mkdir(parents=True)
+            head = "a" * 40
+            self.assertEqual(capture_implementation_evidence(repo, worktree, 8, head), {})
+            secret = "ghp_" + "x" * 25
+            source.write_text(f"Candidate {head}: tests passed. {secret}")
+            first = capture_implementation_evidence(repo, worktree, 8, head)
+            self.assertEqual(first["author_role"], "implementation")
+            self.assertEqual(first["candidate_head"], head)
+            self.assertNotIn(secret, json.dumps(first))
+            self.assertEqual((repo / first["artifact"]).read_text(), first["content"])
+            source.write_text(f"Candidate {head}: updated evidence")
+            second = capture_implementation_evidence(repo, worktree, 8, head)
+            self.assertNotEqual(first["artifact"], second["artifact"])
+            self.assertEqual((repo / first["artifact"]).read_text(), first["content"])
+            for content in ["stale " + "b" * 40, head + "x" * 20001]:
+                source.write_text(content)
+                self.assertIn("error", capture_implementation_evidence(repo, worktree, 8, head))
+            source.unlink()
+            outside = Path(directory) / "private.md"
+            outside.write_text(f"Private {head}")
+            source.symlink_to(outside)
+            rejected = capture_implementation_evidence(repo, worktree, 8, head)
+            self.assertIn("error", rejected)
+            self.assertNotIn("content", rejected)
+
+    def test_operator_evidence_is_embedded_only_from_contained_referenced_reports(self):
+        with tempfile.TemporaryDirectory() as directory:
+            repo = Path(directory) / "repo"
+            reports = repo / ".factory/reviews"
+            reports.mkdir(parents=True)
+            (reports / "browser.md").write_text("Candidate abc: 375px overflow check passed.")
+            (reports / "unreferenced.md").write_text("Do not collect unrelated reports.")
+            ticket = {"last_retry_reason": "Read .factory/reviews/browser.md and .factory/reviews/missing.md"}
+            evidence = operator_review_evidence(repo, ticket)
+            self.assertEqual(evidence[0]["content"], "Candidate abc: 375px overflow check passed.")
+            self.assertEqual(len(evidence[0]["sha256"]), 64)
+            self.assertIn("error", evidence[1])
+            outside = Path(directory) / "private.md"
+            outside.write_text("private contents")
+            (reports / "linked.md").symlink_to(outside)
+            result = operator_review_evidence(repo, {"last_retry_reason": "Read .factory/reviews/linked.md"})
+            self.assertIn("error", result[0])
+            self.assertNotIn("private contents", json.dumps(result))
+            (reports / "large.md").write_text("x" * 20001)
+            self.assertIn("error", operator_review_evidence(repo, {
+                "last_retry_reason": "Read .factory/reviews/large.md",
+            })[0])
+            fake = "ghp_" + "x" * 25
+            (reports / "credentials.md").write_text("Diagnostic " + fake)
+            redacted = operator_review_evidence(repo, {"last_retry_reason": "Read .factory/reviews/credentials.md"})
+            self.assertNotIn(fake, json.dumps(redacted))
+            self.assertIn("[REDACTED]", redacted[0]["content"])
+
+    def test_receipt_preserves_runtime_artifacts_when_retry_reuses_filenames(self):
+        with tempfile.TemporaryDirectory() as directory:
+            repo = Path(directory)
+            log = repo / ".factory/logs/1-attempt1.log"
+            log.parent.mkdir(parents=True)
+            log.write_text("first candidate evidence")
+            receipt = handoff_receipt(
+                run_id="run-1", role="implementation", phase="Build", ticket=1,
+                attempt=1, input_revisions={}, output_revisions={"head": "first"},
+                claimed_result="Ready for verification", verification=[],
+                unresolved_risks=[], artifacts=[".factory/logs/1-attempt1.log"],
+                policy_hashes={}, evidence={},
+            )
+            first = write_handoff_receipt(repo, receipt)
+            log.write_text("second candidate evidence")
+            second = write_handoff_receipt(repo, receipt)
+            first_ref = json.loads(first.read_text())["artifacts"][0]
+            second_ref = json.loads(second.read_text())["artifacts"][0]
+            self.assertEqual((repo / first_ref).read_text(), "first candidate evidence")
+            self.assertEqual((repo / second_ref).read_text(), "second candidate evidence")
+            self.assertNotEqual(first_ref, second_ref)
+            self.assertEqual(receipt["artifacts"], [".factory/logs/1-attempt1.log"])
+
+    def test_receipt_does_not_archive_paths_outside_runtime_evidence_roots(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            repo = root / "repo"
+            repo.mkdir()
+            outside = root / "outside.log"
+            outside.write_text("outside content")
+            (repo / ".factory/logs").mkdir(parents=True)
+            (repo / ".factory/logs/escape.log").symlink_to(outside)
+            (repo / ".env").write_text("private content")
+            references = [".factory/logs/escape.log", ".env", ".factory/logs/missing.log"]
+            receipt = handoff_receipt(
+                run_id="run-1", role="implementation", phase="Build", ticket=1,
+                attempt=1, input_revisions={}, output_revisions={},
+                claimed_result="Ready for verification", verification=[],
+                unresolved_risks=[], artifacts=references, policy_hashes={}, evidence={},
+            )
+            saved = write_handoff_receipt(repo, receipt)
+            self.assertEqual(json.loads(saved.read_text())["artifacts"], references)
+            self.assertFalse((saved.parent / "artifacts").exists())
+
     def test_handoff_receipt_carries_structured_causal_evidence(self):
         receipt = handoff_receipt(
             run_id="run-1",

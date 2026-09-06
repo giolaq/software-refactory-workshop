@@ -406,6 +406,15 @@ class ControlCenterTests(unittest.TestCase):
             self.assertIn("Choose Start app again", operation["failure"]["recovery"])
             self.assertIn(operation["failure"]["cause"], operation["error"])
 
+    def test_provider_limit_recovery_preserves_existing_work(self):
+        result = ControlCenter._operation_failure_guidance(
+            "run", 1, "ERROR: You've hit your usage limit. Try again tomorrow.", "factory run",
+        )
+        self.assertIn("provider refused", result["cause"])
+        self.assertIn("Do not reset", result["recovery"])
+        self.assertIn("Run factory", result["recovery"])
+        self.assertNotIn("auth login", result["recovery"])
+
     def test_failed_readiness_uses_the_first_fail_and_its_exact_recovery(self):
         with tempfile.TemporaryDirectory() as directory:
             center = ControlCenter(self.make_repo(directory))
@@ -469,6 +478,24 @@ class ControlCenterTests(unittest.TestCase):
             "./factory/factory configure --preset codex-workshop",
         )
         self.assertNotIn("sign in", failure["recovery"])
+
+    def test_github_connection_reset_has_retry_guidance_not_credential_repair(self):
+        failure = ControlCenter._operation_failure_guidance(
+            "run", 1, 'factory: Post "https://api.github.com/graphql": read: connection reset by peer',
+            "./factory/factory run",
+        )
+        self.assertIn("GitHub", failure["cause"])
+        self.assertIn("Run factory", failure["recovery"])
+        self.assertIn("Do not reset", failure["recovery"])
+        self.assertNotIn("Repair the Control Center", failure["recovery"])
+
+    def test_github_authentication_failure_does_not_request_agent_login(self):
+        failure = ControlCenter._operation_failure_guidance(
+            "retry", 1, "factory: GitHub CLI is not authenticated. Run `gh auth login`.",
+            "./factory/factory retry 1",
+        )
+        self.assertIn("GitHub", failure["recovery"])
+        self.assertNotIn("Agent Adapter", failure["recovery"])
 
     def test_external_repository_uses_the_bundled_control_plane_and_can_be_initialized(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -2152,6 +2179,12 @@ class ControlCenterTests(unittest.TestCase):
             self.assertEqual(active["phase_label"], "Build & verify")
             self.assertEqual(active["ticket"], 3)
             self.assertIn("Independent QA", active["headline"])
+
+            stopped = center.journey(planning, active_factory, {**running, "status": "stopped"}, prd, [])
+            self.assertEqual(stopped["state"], "attention")
+            self.assertIn("stopped", stopped["headline"])
+            self.assertEqual(stopped["next"]["view"], "tickets")
+            self.assertIn("Run factory", stopped["next"]["detail"])
 
             active_factory["tickets"][0]["status"] = "QA Review"
             review = center.journey(planning, active_factory, running, prd, [])

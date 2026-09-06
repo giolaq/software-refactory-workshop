@@ -6,6 +6,7 @@ import tempfile
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).parents[1]))
 
@@ -35,6 +36,26 @@ def install_approved_charter(repo: Path, *, existing_tests: str = "review") -> N
 
 
 class QaPolicyTests(unittest.TestCase):
+    def test_focused_result_is_classified_before_output_is_bounded(self):
+        factory = Factory.__new__(Factory)
+        factory.python = sys.executable
+        factory.cfg = {"factory": {"gate_timeout": 10}}
+        factory._sync_store = lambda: None
+        for first, final, expected in (
+            ("AssertionError: recipe route is missing\n", "95 failed\n", "RED PROVED"),
+            ("FileNotFoundError: fixture is missing\n", "AssertionError: missing recipe\n", "RED NOT PROVED"),
+        ):
+            with self.subTest(expected=expected):
+                ticket = {"qa_tests": {"tests/test_ticket_1.py": "hash"}, "qa_commit": "a" * 40}
+                output = first + "runner detail\n" * 500 + final
+                with patch("orchestrator.run", return_value=subprocess.CompletedProcess([], 1, output, "")):
+                    factory.run_focused_acceptance(ticket, Path.cwd(), expected="red")
+                evidence = ticket["qa_evidence"]["red"]
+                self.assertEqual(evidence["result"], expected)
+                self.assertLessEqual(len(evidence["output"]), 3000)
+                self.assertIn(first.strip(), evidence["output"])
+                self.assertIn(final.strip(), evidence["output"])
+
     def test_recipe_rehearsal_qa_covers_each_ticket_contract(self):
         self.assertIn("len(recipes) >= 12", RECIPE_TESTS[1])
         self.assertIn("/api/cookbook", RECIPE_TESTS[1])
@@ -122,12 +143,78 @@ class QaPolicyTests(unittest.TestCase):
                 prompt,
             )
 
+    def test_all_ticket_roles_receive_the_approved_planning_context(self):
+        with tempfile.TemporaryDirectory() as directory:
+            repo = Path(directory)
+            install_approved_charter(repo)
+            factory = Factory(SimpleNamespace(
+                repo=directory, qa_agent="codex", no_qa=False, mock=True,
+                project_number=None, review_qa_tests=True, scenario="tv",
+                agent="codex", profile="standard",
+            ))
+            ticket = {"number": 1, "title": "Recipes", "body": "Approved slice",
+                      "attempt": 1, "qa_attempt": 1, "plan_id": "test-plan",
+                      "qa_approved": True, "qa_commit": "c" * 40,
+                      "qa_evidence": {"red": {"result": "RED PROVED"},
+                                      "green": {"result": "GREEN PROVED", "revision": "b" * 40}},
+                      "gate_results": [{"name": "api-tests", "exit_code": 0,
+                          "required": True, "command": "/configured/venv/bin/python -m pytest -q"}]}
+            with patch("orchestrator.delivery_planning_context", return_value="APPROVED CONTRACT DEFINITIONS") as context:
+                prompts = [
+                    factory.make_prompt(ticket, ""),
+                    factory.make_qa_prompt(ticket, ""),
+                    factory.make_role_prompt(ticket, "verification"),
+                    factory.make_code_review_prompt(ticket, "a" * 40, "b" * 40, [], ""),
+                ]
+            self.assertEqual(context.call_count, 4)
+            for prompt in prompts:
+                self.assertIn("APPROVED CONTRACT DEFINITIONS", prompt.read_text())
+            self.assertIn("Protect lasting behavior, not temporary intermediate states", prompts[1].read_text())
+            self.assertIn("/configured/venv/bin/python -m pytest -q", prompts[3].read_text())
+            self.assertIn('"qa_approved": true', prompts[3].read_text())
+            self.assertIn('"qa_commit": "' + "c" * 40, prompts[3].read_text())
+            report = repo / ".factory/reviews/browser.md"
+            report.parent.mkdir(parents=True, exist_ok=True)
+            report.write_text("OPERATOR BROWSER EVIDENCE")
+            ticket["last_retry_reason"] = "Read .factory/reviews/browser.md"
+            with patch("orchestrator.delivery_planning_context", return_value="APPROVED CONTRACT DEFINITIONS"):
+                self.assertIn("OPERATOR BROWSER EVIDENCE", factory.make_prompt(ticket, "").read_text())
+                self.assertIn("OPERATOR BROWSER EVIDENCE", factory.make_code_review_prompt(ticket, "a" * 40, "b" * 40, [], "").read_text())
+            ticket.update(qa_attempt=2, qa_tests={"tests/test_ticket_1.py": "hash"},
+                          qa_evidence={"red": {"result": "RED NOT PROVED", "output": "fixture diagnostic"}})
+            with patch("orchestrator.delivery_planning_context", return_value="APPROVED CONTRACT DEFINITIONS"):
+                retry = factory.make_qa_prompt(ticket, "Invalid RED").read_text()
+            self.assertIn("You may revise these listed drafts", retry)
+            self.assertIn("fixture diagnostic", retry)
+
     def test_accepts_new_ticket_numbered_python_and_javascript_tests(self):
         changes = [
             ("A", "demo-app/tests/test_ticket_42_search.py"),
             ("A", "demo-app/static/tests/ticket-42-tv-nav.test.js"),
         ]
         self.assertEqual(validate_qa_changes(changes, 42, TEST_ROOTS), [])
+
+    def test_restart_accepts_recorded_qa_configuration_failure_without_a_command(self):
+        with tempfile.TemporaryDirectory() as directory:
+            repo = Path(directory)
+            install_approved_charter(repo)
+            args = SimpleNamespace(
+                repo=directory, qa_agent="codex", no_qa=False, mock=True,
+                project_number=None, review_qa_tests=True, scenario="tv",
+                agent="codex", profile="standard",
+            )
+            factory = Factory(args)
+            state = {"mode": "mock", "scenario": "tv", "governance": factory.governance,
+                     "tickets": [{"number": 2, "qa_commit": "a" * 40,
+                         "qa_evidence": {"red": {"result": "RED NOT PROVED",
+                             "classification": "misconfigured"}}}]}
+            (repo / ".factory").mkdir(exist_ok=True)
+            (repo / ".factory/state.json").write_text(json.dumps(state))
+            Factory(args)  # A failed command build is not evidence from a legacy run.
+            state["tickets"][0]["qa_evidence"]["red"]["result"] = "RED PROVED"
+            (repo / ".factory/state.json").write_text(json.dumps(state))
+            with self.assertRaisesRegex(ValueError, "predates causal"):
+                Factory(args)
 
     def test_requires_at_least_one_acceptance_test(self):
         self.assertEqual(

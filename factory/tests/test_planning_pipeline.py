@@ -1,4 +1,5 @@
 import json
+import io
 import shutil
 import subprocess
 import sys
@@ -27,6 +28,8 @@ from planning_pipeline import (
     validate_product,
     validate_vertical_slices,
     validate_project_paths,
+    _run_codex_agent,
+    delivery_planning_context,
 )
 from factory_charter import FactoryCharter
 from project_contract import ProjectContract
@@ -72,6 +75,46 @@ class PlanningPipelineTests(unittest.TestCase):
         self.assertEqual(manifest["stages"]["product_review"]["status"], "complete")
         self.assertEqual(manifest["stages"]["system_architecture"]["status"], "pending")
         self.assertIsNone(manifest["approvals"]["product"])
+
+    def test_delivery_receives_approved_contract_definitions_not_only_ids(self):
+        run = self.finish()
+        prepare_publication(self.repo, run.name, assume_yes=True)
+        # GitHub publication legitimately adds metadata after alignment approval.
+        slices_path = run / "04-vertical-slices.json"
+        slices = json.loads(slices_path.read_text())
+        slices["publication"] = {"issues": {"T1": 1}}
+        slices_path.write_text(json.dumps(slices))
+        context = delivery_planning_context(self.repo, run.name)
+        for filename in ("01-product-review", "02-system-architecture", "03-program-design"):
+            artifact = json.loads((run / f"{filename}.json").read_text())
+            self.assertIn(json.dumps(artifact, ensure_ascii=False), context)
+        self.assertNotIn('"tickets":', context)
+        self.assertIn("does not expand this Ticket", context)
+
+    def test_delivery_rejects_missing_unapproved_or_changed_planning_context(self):
+        self.assertEqual(delivery_planning_context(self.repo, ""), "")
+        for plan_id in ("missing", "../outside"):
+            with self.assertRaises(ValueError):
+                delivery_planning_context(self.repo, plan_id)
+        run = self.finish()
+        with self.assertRaisesRegex(ValueError, "alignment"):
+            delivery_planning_context(self.repo, run.name)
+        prepare_publication(self.repo, run.name, assume_yes=True)
+        with (run / "02-system-architecture.json").open("a") as stream:
+            stream.write("\n")
+        with self.assertRaisesRegex(ValueError, "changed"):
+            delivery_planning_context(self.repo, run.name)
+
+    def test_active_expert_is_saved_as_running_before_invocation(self):
+        from planning_pipeline import _run_stage_agent_impl
+
+        def inspect(*args):
+            manifest = load_manifest(args[1])
+            self.assertEqual(manifest["stages"][args[2]]["status"], "running")
+            return _run_stage_agent_impl(*args)
+
+        with patch("planning_pipeline._run_stage_agent_impl", side_effect=inspect):
+            self.start()
 
     def test_incomplete_prd_can_return_questions_without_inventing_a_journey(self):
         product = json.loads((FIXTURES / "01-product-review.json").read_text())
@@ -190,7 +233,7 @@ class PlanningPipelineTests(unittest.TestCase):
                 "AWS_DEFAULT_REGION": "us-east-1",
                 "AWS_SECRET_ACCESS_KEY": "must-not-leak",
             }, clear=True),
-            patch("planning_pipeline.subprocess.run", return_value=failed) as invoked,
+            patch("planning_pipeline._run_codex_agent", return_value=failed) as invoked,
         ):
             with self.assertRaisesRegex(RuntimeError, "AWS SDK config did not resolve a region"):
                 plan_prd(
@@ -206,6 +249,43 @@ class PlanningPipelineTests(unittest.TestCase):
         error = manifest["stages"]["product_review"]["error"]
         self.assertIn("AWS SDK config did not resolve a region", error)
         self.assertNotIn("You are the Product Review expert", error)
+
+    def test_codex_progress_is_written_before_process_finishes(self):
+        log = self.repo / "codex.log"
+        release = self.repo / "release"
+        command = [sys.executable, "-u", "-c", (
+            "import json,sys,time,pathlib; sys.stdin.read(); "
+            "print(json.dumps({'type':'thread.started'}),flush=True); "
+            f"p=pathlib.Path({str(release)!r}); "
+            "\nwhile not p.exists(): time.sleep(.01)\n"
+        )]
+        worker = threading.Thread(target=_run_codex_agent, args=(command, self.repo, "prd", log, "product_review"), kwargs={"env": None})
+        worker.start()
+        try:
+            deadline = time.monotonic() + 5
+            while time.monotonic() < deadline:
+                if log.exists() and "thread.started" in log.read_text():
+                    break
+                time.sleep(.01)
+            self.assertIn("thread.started", log.read_text())
+            self.assertTrue(worker.is_alive())
+        finally:
+            release.touch()
+            worker.join(timeout=5)
+
+    def test_codex_timestamped_errors_are_visible_without_echoing_reasoning(self):
+        log = self.repo / "codex-errors.log"
+        error = "2026-09-05T18:03:51Z ERROR models: request timed out"
+        reasoning = json.dumps({"type": "item.completed", "item": {"type": "reasoning", "text": "private deliberation"}})
+        command = [sys.executable, "-u", "-c", (
+            f"import sys; sys.stdin.read(); print({error!r}); print({reasoning!r})"
+        )]
+        with patch("sys.stdout", new_callable=io.StringIO) as console:
+            result = _run_codex_agent(command, self.repo, "prd", log, "product_review", env=None)
+        self.assertEqual(result.returncode, 0)
+        self.assertIn(error, console.getvalue())
+        self.assertNotIn("private deliberation", console.getvalue())
+        self.assertIn(error, log.read_text())
 
     def test_retry_preserves_rejected_slices_and_sends_validator_feedback_to_expert(self):
         product = json.loads((FIXTURES / "01-product-review.json").read_text())

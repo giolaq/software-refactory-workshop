@@ -70,11 +70,55 @@ try {
     check("document.querySelectorAll('.setup-flow > li').length === 3");
     shot("connect");
   });
-  if (capture) await fixture("product", () => {
+  await fixture("product", () => {
+    // A new browser restores the server's run mode, not a stale local default.
+    browser("eval", 'const saved = app.snapshot; app.snapshot = null; setMode("rehearsal"); renderSnapshot({...saved, factory: {...saved.factory, mode:"github", execution_mode:"live"}})');
+    check('mode() === "live" && basePayload().mode === "live"');
+    check('document.querySelector("#sidebar-mode").textContent === mode()');
+    browser("eval", 'setMode("rehearsal")');
+    check('document.querySelector("#sidebar-mode").textContent === mode()');
+    browser("reload");
+    browser("wait", "#system-updated:not(:empty)");
     navigate("prd"); shot("prd");
     navigate("planning"); shot("planning");
+    browser("click", '[data-planning-stage="product_review"]');
+    browser("wait", "--fn", "document.querySelector('#artifact-content').textContent.includes('Product review')");
+    navigate("connect");
+    browser("set", "viewport", "1440", "600");
+    browser("scroll", "down", "1000");
+    check("window.scrollY > 0");
+    navigate("planning");
+    check("window.scrollY === 0");
+  });
+  await fixture("running", () => {
+    navigate("planning");
+    check("document.querySelector('#artifact-content').textContent.includes('The expert is working')");
+    check("document.querySelector('#open-artifact').hidden");
+    check("!performance.getEntriesByType('resource').some(entry => entry.name.endsWith('/api/artifact?path='))");
+    navigate("evidence");
+    check("document.querySelector('#start-app').disabled");
+    check("document.querySelector('#run-app-status').textContent.includes('separate terminal')");
   });
   await fixture("qa", () => {
+    // A slow companion action gives feedback and cannot be submitted twice.
+    assert.equal(browser("eval", `(async () => {
+      const originalRequest = request, originalConfirm = window.confirm;
+      let complete, calls = 0;
+      request = () => { calls++; return new Promise(resolve => { complete = resolve; }); };
+      window.confirm = () => true;
+      try {
+        const first = action('retry', {issue: 1, reason: 'Browser fixture only'});
+        await action('retry', {issue: 1, reason: 'Duplicate fixture only'});
+        const pending = calls === 1 && app.pendingActions.has('retry:1')
+          && document.querySelector('#toast-region').textContent.includes('Submitting retry for ticket #1');
+        complete({companion: {title: 'Fixture retry'}});
+        await first;
+        request = async () => { throw new Error('Fixture request failed'); };
+        const failed = await action('retry', {issue: 1});
+        return pending && failed === null && !app.pendingActions.has('retry:1')
+          && !document.querySelector('#toast-region').textContent.includes('Submitting retry');
+      } finally { request = originalRequest; window.confirm = originalConfirm; }
+    })()`), "true");
     shot("overview");
     navigate("tickets");
     check("document.querySelector('#issue-listener-state').hidden");
@@ -87,6 +131,9 @@ try {
     shot("ticket-tests");
     browser("eval", "document.querySelector('[data-ticket-action=approve-tests]').scrollIntoView({block:'center'})");
     shot("qa-decision");
+    // A polling update must refresh the header as well as the decision content.
+    browser("eval", "app.selectedTicket = {...app.selectedTicket, status: 'Ready'}; renderDrawer({preservePosition:true})");
+    check("document.querySelector('#drawer-issue').textContent === '#1 · Ready'");
     browser("press", "Escape");
     check("document.querySelector('#ticket-drawer').hidden");
     check("document.activeElement.matches('[data-ticket]')");
@@ -99,6 +146,8 @@ try {
   });
   // This fixture completes all five tickets through human QA and merge commands.
   await fixture("done", () => {
+    navigate("tickets");
+    check("[...document.querySelectorAll('.ticket-meta b')].every(element => element.textContent === 'Completed')");
     navigate("evidence");
     check("document.querySelector('#preview-revision').textContent.includes('5 of 5 tickets Done')");
     browser("click", "#export-evidence");

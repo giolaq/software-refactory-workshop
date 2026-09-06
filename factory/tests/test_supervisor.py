@@ -26,6 +26,21 @@ from project_contract import ProjectContract
 
 
 class SupervisorTests(unittest.TestCase):
+    def test_provider_failure_surfaces_terminal_diagnostic_without_prompt_output(self):
+        with tempfile.TemporaryDirectory() as directory:
+            repo = self.make_repo(directory)
+            supervisor = self.supervisor(repo, {})
+            diagnostic = "ERROR: You've hit your usage limit. Try again later."
+            supervisor.invoke = lambda prompt: (1, f"private prompt context\n{diagnostic}\n{diagnostic}")
+            with self.assertRaises(SupervisorError) as raised:
+                supervisor.coordinate([self.ticket(1)], 1)
+            message = str(raised.exception)
+            self.assertEqual(message.count(diagnostic), 1)
+            self.assertNotIn("private prompt context", message)
+            state = json.loads((repo / ".factory/supervisor/state.json").read_text())
+            self.assertIn("usage limit", state["error"])
+            self.assertEqual(state["status"], "failed")
+
     def make_repo(self, directory: str) -> Path:
         repo = Path(directory)
         factory = repo / "factory"
@@ -133,6 +148,8 @@ class SupervisorTests(unittest.TestCase):
             self.assertEqual(decision["worker_reports"][0]["claimed_result"], "Implementation committed")
             prompt = (repo / decision["prompt"]).read_text()
             self.assertIn("## Approved Factory Charter", prompt)
+            self.assertIn("Historical dispatch receipts do not prove a worker is still running", prompt)
+            self.assertIn("max_parallel is the available capacity for this next wave", prompt)
             self.assertIn(
                 "does not require approval before a worker edits that path",
                 prompt,
@@ -292,6 +309,10 @@ class SupervisorTests(unittest.TestCase):
             ticket = self.ticket(7, status="In Review")
             ticket.update({
                 "pr_url": "https://github.test/example/pull/7",
+                "body": "Build rail markup; visual integration belongs to the release ticket.",
+                "dependencies": [2],
+                "diff_budget": {"candidate_head": "deadbeef", "implementation_lines": 195},
+                "last_retry_reason": "Read .factory/reviews/browser.md for deadbeef.",
                 "gate_results": [{"name": "tests", "required": True, "exit_code": 0}],
                 "code_review": {
                     "head": "deadbeef",
@@ -312,6 +333,9 @@ class SupervisorTests(unittest.TestCase):
                 "candidate_head": "deadbeef",
             }
 
+            report = repo / ".factory/reviews/browser.md"
+            report.parent.mkdir(parents=True, exist_ok=True)
+            report.write_text("Browser evidence for deadbeef is embedded here.")
             decision = self.supervisor(repo, response).authorize_merge(ticket)
 
             self.assertEqual(decision["action"], "MERGE")
@@ -319,6 +343,14 @@ class SupervisorTests(unittest.TestCase):
             prompt = (repo / decision["prompt"]).read_text()
             self.assertIn("expected GitHub self-review fallback", prompt)
             self.assertIn("do not infer that requirement", prompt)
+            self.assertIn("MERGE is a readiness recommendation, not permission to execute", prompt)
+            self.assertIn("Do not BLOCK solely because human approval is still pending", prompt)
+            self.assertIn(ticket["body"], prompt)
+            self.assertIn(ticket["last_retry_reason"], prompt)
+            self.assertIn("Browser evidence for deadbeef is embedded here.", prompt)
+            self.assertIn('"implementation_lines": 195', prompt)
+            self.assertEqual(self.supervisor(repo, response)._merge_input(ticket)["dependencies"], [2])
+            self.assertIn("Do not invent dependencies", prompt)
             state = json.loads((repo / ".factory/supervisor/state.json").read_text())
             self.assertEqual(state["latest"]["id"], "supervisor-merge-1")
 

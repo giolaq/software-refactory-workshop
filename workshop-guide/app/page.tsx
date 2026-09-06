@@ -304,6 +304,7 @@ claude auth status --text`}</CodeBlock>
             <p>Install Codex CLI, then use your authenticated CLI session. You do not need to enter an API key in the Factory.</p>
             <CodeBlock label="Sign in to Codex">{`codex login
 codex login status`}</CodeBlock>
+            <p>If this asks for <code>OPENAI_API_KEY</code>, an older Codex installation may be first on your PATH. Check <code>codex exec --help</code>. Update Codex using its official installation instructions, then sign in again. If you have a current CLI elsewhere, set <code>FACTORY_CODEX_BIN</code> to its full executable path, check its <code>login status</code>, and start the Control Center from that same terminal.</p>
             <p><a href="https://developers.openai.com/codex/cli/">Codex CLI installation</a></p>
           </details>
           <details>

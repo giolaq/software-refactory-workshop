@@ -40,6 +40,16 @@ def prepare(root: Path, repo: Path, stage: str) -> None:
     plan = json.loads((repo / ".factory/plans/latest.json").read_text())["plan_id"]
     center = ControlCenter(repo)
     center.save_prd((repo / "recipe-app-prd.md").read_text())
+    if stage == "running":
+        from planning_pipeline import load_manifest, save_manifest
+        run_dir = repo / ".factory/plans" / plan
+        manifest = load_manifest(run_dir)
+        manifest["status"] = "planning_product_review"
+        manifest["stages"]["product_review"].update(status="running", markdown="", json="", sha256="")
+        (run_dir / "01-product-review.json").unlink()
+        (run_dir / "01-product-review.md").unlink()
+        save_manifest(repo, run_dir, manifest)
+        return
     if stage == "product":
         return
     command(*cli, "approve-product", plan, "--yes")
@@ -68,7 +78,7 @@ def prepare(root: Path, repo: Path, stage: str) -> None:
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--stage", choices=("fresh", "product", "qa", "review", "done"), default="qa")
+    parser.add_argument("--stage", choices=("fresh", "running", "product", "qa", "review", "done"), default="qa")
     parser.add_argument("--port", type=int, default=5055)
     args = parser.parse_args()
     # CLI buttons in this fixture must use the same test interpreter.
@@ -78,6 +88,12 @@ if __name__ == "__main__":
         repo.mkdir()
         prepare(Path(__file__).parents[2], repo, args.stage)
         center = ControlCenter(repo)
+        if args.stage == "running":
+            # Freeze an in-flight operation for read-only browser checks; no agent runs.
+            center.operation = {
+                "status": "running", "action": "plan", "title": "Planning fixture",
+                "command": "factory plan recipe-app-prd.md --mock",
+            }
         with ControlCenterServer(("127.0.0.1", args.port), center) as server:
             print(f"FIXTURE_URL=http://127.0.0.1:{server.server_port}", flush=True)
             try:

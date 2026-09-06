@@ -12,6 +12,7 @@ const app = {
   prdLoaded: false,
   eventSource: null,
   operationPoll: null,
+  pendingActions: new Set(),
   boardMode: localStorage.getItem("factory-board-mode") || "focus",
 };
 let prdSaveTimer = null;
@@ -31,16 +32,18 @@ async function request(path, options = {}) {
   return value;
 }
 
-function toast(message, error = false) {
+function toast(message, error = false, duration = 4200) {
   const element = document.createElement("div");
   element.className = `toast${error ? " error" : ""}`;
   element.textContent = message;
   $("#toast-region").append(element);
-  window.setTimeout(() => element.remove(), 4200);
+  if (duration) window.setTimeout(() => element.remove(), duration);
+  return element;
 }
 
 function showView(name, updateHash = true) {
   if (!$(`[data-view="${name}"]`)) name = "overview";
+  const changed = app.view !== name;
   app.view = name;
   $$(".view").forEach((view) => {
     const active = view.dataset.view === name;
@@ -50,6 +53,7 @@ function showView(name, updateHash = true) {
   $$('[data-view-link]').forEach((link) => link.classList.toggle("active", link.dataset.viewLink === name));
   if (["supervisor", "monitor", "interfaces"].includes(name)) $(".nav-more").open = true;
   if (updateHash) history.replaceState(null, "", `#${name}`);
+  if (changed) window.scrollTo({ top: 0, behavior: "instant" });
   closeSidebar();
   if (name === "prd") loadPrd();
   document.title = `${name[0].toUpperCase()}${name.slice(1)} · Factory Control Center`;
@@ -273,6 +277,12 @@ function renderInterfaces(workspace, triggers, improvements) {
 }
 
 function renderSnapshot(data) {
+  if (!app.snapshot) {
+    const recordedMode = data.factory?.execution_mode
+      || ({github: "live", mock: "rehearsal"}[data.factory?.mode])
+      || data.planning?.mode;
+    if (["live", "rehearsal"].includes(recordedMode)) setMode(recordedMode);
+  }
   app.snapshot = data;
   const repo = data.repo || {};
   renderRunEvidence(data);
@@ -290,7 +300,7 @@ function renderSnapshot(data) {
 
   const config = data.config || {};
   $("#sidebar-profile").textContent = config.profile || data.factory?.profile || "standard";
-  $("#sidebar-mode").textContent = data.planning?.plan_id ? (data.planning.mode || "live") : mode();
+  $("#sidebar-mode").textContent = mode();
   $("#connect-project").textContent = config.project_number ? `#${config.project_number}` : "Automatic";
   const configSaved = Object.keys(config).length > 0;
   const connectionReady = configSaved && (mode() !== "live" || repo.github_connected);
@@ -624,6 +634,15 @@ async function loadPlanningArtifact(item) {
   $("#artifact-content").textContent = "Loading…";
   app.artifactPath = artifactPath;
   $("#open-artifact").hidden = !app.artifactPath;
+  if (!artifactPath) {
+    const working = item.status === "running";
+    $("#artifact-content").textContent = working
+      ? "The expert is working. Open Current run to inspect activity. Its artifact will appear here after validation."
+      : "This expert has not produced an artifact yet. Follow the next action in Current run.";
+    $("#approval-panel").innerHTML = `<span class="section-label">Expert contract</span><h2>${esc(item.title)}</h2><p>No artifact is available to review yet.</p>`;
+    if (item.error || item.questions?.length) renderExpertPanel(item);
+    return;
+  }
   try {
     const value = await request(`/api/artifact?path=${encodeURIComponent(app.artifactPath)}`);
     if (app.selectedPlanning !== selectedId) return;
@@ -756,13 +775,14 @@ function renderTickets(factory, planning = {}, operation = {}) {
     const items = tickets.filter((ticket) => ticket.status === state);
     const cards = items.map((ticket) => {
       const intake = ticket.intake?.proposal;
-      const steward = ticket.merge_steward?.state;
+      const steward = ticket.status === "Done" ? null : ticket.merge_steward?.state;
+      const phase = ticket.status === "Done" ? "Completed" : (ticket.phase || ticket.status).replaceAll("_", " ");
       const interfaceState = intake && !ticket.intake?.human_approved
         ? `<span class="ticket-interface-state intake">Intake · ${esc(intake.classification)}</span>`
         : steward && steward !== "not-applicable"
           ? `<span class="ticket-interface-state steward">Steward · ${esc(steward.replaceAll("-", " "))}</span>`
           : "";
-      const content = `<div class="ticket-top"><span class="ticket-number">#${ticket.number}</span><span>${esc(ticket.agent || "unassigned")}</span></div><h3>${esc(ticket.title)}</h3>${interfaceState}<div class="ticket-meta"><div><b>${esc((ticket.phase || ticket.status).replaceAll("_", " "))}</b><span>${ticket.preview ? "Awaiting local load" : `Attempt ${ticket.attempt || 0}`}</span></div><div><span>Needs</span><span class="dependency-list">${ticket.dependencies?.length ? ticket.dependencies.map((number) => `<i>#${number}</i>`).join("") : "None"}</span></div></div>`;
+      const content = `<div class="ticket-top"><span class="ticket-number">#${ticket.number}</span><span>${esc(ticket.agent || "unassigned")}</span></div><h3>${esc(ticket.title)}</h3>${interfaceState}<div class="ticket-meta"><div><b>${esc(phase)}</b><span>${ticket.preview ? "Awaiting local load" : `Attempt ${ticket.attempt || 0}`}</span></div><div><span>Needs</span><span class="dependency-list">${ticket.dependencies?.length ? ticket.dependencies.map((number) => `<i>#${number}</i>`).join("") : "None"}</span></div></div>`;
       return ticket.preview
         ? `<a class="ticket-card" href="${esc(ticket.url)}" target="_blank" rel="noreferrer">${content}</a>`
         : `<button class="ticket-card" type="button" data-ticket="${ticket.number}">${content}</button>`;
@@ -848,7 +868,7 @@ function renderApplication(application, operation = {}) {
         ? "The application is stopping."
         : "The application is running. Open it using the browser link."
       : operationActive
-        ? "Wait for the current Control Center operation to finish."
+        ? "The Control Center is busy. To preview merged work without interrupting agents, copy the command into a separate terminal. Or stop the operation at a review checkpoint, then choose Start app."
         : appFailed
           ? `${operation.failure?.cause || operation.error || "Application startup failed."} ${operation.failure?.recovery || "Correct the reported error, then choose Start app again."}`
         : fallbackPort
@@ -930,6 +950,9 @@ function basePayload(extra = {}) {
 }
 
 async function action(name, extra = {}) {
+  const key = `${name}:${extra.issue ?? ""}`;
+  if (app.pendingActions.has(key)) return null;
+  let pendingMessage;
   try {
     if (name === "init-project" && !window.confirm("Create factory.project.toml and a conservative factory.charter.toml draft from the detected repository structure?")) return;
     if (name === "approve-contract" && !window.confirm("Approve the exact repository contract shown in Connect? The factory will publish the setup in Live mode, provision and prepare the environment, check its gates, and run preflight. It stops at the first error and shows every command in Activity.")) return;
@@ -941,6 +964,8 @@ async function action(name, extra = {}) {
     if (name === "steward-sync" && !window.confirm("Synchronize the default branch into this candidate? Any head change revokes gates and Code Review and requires re-verification.")) return;
     const destructive = ["publish-plan", "approve-product", "approve-stage", "approve-tests", "request-test-changes", "retry", "save-ticket-and-retry", "release-claim", "approve-intake"].includes(name);
     if (destructive && !window.confirm("Record this decision and continue?")) return;
+    app.pendingActions.add(key);
+    pendingMessage = toast(`Submitting ${name.replaceAll("-", " ")}${extra.issue ? ` for ticket #${extra.issue}` : ""}… GitHub synchronization can take a moment.`, false, 0);
     const operation = await request(`/api/actions/${name}`, { method: "POST", body: JSON.stringify(basePayload(extra)) });
     if (operation.companion) {
       toast(`${operation.companion.title} completed.`);
@@ -954,6 +979,9 @@ async function action(name, extra = {}) {
   } catch (error) {
     toast(error.message, true);
     return null;
+  } finally {
+    pendingMessage?.remove();
+    app.pendingActions.delete(key);
   }
 }
 
@@ -1180,6 +1208,8 @@ async function loadTestProposal(ticket, content) {
 async function renderDrawer({ preservePosition = false } = {}) {
   const ticket = app.selectedTicket;
   if (!ticket) return;
+  $("#drawer-issue").textContent = `#${ticket.number} · ${ticket.status}`;
+  $("#ticket-drawer-title").textContent = ticket.title;
   const requestedTab = app.drawerTab;
   $$('.drawer-tabs button').forEach((button) => button.classList.toggle("active", button.dataset.drawerTab === app.drawerTab));
   const content = $("#drawer-content");

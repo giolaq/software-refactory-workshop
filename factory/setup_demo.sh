@@ -136,4 +136,4 @@ if [ "$start_over" = true ]; then
   echo "Planning, tickets, saved PRD, and evidence were cleared. Agent configuration was kept."
 fi
 echo "Next: ./factory/factory control-center"
-echo "Then open http://127.0.0.1:5050 and choose Rehearsal."
+echo "Then open http://127.0.0.1:5050 and choose Live for GitHub, or Rehearsal for a local simulation."

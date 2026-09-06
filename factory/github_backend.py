@@ -10,7 +10,7 @@ import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
 
-from github_repository import parse_github_repository, repository_from_remote
+from github_repository import github_auth_failure, parse_github_repository, repository_from_remote
 from issue_listener import INTAKE_LABEL, is_intake_issue
 from session_config import load_session_config
 from run_summary import parse_factory_run_summary
@@ -54,8 +54,9 @@ class GitHubBackend:
     def preflight(self):
         if not shutil.which("gh"):
             raise GitHubError("GitHub CLI not found. Install `gh`, then run `gh auth login`.")
-        if self.gh("auth", "status", check=False).returncode:
-            raise GitHubError("GitHub CLI is not authenticated. Run `gh auth login`.")
+        auth = self.gh("auth", "status", check=False)
+        if auth.returncode:
+            raise GitHubError(github_auth_failure(auth))
         target = [self.repository.slug] if self.repository else []
         result = self.gh(
             "repo", "view", *target, "--json", "nameWithOwner,defaultBranchRef", check=False,

@@ -891,6 +891,15 @@ class ControlCenter:
     ) -> dict:
         plain = re.sub(r"\x1b\[[0-9;?]*[ -/]*[@-~]", "", output or "")
         lowered = plain.lower()
+        if any(marker in lowered for marker in ("usage limit", "quota exceeded", "rate limit", "too many requests")):
+            return {
+                "cause": "The selected agent provider refused the invocation because its usage or rate limit was reached.",
+                "recovery": (
+                    "Read the provider's retry time in Activity and CLI output. Wait for capacity or "
+                    "resolve your provider allowance, then choose Tickets → Run factory. "
+                    "Do not reset the repository or recreate tickets. Existing approvals and merged work remain."
+                ),
+            }
         if action == "start-app":
             missing_node_tool = (
                 "command not found" in lowered
@@ -955,6 +964,17 @@ class ControlCenter:
             }
         layer = "Control plane"
         recovery_prefix = "Repair the Control Center or GitHub connection."
+        if "api.github.com" in lowered and any(marker in lowered for marker in (
+            "connection reset", "i/o timeout", "tls handshake timeout", "temporary failure in name resolution",
+        )):
+            return {
+                "cause": "The GitHub connection was interrupted before the operation completed.",
+                "recovery": (
+                    "Check your network connection, then repeat the action (Tickets → Run factory for delivery). "
+                    "Do not reset the repository or recreate tickets. The factory recovers interrupted work. "
+                    "If it repeats, share the connection error with your facilitator."
+                ),
+            }
         if "traceback (most recent call last):" in lowered and any(
             marker in diagnostic.lower() for marker in ("nameerror:", "attributeerror:", "typeerror:")
         ):
@@ -971,6 +991,11 @@ class ControlCenter:
         ):
             layer = "Development environment"
             recovery_prefix = "Correct the Project Contract, tool, dependency, service, or port check."
+        elif "github" in lowered and any(marker in lowered for marker in (
+            "auth login", "auth status", "not authenticated", "authentication check",
+        )):
+            layer = "GitHub connection"
+            recovery_prefix = "Run `gh auth status` in the terminal and resolve its GitHub diagnostic."
         elif any(marker in lowered for marker in (
             "adapter not found", "not signed in", "auth login", "cli not found",
             "authentication failed", "codex login", "agent login",
@@ -1364,6 +1389,19 @@ class ControlCenter:
                 headline = f"{operation.get('title') or 'The last operation'} failed"
                 detail = operation.get("error") or "Read the final output lines to find the cause."
                 next_label, next_detail, next_view = "Read the failure output", "Fix the first reported error, then repeat the action.", "overview"
+
+        elif operation.get("status") == "stopped":
+            phase_index = operation_phase
+            state = "attention"
+            headline = "The factory operation stopped"
+            detail = "The saved ticket phase is its last recorded state, not evidence that an agent is still running."
+            next_label = "Resume interrupted work"
+            next_view = phase_specs[phase_index][3]
+            next_detail = (
+                "Open Tickets and choose Run factory. It recovers interrupted tickets without resetting the plan."
+                if phase_index == 4 else
+                "Return to this step and repeat the stopped action. Keep the existing repository and reviewed artifacts."
+            )
 
         phases = []
         for index, (phase_id, label, description, view) in enumerate(phase_specs):

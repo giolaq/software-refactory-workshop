@@ -4,9 +4,62 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from datetime import datetime, timezone
 from pathlib import Path
 from uuid import uuid4
+from sensitive_data import redact_credentials
+
+
+def operator_review_evidence(repo: Path, ticket: dict) -> list[dict]:
+    """Carry explicitly referenced review reports across isolated worktrees."""
+    references = re.findall(
+        r"(?<![\w/])(\.factory/(?:reviews|evidence)/[\w./-]+\.(?:md|json|txt))\b",
+        str(ticket.get("last_retry_reason") or ""),
+    )
+    roots = [(repo / ".factory" / name).resolve() for name in ("reviews", "evidence")]
+    reports = []
+    for reference in dict.fromkeys(references):
+        path = (repo / reference).resolve()
+        report = {"path": reference}
+        try:
+            if not path.is_relative_to(repo.resolve()) or not any(path.is_relative_to(root) for root in roots):
+                raise ValueError("Report is outside the allowed review evidence roots")
+            if path.stat().st_size > 20000:
+                raise ValueError("Report exceeds the 20,000-byte handoff limit")
+            content = redact_credentials(path.read_text())
+            report.update(content=content, sha256=hashlib.sha256(content.encode()).hexdigest())
+        except (OSError, UnicodeError, ValueError) as exc:
+            report["error"] = str(exc)
+        reports.append(report)
+    return reports
+
+
+def capture_implementation_evidence(repo: Path, worktree: Path, number: int, revision: str) -> dict:
+    """Snapshot one explicitly designated worker report, never arbitrary log output."""
+    source = worktree / ".factory/review-handoff.md"
+    if not source.exists():
+        return {}
+    report = {"author_role": "implementation", "candidate_head": revision}
+    try:
+        if not source.resolve().is_relative_to(worktree.resolve()):
+            raise ValueError("Implementation report escapes its worktree")
+        if source.stat().st_size > 20000:
+            raise ValueError("Implementation report exceeds 20,000 bytes")
+        content = redact_credentials(source.read_text())
+        if not revision or revision not in content:
+            raise ValueError("Implementation report must name the full current candidate revision")
+        digest = hashlib.sha256(content.encode()).hexdigest()
+        target = repo / ".factory/reviews" / f"implementation-{number}-{digest}.md"
+        if not target.resolve().is_relative_to(repo.resolve()) or target.is_symlink():
+            raise ValueError("Implementation snapshot escapes the repository or is a symlink")
+        target.parent.mkdir(parents=True, exist_ok=True)
+        if not target.exists():
+            target.write_text(content)
+        report.update(content=content, sha256=digest, artifact=str(target.relative_to(repo)))
+    except (OSError, UnicodeError, ValueError) as exc:
+        report["error"] = str(exc)
+    return report
 
 
 WORKSHOP_VERSION = "workshop-v1.2.1"
@@ -276,5 +329,25 @@ def write_handoff_receipt(repo: Path, receipt: dict) -> Path:
         f"{receipt['phase'].lower()}-{receipt['role']}{ticket}"
         f"-attempt-{receipt['attempt']}-{uuid4().hex[:8]}.json"
     )
+    # Manual retries can reuse attempt numbers. Keep the evidence referenced by
+    # each receipt stable even when the next invocation replaces its live files.
+    runtime_roots = [(repo / ".factory" / name).resolve() for name in (
+        "logs", "prompts", "reviews", "results", "events", "assignments",
+    )]
+    artifacts = []
+    for reference in receipt["artifacts"]:
+        source = (repo / reference).resolve()
+        if (source.is_file() and source.is_relative_to(repo.resolve())
+                and any(source.is_relative_to(root) for root in runtime_roots)):
+            content = source.read_bytes()
+            digest = hashlib.sha256(content).hexdigest()
+            snapshot = directory / "artifacts" / f"{digest}-{source.name}"
+            snapshot.parent.mkdir(parents=True, exist_ok=True)
+            if not snapshot.exists():
+                snapshot.write_bytes(content)
+            artifacts.append(str(snapshot.relative_to(repo)))
+        else:
+            artifacts.append(reference)
+    receipt = {**receipt, "artifacts": artifacts}
     path.write_text(json.dumps(receipt, indent=2) + "\n")
     return path

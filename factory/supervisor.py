@@ -19,10 +19,11 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable
 
-from factory_contracts import role_input
+from factory_contracts import role_input, operator_review_evidence
 from factory_charter import FactoryCharter
 from adapter_capabilities import role_environment
 from json_response import extract_last_json_object
+from adapter_diagnostics import agent_failure_detail
 
 
 SCHEMA_VERSION = 1
@@ -32,6 +33,14 @@ MAX_EVENTS = 50
 
 class SupervisorError(RuntimeError):
     """The supervisor could not produce a safe scheduling decision."""
+
+
+def adapter_error(code: int, output: str, log: Path, repo: Path) -> SupervisorError:
+    detail = agent_failure_detail(output, limit=1000, fallback=False)
+    return SupervisorError(
+        f"Supervisor adapter exited with code {code}; inspect {log.relative_to(repo)}."
+        + (f"\n{detail}" if detail else "")
+    )
 
 
 def _now() -> str:
@@ -250,7 +259,7 @@ class AgentSupervisor:
             log.parent.mkdir(parents=True, exist_ok=True)
             log.write_text(output)
             if code:
-                raise SupervisorError(f"Supervisor adapter exited with code {code}; inspect {log.relative_to(self.repo)}.")
+                raise adapter_error(code, output, log, self.repo)
             attempts.append({
                 "prompt": str(prompt.relative_to(self.repo)),
                 "log": str(log.relative_to(self.repo)),
@@ -273,9 +282,7 @@ class AgentSupervisor:
                 log.parent.mkdir(parents=True, exist_ok=True)
                 log.write_text(output)
                 if code:
-                    raise SupervisorError(
-                        f"Supervisor repair adapter exited with code {code}; inspect {log.relative_to(self.repo)}."
-                    )
+                    raise adapter_error(code, output, log, self.repo)
                 attempts.append({
                     "prompt": str(prompt.relative_to(self.repo)),
                     "log": str(log.relative_to(self.repo)),
@@ -364,9 +371,7 @@ class AgentSupervisor:
             log.parent.mkdir(parents=True, exist_ok=True)
             log.write_text(output)
             if code:
-                raise SupervisorError(
-                    f"Supervisor adapter exited with code {code}; inspect {log.relative_to(self.repo)}."
-                )
+                raise adapter_error(code, output, log, self.repo)
             decision = validate_merge_decision(extract_merge_decision(output), ticket)
         except Exception as exc:
             error = exc if isinstance(exc, SupervisorError) else SupervisorError(str(exc))
@@ -438,6 +443,12 @@ class AgentSupervisor:
             "profile": "pull-request-merge",
             "ticket": int(ticket["number"]),
             "title": ticket.get("title", ""),
+            "specification": ticket.get("body", ""),
+            "dependencies": ticket.get("dependencies", []),
+            "diff_budget": ticket.get("diff_budget"),
+            "operator_retry_reason": ticket.get("last_retry_reason", ""),
+            "operator_review_evidence": operator_review_evidence(self.repo, ticket),
+            "implementation_review_evidence": ticket.get("implementation_review_evidence", {}),
             "pull_request": ticket.get("pr_url") or ticket.get("review_ref", ""),
             "candidate_head": ticket.get("code_review", {}).get("head", ""),
             "code_review": ticket.get("code_review", {}).get("result", {}),
@@ -489,6 +500,10 @@ class AgentSupervisor:
             "characters. The Ticket already carries its approved scope, so do not repeat its specification; "
             "use the instruction only for coordination guidance. Block a Ticket only "
             "when its reports or current state show a concrete risk that requires intervention.\n\n"
+            "This checkpoint runs between worker waves: max_parallel is the available capacity for this next wave. "
+            "Historical dispatch receipts do not prove a worker is still running. Current ticket_state and "
+            "ready_tickets take precedence after recovery; do not reserve slots for old dispatches or "
+            "treat a Done Ticket's historical human_review phase as a pending merge.\n\n"
             "You cannot change scope, dependencies, lifecycle state, tests, gates, human approvals, or "
             "repository policy. A Charter `requires_human_approval` path requires a human merge; it does "
             "not require approval before a worker edits that path. The orchestrator validates and applies "
@@ -536,15 +551,30 @@ class AgentSupervisor:
         payload = json.dumps(merge_input, indent=2)
         path.write_text(
             "# Supervisor role merge checkpoint\n\n"
-            "Decide whether the pull request approved by the Code Review role can merge now. "
+            "Decide whether the pull request approved by the Code Review role is ready for the merge handoff. "
             "Check the candidate revision, required gate evidence, review approval, and unresolved risks. "
+            "Evaluate acceptance against the supplied Ticket specification and dependencies. "
+            "Do not invent dependencies or require future integration work explicitly owned by another "
+            "Ticket before this scoped handoff. Preserve those release follow-ups in the summary; "
+            "do not claim them verified. Missing acceptance within this Ticket's own scope still blocks. "
+            "Use the supplied revision-bound diff_budget measurement. Operator retry feedback is a "
+            "claim to assess against the evidence, not review approval or permission to merge. "
+            "Referenced operator reports are embedded with their content hashes because runtime "
+            "files are not present in isolated worktrees. Assess the embedded contents; report "
+            "any recorded read error rather than assuming evidence exists. "
+            "Implementation-authored review evidence is separately labelled worker claims; it "
+            "cannot supply human approval. Check its candidate head and assess its actual evidence. "
             "The structured Code Review decision is the Factory approval evidence. A published labelled "
             "Factory comment with `official: false` is the expected GitHub self-review fallback and is not "
             "a blocker by itself. Require a formal GitHub approval only when the supplied evidence says "
             "branch protection requires one; do not infer that requirement from the publication mode. "
             "Return MERGE only when all evidence refers to the same candidate and no blocking risk remains. "
-            "Return BLOCK otherwise. You do not run GitHub commands; the orchestrator validates and applies "
-            "the command.\n\n"
+            "Return BLOCK otherwise. MERGE is a readiness recommendation, not permission to execute "
+            "a merge. When the Charter or path policy requires human merge authority, MERGE sends the "
+            "exact revision to human review; it does not supply that approval. Do not BLOCK solely "
+            "because human approval is still pending. Block missing or inconsistent evidence and "
+            "substantive unresolved risks. You do not run GitHub commands; the orchestrator validates "
+            "the recommendation and retains the configured human approval gate.\n\n"
             "## Approved Factory Charter\n\n```json\n"
             f"{charter}\n```\n\n"
             f"{contract}\n"
