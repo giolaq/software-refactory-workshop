@@ -66,20 +66,30 @@ available to operators for diagnosis, but they are not separate attendee
 phases. Provider reset preserves source and GitHub evidence and remains
 separate from **Reset run**, which controls planning and Ticket history.
 
+Before creating tickets, open **Plan → Review plan** and select any completed
+expert. Under **Request a change**, describe the required changes and select
+**Request revision**. The expert rewrites that artifact and pauses. Read the
+result, then select **Confirm revision and continue** to regenerate affected
+downstream stages, or request another revision. Product Review uses **Approve
+product** before **Run remaining experts**. Publication still requires
+**Approve and create tickets**. Once publication starts, use a new plan for
+further changes; existing tickets keep their approved scope.
+
 If a planning expert cannot make a product or technical decision safely, its
 card shows each blocking question with an answer field. Answer every question
-and select **Submit decisions**. For System Architecture, Program Design, and
+and select **Submit decisions for review**. For System Architecture, Program Design, and
 Vertical Slices, the Control Center records the answers, preserves the previous
-artifact, reruns only that expert, and resumes downstream planning. Product
+artifact, reruns only that expert, and pauses for your review. Select **Confirm
+revision and continue** after reading the result. Product
 Review returns to its human approval gate after revision. A blind retry remains
 available only for operational failures that did not produce blocking questions.
 
 If an expert returns schema-valid JSON that fails deterministic cross-artifact
 validation, the failed expert card shows the exact validator message and the
 preserved rejected artifact. Enter a concrete correction, then select **Apply
-correction and continue**. The rejected artifact becomes the revision source;
+correction for review**. The rejected artifact becomes the revision source;
 the factory records the human instruction, reuses every approved upstream
-artifact, validates the replacement, and resumes only after it passes. The
+artifact, validates the replacement, and pauses for your review. The
 correction field starts with the exact validator failure, so the attendee can
 apply or refine a concrete repair without reconstructing the error. Each failed
 replacement remains available as evidence.
@@ -105,7 +115,7 @@ Use the three recovery actions deliberately:
   potentially transient process failure.
 - **Switch adapter and continue** recovers from provider capacity or
   availability without discarding approved upstream artifacts.
-- **Apply correction and continue** revises a rejected artifact with a recorded
+- **Apply correction for review** revises a rejected artifact with a recorded
   human instruction when deterministic validation would otherwise repeat.
 - **Restart planning safely** creates a governed run from the saved PRD when
   the PRD, Project Contract, or Factory Charter changed. The old run remains

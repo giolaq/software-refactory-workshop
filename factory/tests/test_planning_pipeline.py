@@ -33,6 +33,7 @@ from planning_pipeline import (
 )
 from factory_charter import FactoryCharter
 from project_contract import ProjectContract
+from planning_presentation import planning_presentation
 
 
 FIXTURES = Path(__file__).parents[1] / "scenarios" / "recipe-rebrand" / "planning"
@@ -884,6 +885,41 @@ class PlanningPipelineTests(unittest.TestCase):
         resumed = load_manifest(run)
         self.assertEqual(resumed["status"], "awaiting_alignment_approval")
         self.assertTrue(all(item["status"] == "complete" for item in resumed["stages"].values()))
+
+    def test_completed_architecture_can_be_revised_then_reviewed_before_continuing(self):
+        run = self.finish()
+        original = load_manifest(run)
+        feedback = "Keep the service in this repository."
+        revise_plan(self.repo, run.name, "architecture", feedback, "mock", mock=True)
+        manifest = load_manifest(run)
+        self.assertEqual(manifest["approvals"]["product"], original["approvals"]["product"])
+        self.assertEqual(manifest["stages"]["program_design"]["status"], "stale")
+        self.assertEqual(manifest["stages"]["vertical_slices"]["status"], "stale")
+        self.assertIsNone(manifest["approvals"]["alignment"])
+        state = json.loads((self.repo / ".factory/planning-state.json").read_text())
+        self.assertEqual(state["revision_review"]["feedback"], feedback)
+        presentation = planning_presentation(state)
+        self.assertTrue(presentation["can_continue"])
+        self.assertEqual(presentation["selected_stage"], "system_architecture")
+        self.assertEqual(presentation["continue_label"], "Confirm revision and continue")
+        self.assertIn("needs your review", presentation["journey"]["headline"])
+        self.assertFalse((self.repo / ".factory/state.json").exists())
+        continue_plan(self.repo, run.name, "mock", mock=True)
+        state = json.loads((self.repo / ".factory/planning-state.json").read_text())
+        self.assertEqual(state["status"], "awaiting_alignment_approval")
+        self.assertNotIn("revision_review", state)
+
+    def test_revision_cannot_change_a_plan_after_publication_starts(self):
+        run = self.finish()
+        manifest_path = run / "manifest.json"
+        original = load_manifest(run)
+        for update in ({"publication": {"issues": [1]}}, {"status": "published"}, {"rehearsal": {"tickets_path": "tickets.json"}}):
+            with self.subTest(update=update):
+                manifest_path.write_text(json.dumps({**original, **update}))
+                before = manifest_path.read_bytes()
+                with self.assertRaisesRegex(ValueError, "publication has started"):
+                    revise_plan(self.repo, run.name, "architecture", "Change the design", "mock", mock=True)
+                self.assertEqual(manifest_path.read_bytes(), before)
 
     def test_parallel_file_ownership_conflict_is_rejected(self):
         product = json.loads((FIXTURES / "01-product-review.json").read_text())

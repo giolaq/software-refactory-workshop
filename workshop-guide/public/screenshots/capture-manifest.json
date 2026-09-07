@@ -1,6 +1,6 @@
 {
-  "capturedAt": "2026-09-06T14:42:42.768Z",
-  "baseRevision": "009d76ccf308282664db5ffe64eaafa3696576ea",
+  "capturedAt": "2026-09-07T04:21:47.843Z",
+  "baseRevision": "e6dd4a1413e8b320dbb0450e53c5bd3165759dfa",
   "workingTreeChanges": true,
   "scenario": "Disposable Standard Rehearsal; mock providers; not Live GitHub evidence",
   "viewport": {
@@ -8,23 +8,24 @@
     "height": 980
   },
   "sources": {
-    "factory/control_center.py": "adff1211857bbdc75aed55b290ba23fee347e7f7cce9df886a200c1d722defb7",
-    "factory/control_center/app.js": "c34f83592602c1e9b272be13f9a7331952531038b81f9b927e6c08d8f4b8b876",
+    "factory/control_center.py": "54e09e7d336551944dbe8d142be78dfe08a9bac03d411d94c9a6e5355966064c",
+    "factory/control_center/app.js": "1e3e1aec16268dc30162f4fffc846f05536f0885cd5589e74e98cec8fe2e30e2",
     "factory/control_center/index.html": "b0e7d20c4f004202bb2b643e81573eade6fd26a888d77f0e2a2ad5e8ecbc3bee",
-    "factory/control_center/styles.css": "b1401a3a1d3e12e7ed557b97b0a84e1792f83270a60e88c067cab17214c3ab93",
+    "factory/control_center/styles.css": "7d27b83c1ef0dfdf6ba818c9fc2beefdda0f0cbd1952d4c9a289c1913fec96cd",
     "factory/tests/serve_workshop_fixture.py": "22fd4ef8fac7f9c1bbe4f2e2a474d4be1ec0be252dc8cf2dafb403941cf902fb"
   },
   "images": {
     "workshop-guide/public/screenshots/control-center-connect.jpg": "12c9a0e79a8b6e3e042418f211b6177f99ecbfa065b9949c2636cb6718863b49",
     "workshop-guide/public/screenshots/control-center-prd.jpg": "d31a10f8c69e985025c3e44d06d72a43defe0cda5a6296bfd3a4abfcd1e1be69",
     "workshop-guide/public/screenshots/control-center-planning.jpg": "e5cd8fec81db64c4e3e329164ee4c538c25116604de3d1324dc8231083d54f77",
-    "workshop-guide/public/screenshots/control-center-product-approved.jpg": "10eda3e2e2da8f2d02f9ca080bdc4d298acda40cf4ca9177e4ddaf27bc80edc8",
-    "workshop-guide/public/screenshots/control-center-create-tickets.jpg": "eb85c3cf3e57187a18a4911c25ab20760c2bfa7e87eb787ee811118f0aefd8d7",
-    "workshop-guide/public/screenshots/control-center-overview.jpg": "ef9ab5097960f98047645d2d03000e8cde8df16e454e38200b0e47c712dbcd63",
-    "workshop-guide/public/screenshots/control-center-tickets.jpg": "25b65c4b9355820dbf6377b64b7da7a289597df7aae3024bb13423a2bf206f14",
-    "workshop-guide/public/screenshots/control-center-ticket-tests.jpg": "024fa719acd4ad67e3a5296fa93431fb9b9e221c0a06b53f50e8b5070ec69e10",
+    "workshop-guide/public/screenshots/control-center-product-approved.jpg": "5ea6078c6c554b9d01362a2b89c3a34cee8e72f0dd8627a50ed83aef7a5a30a8",
+    "workshop-guide/public/screenshots/control-center-create-tickets.jpg": "568a1e63995bdc8d1b90db1f78aa3e6436cf5af905cf6628a1e14bfad7f85efc",
+    "workshop-guide/public/screenshots/control-center-plan-revision.jpg": "d38382ea7bb174f3a8859bec6fa34b1da2cdbe08da292f8431f4f4de4af79afe",
+    "workshop-guide/public/screenshots/control-center-overview.jpg": "0674fe7ece59d842ae759c033409b28c49cb4d90a7befe163e7f5c1a0c8bfdc0",
+    "workshop-guide/public/screenshots/control-center-tickets.jpg": "8f6cb8fdbbfa504f846713175275f8cc5ddf3cc4641738a3168a4e763ca8b440",
+    "workshop-guide/public/screenshots/control-center-ticket-tests.jpg": "0443a8381c3a94a9c03c9d234cc4334b839ec99c307e59754def132bc9ad1d64",
     "workshop-guide/public/screenshots/control-center-qa-decision.jpg": "73319c50610850e922641014693a5a0ac6cdb528a6fc26598ffd75b3dbfd5e9d",
-    "workshop-guide/public/screenshots/control-center-human-merge.jpg": "c906d249716610e9b5ea11b46e7d38e88658e4f328ce4902d09c6a36af018e8b",
-    "workshop-guide/public/screenshots/control-center-evidence.jpg": "04c019c5a8bcc31b1261f29cb12c6400d3c84fd0032dfb51a7c65be0764d4bad"
+    "workshop-guide/public/screenshots/control-center-human-merge.jpg": "aff8a07d21de391a9c11b1e4222e283aa07090480521dca3db8ad434582176c1",
+    "workshop-guide/public/screenshots/control-center-evidence.jpg": "fbdca159a0c5100c1fb1c8d83d3ce7de4ba2906a8c8890b11e692994c5b1b9cc"
   }
 }

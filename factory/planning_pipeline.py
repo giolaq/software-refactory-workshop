@@ -849,6 +849,11 @@ def write_dashboard_state(repo: Path, run_dir: Path, manifest: dict):
         "traceability": relative_path(run_dir / "traceability.json", repo) if (run_dir / "traceability.json").is_file() else "",
         "receipts": manifest.get("receipts", []),
     }
+    revisions = manifest.get("revisions", [])
+    if manifest["status"] == "product_approved" and revisions:
+        latest = revisions[-1]
+        if latest["stage"] != "product_review":
+            state["revision_review"] = latest
     write_json(repo / ".factory/planning-state.json", state)
 
 
@@ -1231,6 +1236,8 @@ def revise_plan(
     elif planning_agent == "mock":
         raise ValueError("this planning run uses deterministic fixtures; rerun with --mock")
 
+    if manifest.get("publication") or manifest.get("rehearsal") or manifest.get("status") == "published":
+        raise ValueError("Ticket publication has started; use a new plan for further changes.")
     _assert_governance_current(repo, run_dir, manifest)
     _assert_project_contract_current(repo, run_dir, manifest)
     if stage != "product_review":

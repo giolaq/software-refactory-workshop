@@ -2053,7 +2053,7 @@ class ControlCenter:
             stage = self._string(payload, "stage", required=True)
             alias = REVISION_STAGE_ALIASES.get(stage)
             if not alias or alias == "product":
-                raise InputError("Choose a blocked technical planning expert.")
+                raise InputError("Choose a technical planning expert.")
             feedback = self._blocking_decision_feedback(
                 payload, plan, stage,
             ) or self._string(
@@ -2063,12 +2063,10 @@ class ControlCenter:
             feedback_path = self.runtime / f"{stage.replace('_', '-')}-feedback.md"
             feedback_path.write_text(feedback + "\n")
             revise = base + ["revise", plan, alias, "--feedback-file", str(feedback_path)]
-            resume = base + ["continue-plan", plan]
             if plan_mock:
                 revise.append("--mock")
-                resume.append("--mock")
             title = stage.replace("_", " ").title()
-            return f"Resolve {title} decisions", [revise, resume]
+            return f"Revise {title} for review", [revise]
         if action == "approve-product":
             return "Approve product intent", [base + ["approve-product", self._plan_id(payload), "--yes"]]
         if action == "approve-stage":

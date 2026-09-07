@@ -219,6 +219,12 @@ def _normalized_state(
         "recovery": recovery,
         "replan_reason": "",
     }
+    revision = planning.get("revision_review")
+    if status == "product_approved" and revision:
+        state["revision"] = next(
+            (item for item in planning.get("stages", []) if item.get("id") == revision.get("stage")),
+            {},
+        )
     if status in REPLAN_REQUIRED_STATUSES:
         state.update({
             "kind": "replan",
@@ -271,6 +277,14 @@ def _normalized_state(
 def _decision(state: dict) -> dict | None:
     kind = state["kind"]
     stage = state.get("stage") or {}
+    if kind == "technical_ready" and state.get("revision"):
+        revised = state["revision"]
+        return {
+            "kind": "revision", "title": f"Review revised {revised['title']}",
+            "text": "Read the revision, then confirm to regenerate the affected downstream plan.",
+            "view": "planning", "planning": revised["id"],
+            "queue_status": "Planning revision review", "queue_kind": "",
+        }
     if kind == "replan":
         return {
             "kind": "replan",
@@ -356,6 +370,13 @@ def _journey(state: dict) -> dict:
     kind = state["kind"]
     stage = state.get("stage") or {}
     recovery = state.get("recovery") or {}
+    if kind == "technical_ready" and state.get("revision"):
+        return {
+            "phase_index": 2, "state": "attention",
+            "headline": f"Revised {state['revision']['title']} needs your review",
+            "detail": "Planning is paused. Read the revised artifact before continuing.",
+            "next": {"label": "Review revision", "detail": "Request another change or confirm to continue.", "view": "planning"},
+        }
     if kind == "replan":
         return {
             "phase_index": 2,
@@ -536,6 +557,8 @@ def planning_presentation(
         if kind == "correction"
         else continue_labels[kind]
     )
+    if kind == "technical_ready" and state.get("revision"):
+        continue_label = "Confirm revision and continue"
     decision = _decision(state)
     sequence = _planning_sequence(planning)
     selected_stage = (

@@ -353,14 +353,15 @@ planning output.
 Use `factory revise` rather than editing a generated artifact. It records human
 feedback and revision history, reruns only the selected expert, clears affected
 approvals, and marks downstream stages stale. The accepted stage names are
-`product`, `architecture`, `program`, and `slices`. In the Control Center, a
-blocked expert displays one answer field per question; submitting every decision
-revises that artifact and resumes downstream planning without a JSON edit or CLI
-command. If an expert instead fails deterministic validation, the rejected JSON
+`product`, `architecture`, `program`, and `slices`. In the Control Center, select
+any completed stage and use **Request revision**. A blocked expert also provides
+answer fields. Both actions revise that artifact and pause for review; read the
+result, then select **Confirm revision and continue**. Product Review requires
+**Approve product** before continuing. If an expert fails validation, the rejected JSON
 and validator message are preserved. Enter a specific repair instruction in the
-failed expert card and select **Apply correction and continue**. The factory
+failed expert card and select **Apply correction for review**. The factory
 uses the rejected JSON as the revision source, records the instruction, reuses
-valid upstream work, and resumes only after the replacement validates.
+valid upstream work, and pauses so you can review the validated replacement.
 
 After the alignment review, approve and publish the final slices:
 

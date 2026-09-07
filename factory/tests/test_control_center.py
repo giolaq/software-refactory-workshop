@@ -1204,7 +1204,7 @@ class ControlCenterTests(unittest.TestCase):
             self.assertEqual(title, "Run architecture and delivery planning")
             self.assertEqual(commands[0][-2:], ["--planning-agent", "cursor"])
 
-    def test_blocked_expert_decisions_revise_the_stage_then_resume_planning(self):
+    def test_expert_revision_stops_before_downstream_planning(self):
         with tempfile.TemporaryDirectory() as directory:
             center = ControlCenter(self.make_repo(directory))
             plan = "a" * 12
@@ -1217,15 +1217,13 @@ class ControlCenterTests(unittest.TestCase):
                 "feedback": "Use this repository and keep analytics disabled for v1.",
             })
 
-            self.assertEqual(title, "Resolve System Architecture decisions")
-            self.assertEqual(len(commands), 2)
+            self.assertEqual(title, "Revise System Architecture for review")
+            self.assertEqual(len(commands), 1)
             self.assertEqual(commands[0][1:4], ["revise", plan, "architecture"])
             self.assertIn("--feedback-file", commands[0])
-            self.assertEqual(commands[1][1:], ["continue-plan", plan])
             self.assertNotIn("--mock", commands[0])
-            self.assertNotIn("--mock", commands[1])
 
-            with self.assertRaisesRegex(InputError, "blocked technical"):
+            with self.assertRaisesRegex(InputError, "technical planning"):
                 center.build_commands("revise-stage", {
                     "plan_id": plan,
                     "stage": "product_review",
@@ -2309,7 +2307,7 @@ class ControlCenterTests(unittest.TestCase):
         self.assertIn('action(actionName, { stage: item.id, decisions: answers })', javascript)
         self.assertNotIn("Question: ${question}", javascript)
         self.assertIn('id="planning-recovery-feedback"', javascript)
-        self.assertIn("Apply correction and continue", javascript)
+        self.assertIn("Apply correction for review", javascript)
         self.assertIn("Switch adapter and continue", javascript)
         self.assertIn("Fix with", javascript)
         self.assertIn("Same-adapter retry disabled", javascript)

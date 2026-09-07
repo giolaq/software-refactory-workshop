@@ -356,6 +356,7 @@ input:focus, select:focus, textarea:focus { border-color: var(--blue); outline: 
 .approval-panel > p { color: var(--muted); }
 .approval-card { margin-top: 20px; padding: 16px; border: 1px solid var(--line); border-radius: var(--radius-surface); background: #fbfcfd; }
 .approval-card textarea { min-height: 120px; resize: vertical; }
+.approval-card code { overflow-wrap: anywhere; }
 .approval-actions { display: flex; gap: 8px; margin-top: 12px; }
 .blocking-question-list { display: grid; gap: 18px; }
 .blocking-question { display: grid; gap: 7px; }

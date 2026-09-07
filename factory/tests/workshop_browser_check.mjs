@@ -57,6 +57,11 @@ async function fixture(stage, work) {
     await work();
     assert.equal(browser("errors"), "", "Unexpected browser errors");
     console.log(`PASS Control Center ${stage}`);
+  } catch (error) {
+    console.error(`FAIL Control Center ${stage}: ${output.slice(-3000)}`);
+    console.error(browser("errors"));
+    console.error(browser("snapshot", "-i"));
+    throw error;
   } finally {
     server.kill("SIGINT");
     if (server.exitCode === null) await new Promise(done => server.once("exit", done));
@@ -108,6 +113,33 @@ try {
     check("document.querySelector('#approve-alignment').textContent === 'Approve and create tickets'");
     check("!(app.snapshot.factory.tickets || []).length");
     shot("create-tickets");
+    // A valid completed stage remains editable before tickets are published.
+    for (const stage of ["product_review", "system_architecture", "program_design", "vertical_slices"]) {
+      browser("click", `[data-planning-stage="${stage}"]`);
+      browser("wait", "#request-stage-revision:not([disabled])");
+    }
+    browser("click", '[data-planning-stage="system_architecture"]');
+    browser("wait", "#stage-revision-feedback");
+    browser("fill", "#stage-revision-feedback", "Keep the service in this repository and preserve the recipe API contracts.");
+    browser("click", "#request-stage-revision");
+    browser("wait", "--fn", "app.snapshot?.planning?.revision_review?.stage === 'system_architecture' && app.snapshot?.operation?.status === 'succeeded'");
+    navigate("planning");
+    browser("click", '[data-planning-stage="system_architecture"]');
+    browser("wait", "#request-stage-revision:not([disabled])");
+    check("app.snapshot.planning.stages.find(s => s.id === 'program_design').status === 'stale'");
+    check("app.snapshot.planning.stages.find(s => s.id === 'vertical_slices').status === 'stale'");
+    check("!app.snapshot.planning.approvals.alignment && !(app.snapshot.factory.tickets || []).length");
+    check("document.querySelector('#continue-plan').textContent === 'Confirm revision and continue'");
+    check("!app.snapshot.operation.command.includes('continue-plan')");
+    shot("plan-revision");
+    browser("reload");
+    browser("wait", "--fn", "app.snapshot?.planning?.revision_review?.stage === 'system_architecture'");
+    navigate("planning");
+    browser("wait", "#continue-plan:not([hidden]):not([disabled])");
+    check("app.snapshot.planning.revision_review.stage === 'system_architecture'");
+    browser("click", "#continue-plan");
+    browser("wait", "--fn", "app.snapshot?.planning?.status === 'awaiting_alignment_approval' && app.snapshot?.operation?.status === 'succeeded'");
+    check("!app.snapshot.planning.revision_review && !(app.snapshot.factory.tickets || []).length");
   });
   await fixture("running", () => {
     navigate("planning");
