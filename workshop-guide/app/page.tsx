@@ -520,11 +520,11 @@ read -r PLAN_ID
 
         <StepSection index={5} id="publish" title="Create tickets" goal="Check the proposed work before publishing it.">
           <WorkshopPaths
-            click={<>In <strong>Plan → Review plan</strong>, select <strong>Run remaining experts</strong>. Review Architecture, Program Design, and Vertical Slices. Resolve blockers and any requested approvals. Open <strong>Approve alignment</strong>, then select <strong>Approve and create tickets</strong>.</>}
-            whyStopped={<>Resolve blocking questions, then approve the plan before tickets can be created.</>}
+            click={<>Select <strong>Run remaining experts</strong> in <strong>Plan → Review plan</strong>. Review each result. For changes: select the stage → describe your change → <strong>Request revision</strong>. Read it, then <strong>Confirm revision and continue</strong>. Resolve required approvals. Finish with <strong>Approve alignment → Approve and create tickets</strong>.</>}
+            whyStopped={<>Resolve blockers and approve the plan before creating tickets.</>}
             inspect={<>Trace the cooking journey through the tickets. Challenge unnecessary dependencies. Confirm full coverage: recipe data, APIs, branding, mobile/TV, and cleanup. Live ticket counts vary; Rehearsal has five.</>}
             continueWhen={track === "live" ? <>The GitHub Project contains the planned issues.</> : <>The Tickets page contains the planned work.</>}
-            cliPurpose={<>Complete technical planning and publish the approved Vertical Slices as tickets.</>}
+            cliPurpose={<>Review technical planning and publish approved tickets.</>}
             cliDirectory={track === "live" ? <><code>software-refactory-control</code>; commands target <code>$TARGET</code></> : <><code>software-refactory-rehearsal</code></>}
           >{track === "rehearsal" ? `./factory/factory continue-plan "$PLAN_ID" --mock
 ./factory/factory review alignment "$PLAN_ID"
@@ -534,7 +534,7 @@ read -r PLAN_ID
 ./factory/factory approve "$PLAN_ID" --repo "$TARGET" \\
   --new-project-title "Factory Workshop"`}</WorkshopPaths>
           <Callout type="note" title="What planning creates">
-            <p>The remaining experts run in sequence: Architecture defines components, Program Design defines code contracts, and Vertical Slices become tickets. Publishing tickets does not start delivery.</p>
+            <p>Architecture → Program Design → Vertical Slices run sequentially. Publishing tickets does not start delivery.</p>
           </Callout>
           <WorkshopMedia
             src="/screenshots/control-center-product-approved.jpg"
@@ -552,6 +552,17 @@ read -r PLAN_ID
             width={1440}
             height={980}
           />
+          <details>
+            <summary>Example: revise the architecture before creating tickets</summary>
+            <WorkshopMedia
+              src="/screenshots/control-center-plan-revision.jpg"
+              alt="Revised architecture with Request revision and Confirm revision and continue controls"
+              label="Review a planning revision"
+              caption="Read the revised artifact. Confirm to regenerate the outdated downstream stages, or request another change. Rehearsal uses sample artifacts; Live applies your custom feedback."
+              width={1440}
+              height={980}
+            />
+          </details>
           <Checkpoint>{track === "live" ? "The GitHub Project shows the new issues." : "The Tickets page shows the planned work."}</Checkpoint>
         </StepSection>
 
@@ -733,7 +744,7 @@ gh project view "$PROJECT_NUMBER" --owner "@me" --web
           <div className="accordion-list">
             <details><summary>The repository is not connected</summary><p>Open <strong>Setup → Connection</strong>, choose <strong>Live</strong>, enter the full product repository URL, and select <strong>Save and connect</strong>. Push its default branch first if it already contains code.</p></details>
             <details><summary>An agent asks for the wrong credentials</summary><p>Open <strong>Setup → Connection</strong> and choose the preset for the CLI you use. Save, sign in to that CLI, then select <strong>Retry automatic setup</strong>.</p></details>
-            <details><summary>A planning expert failed</summary><p>Open <strong>Plan → Review plan</strong> and select the failed expert. For an invalid result, select <strong>Apply correction and continue</strong>. For a login or rate-limit error, fix access or choose another agent. If the PRD or repository settings changed, select <strong>Restart planning safely</strong>.</p></details>
+            <details><summary>A planning expert failed</summary><p>Open <strong>Plan → Review plan</strong> and select the failed expert. For an invalid result, select <strong>Apply correction for review</strong>. Read the revision before confirming to continue. For a login or rate-limit error, fix access or choose another agent. If the PRD or repository settings changed, select <strong>Restart planning safely</strong>.</p></details>
             <details><summary>Ticket publication failed</summary><p>Open <strong>Plan → Review plan</strong> and select <strong>Retry ticket publication</strong>. The retry reuses issues already created for this plan. In the CLI, rerun the same <code>factory approve</code> command shown in the error.</p></details>
             <details><summary>A ticket is blocked</summary><p>Open the ticket and follow its recovery panel. Explain what changed before selecting <strong>Retry</strong>. If review needs a report, paste the full commit ID you tested, your checks, and their results into <strong>Evidence for review</strong>. An action may wait for the current worker wave to finish; wait for confirmation before repeating it.</p></details>
             <details><summary>A required check still tests removed behavior</summary><p>Compare the failed test with the ticket. If the ticket intentionally removes that behavior, do not restore it. Select <strong>Retry</strong>. The coding agent can update an existing test when the Charter marks existing tests for review.</p></details>

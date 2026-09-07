@@ -580,6 +580,12 @@ function renderPlanning(planning) {
 
 function renderExpertPanel(item) {
   const questions = item.questions || [];
+  const planning = app.snapshot?.planning || {};
+  const running = ["running", "stopping"].includes(app.snapshot?.operation?.status);
+  if (["alignment_approved", "published"].includes(planning.status) || planning.approvals?.alignment) {
+    $("#approval-panel").innerHTML = '<h2>Plan published or publication started</h2><p>Use a new plan for further changes. Existing tickets keep their approved scope.</p>';
+    return;
+  }
   if (item.error && !questions.length) {
     const validationFailure = item.failure_kind === "validation";
     const currentAgent = app.snapshot?.planning?.planning_agent || "";
@@ -587,7 +593,7 @@ function renderExpertPanel(item) {
     const fallbackAgents = recovery.alternative_adapters || (app.snapshot?.adapters || []).filter((agent) => ["bedrock", "claude", "codex", "cursor"].includes(agent) && agent !== currentAgent);
     const fallback = fallbackAgents.length ? `<div class="approval-card"><label><b>Use another planning adapter</b><select id="planning-retry-agent">${fallbackAgents.map((agent) => `<option value="${esc(agent)}">${esc(agent[0].toUpperCase() + agent.slice(1))}</option>`).join("")}</select></label><div class="approval-actions"><button class="button button-primary" type="button" id="retry-planning-with-agent">Fix with ${esc((recovery.recommended_adapter || fallbackAgents[0])[0].toUpperCase() + (recovery.recommended_adapter || fallbackAgents[0]).slice(1))}</button></div><p class="field-help">Switch adapter and continue from the approved upstream artifacts. The factory records the adapter change in the planning manifest.</p></div>` : "";
     const suggestedCorrection = `Return a complete corrected ${item.title} artifact that satisfies this validator error: ${item.validation_error || item.error}`;
-    const correction = validationFailure ? `<div class="approval-card"><label><b>Correction sent to the expert</b><textarea id="planning-recovery-feedback">${esc(suggestedCorrection)}</textarea></label><div class="approval-actions"><button class="button button-primary" type="button" id="apply-planning-correction">${item.id === "product_review" ? "Apply correction" : "Apply correction and continue"}</button></div><p class="field-help">Edit the instruction if needed. The factory uses the rejected artifact as the revision source, validates the replacement, and resumes only after it passes.</p></div>` : "";
+    const correction = validationFailure ? `<div class="approval-card"><label><b>Correction sent to the expert</b><textarea id="planning-recovery-feedback">${esc(suggestedCorrection)}</textarea></label><div class="approval-actions"><button class="button button-primary" type="button" id="apply-planning-correction" ${running ? "disabled" : ""}>Apply correction for review</button></div><p class="field-help">The expert revises the rejected artifact and pauses. Read the replacement before confirming to continue.</p></div>` : "";
     const retrySame = !validationFailure && recovery.retry_same_adapter ? `<div class="approval-actions"><button class="button" type="button" id="retry-planning-same-adapter">Retry same adapter</button></div>` : "";
     const preflight = ["authentication", "adapter_setup"].includes(recovery.kind) ? `<div class="approval-actions"><button class="button" type="button" id="check-planning-adapter">Run preflight after fixing the adapter</button></div>` : "";
     const summary = recovery.summary || (validationFailure ? "The artifact needs a correction before planning can continue." : "Inspect the failure before choosing a recovery.");
@@ -606,10 +612,18 @@ function renderExpertPanel(item) {
   }
   if (!questions.length) {
     $("#approval-panel").innerHTML = `<span class="section-label">Expert contract</span><h2>${esc(item.title)}</h2><p>No blocking questions recorded.</p><div class="approval-card"><b>Artifact hash</b><p><code>${esc(item.sha256 || "Pending")}</code></p></div>`;
+    if (item.status !== "complete") return;
+    const revised = planning.revision_review?.stage === item.id;
+    $("#approval-panel").insertAdjacentHTML("beforeend", `<div class="approval-card"><h3>Request a change</h3><label>Changes for the expert<textarea id="stage-revision-feedback" rows="4" placeholder="Describe the design you want and the constraints to preserve." ${running ? "disabled" : ""}></textarea></label><p class="field-help">The expert rewrites this stage. Affected downstream artifacts and approvals become outdated. You review the result before continuing.</p><div class="approval-actions"><button class="button" type="button" id="request-stage-revision" ${running ? "disabled" : ""}>Request revision</button></div></div>${revised ? '<p><b>Revision ready.</b> Read the updated artifact, then select <b>Confirm revision and continue</b> above. You can request another change first.</p>' : ''}`);
+    $("#request-stage-revision").addEventListener("click", () => {
+      const feedback = $("#stage-revision-feedback").value.trim();
+      if (!feedback) return toast("Describe the change you want before requesting a revision.", true);
+      const actionName = item.id === "product_review" ? "revise-product" : "revise-stage";
+      action(actionName, { stage: item.id, feedback });
+    });
     return;
   }
-  const running = ["running", "stopping"].includes(app.snapshot?.operation?.status);
-  $("#approval-panel").innerHTML = `<span class="section-label">Human decisions required</span><h2>Unblock ${esc(item.title)}</h2><p>Answer every question. Your decisions are sent back to this expert, recorded in revision history, and used to regenerate the artifact.</p><div class="approval-card blocking-question-list">${questions.map((question, index) => `<label class="blocking-question"><b>Question ${index + 1}</b><span>${esc(question)}</span><textarea data-question-answer="${index}" placeholder="Record your decision and any constraint the expert must preserve."></textarea></label>`).join("")}<div class="approval-actions"><button class="button button-primary" type="button" id="resolve-planning-questions" ${running ? "disabled" : ""}>${item.id === "product_review" ? "Submit decisions" : "Submit decisions and continue"}</button></div><p class="field-help">The factory keeps the previous artifact, records these answers, and reruns only the affected expert. Technical planning then resumes from the next valid stage.</p></div>`;
+  $("#approval-panel").innerHTML = `<span class="section-label">Human decisions required</span><h2>Unblock ${esc(item.title)}</h2><p>Answer every question. Your decisions are sent back to this expert, recorded in revision history, and used to regenerate the artifact.</p><div class="approval-card blocking-question-list">${questions.map((question, index) => `<label class="blocking-question"><b>Question ${index + 1}</b><span>${esc(question)}</span><textarea data-question-answer="${index}" placeholder="Record your decision and any constraint the expert must preserve."></textarea></label>`).join("")}<div class="approval-actions"><button class="button button-primary" type="button" id="resolve-planning-questions" ${running ? "disabled" : ""}>Submit decisions for review</button></div><p class="field-help">The factory keeps the previous artifact, records these answers, and reruns only this expert. Read the revised result before confirming to continue.</p></div>`;
   $("#resolve-planning-questions").addEventListener("click", () => {
     const answers = $$('[data-question-answer]', $("#approval-panel")).map((field) => field.value.trim());
     if (answers.some((answer) => !answer)) {
@@ -626,7 +640,7 @@ async function loadPlanningArtifact(item) {
   const artifactPath = item.status === "blocked" && item.rejected_artifact
     ? item.rejected_artifact
     : item.markdown || item.json || "";
-  const artifactKey = `${artifactPath}:${item.sha256 || item.status || ""}:${item.error || ""}`;
+  const artifactKey = `${artifactPath}:${item.sha256 || item.status || ""}:${item.error || ""}:${app.snapshot?.planning?.status}:${app.snapshot?.operation?.status}`;
   if (app.loadedPlanningArtifact === artifactKey) return;
   app.loadedPlanningArtifact = artifactKey;
   $("#artifact-label").textContent = item.status || "Artifact";

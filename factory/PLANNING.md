@@ -87,12 +87,17 @@ adapters produce structured output for the stage schemas. See
 `plan` stops after Product Review. `revise` records human feedback and revision
 history, reruns only the named expert, clears affected approvals, and marks
 downstream artifacts stale. If a technical expert blocks, answer its questions
-in the Control Center; the panel submits those decisions, revises that artifact,
-and resumes the valid downstream stages. The equivalent CLI recovery is:
+in the Control Center; the panel submits those decisions and revises that artifact.
+Completed experts also expose **Request revision** for changes to a valid plan.
+Read the replacement, then select **Confirm revision and continue** to regenerate
+the affected downstream stages. Revision alone never publishes tickets. Plans
+whose publication has started cannot be revised; use a new plan for further changes.
+The equivalent CLI recovery is:
 
 ```sh
 ./factory/factory revise PLAN_ID architecture \
   --feedback "Decision 1: keep the service in this repository. Decision 2: disable analytics for v1."
+./factory/factory review architecture PLAN_ID
 ./factory/factory continue-plan PLAN_ID
 ```
 
