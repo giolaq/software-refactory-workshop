@@ -19,6 +19,9 @@ development environment, inner harness, outer harness, and control plane. Read
 [INTERFACES.md](INTERFACES.md) before adding an Agent Adapter, environment
 provider, intake source, trigger, or workspace integration.
 
+For each agent's task, inputs, outputs, prompt instructions, and profile
+availability, see [Agent reference](AGENT_REFERENCE.md).
+
 ## One-minute rehearsal quickstart
 
 A Rehearsal Run needs Python 3.11+, Git, Node 22.13+, and no credentials or agent tokens.
