@@ -640,10 +640,10 @@ async function loadPlanningArtifact(item) {
   const artifactPath = item.status === "blocked" && item.rejected_artifact
     ? item.rejected_artifact
     : item.markdown || item.json || "";
-  const artifactKey = `${artifactPath}:${item.sha256 || item.status || ""}:${item.error || ""}:${app.snapshot?.planning?.status}:${app.snapshot?.operation?.status}`;
+  const artifactKey = `${artifactPath}:${item.sha256 || item.status || ""}:${item.error || ""}:${item.activity || ""}:${app.snapshot?.planning?.status}:${app.snapshot?.operation?.status}`;
   if (app.loadedPlanningArtifact === artifactKey) return;
   app.loadedPlanningArtifact = artifactKey;
-  $("#artifact-label").textContent = item.status || "Artifact";
+  $("#artifact-label").textContent = item.status === "running" ? item.activity || "Expert is working" : item.status || "Artifact";
   $("#artifact-title").textContent = item.title;
   $("#artifact-content").textContent = "Loading…";
   app.artifactPath = artifactPath;
@@ -651,7 +651,7 @@ async function loadPlanningArtifact(item) {
   if (!artifactPath) {
     const working = item.status === "running";
     $("#artifact-content").textContent = working
-      ? "The expert is working. Open Current run to inspect activity. Its artifact will appear here after validation."
+      ? item.activity || "The expert is working. Open Current run to inspect activity. Its artifact will appear here after validation."
       : "This expert has not produced an artifact yet. Follow the next action in Current run.";
     $("#approval-panel").innerHTML = `<span class="section-label">Expert contract</span><h2>${esc(item.title)}</h2><p>No artifact is available to review yet.</p>`;
     if (item.error || item.questions?.length) renderExpertPanel(item);

@@ -15,6 +15,13 @@ workshop. Press `Ctrl+C` to close the server.
 
 ## What attendees do
 
+During planning, the current phase explains whether the expert is preparing its
+design, checking the result, or correcting invalid output. Automatic corrections
+need no click. Each live stage can make up to two repairs within the Charter's
+retry limit, then stops with the rejected output and recovery options. Product
+questions and approval gates still need your decision. Login or quota errors
+stop immediately instead of consuming the repair budget.
+
 | Screen | Attendee action | Factory result |
 | --- | --- | --- |
 | Setup → Connection | Connect the repository, create the contract, then review and approve | Publishes setup where needed, prepares the environment, and runs readiness checks automatically |

@@ -289,6 +289,7 @@ class PlanningPipelineTests(unittest.TestCase):
         self.assertNotIn("private deliberation", console.getvalue())
         self.assertIn(error, log.read_text())
 
+    @patch("planning_pipeline.MAX_PLANNING_REPAIRS", 0)
     def test_retry_preserves_rejected_slices_and_sends_validator_feedback_to_expert(self):
         product = json.loads((FIXTURES / "01-product-review.json").read_text())
         architecture = json.loads((FIXTURES / "02-system-architecture.json").read_text())
@@ -344,6 +345,7 @@ class PlanningPipelineTests(unittest.TestCase):
         self.assertEqual(completed["status"], "awaiting_alignment_approval")
         self.assertEqual(completed["stages"]["vertical_slices"]["status"], "complete")
 
+    @patch("planning_pipeline.MAX_PLANNING_REPAIRS", 0)
     def test_ticket_count_failure_preserves_rejected_artifact_for_correction(self):
         product = json.loads((FIXTURES / "01-product-review.json").read_text())
         architecture = json.loads((FIXTURES / "02-system-architecture.json").read_text())
@@ -378,6 +380,7 @@ class PlanningPipelineTests(unittest.TestCase):
         self.assertTrue(rejected.is_file())
         self.assertEqual(len(json.loads(rejected.read_text())["tickets"]), 1)
 
+    @patch("planning_pipeline.MAX_PLANNING_REPAIRS", 0)
     def test_operator_can_revise_a_rejected_artifact_when_retry_repeats_the_error(self):
         product = json.loads((FIXTURES / "01-product-review.json").read_text())
         architecture = json.loads((FIXTURES / "02-system-architecture.json").read_text())

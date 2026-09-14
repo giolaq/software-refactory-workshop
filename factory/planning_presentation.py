@@ -73,6 +73,11 @@ def planning_recovery(stage: dict | None, current_adapter: str, adapters: list[s
     if stage.get("failure_kind") == "validation":
         kind = "validation"
         summary = "The artifact must be corrected before planning can continue."
+        if stage.get("automatic_repairs"):
+            summary = (
+                f"The expert could not produce a valid artifact after {stage['automatic_repairs']} automatic repairs. "
+                "Your approved work is saved. Inspect the rejected output, send a correction, or switch adapter."
+            )
         retry_same = False
         recommended_action = "correct_and_retry"
     elif any(marker in normalized for marker in (
@@ -212,6 +217,7 @@ def _normalized_state(
         (stage for stage in planning.get("stages", []) if stage.get("id") == "product_review"),
         {},
     )
+    running = next((item for item in planning.get("stages", []) if item.get("status") == "running"), None)
     state = {
         "kind": "technical_ready",
         "status": status,
@@ -231,6 +237,8 @@ def _normalized_state(
             "stage": failed_stage or product,
             "replan_reason": _replan_reason(planning),
         })
+    elif running:
+        state.update({"kind": "expert_running", "stage": running})
     elif blocked_stage:
         state.update({"kind": "questions", "stage": blocked_stage})
     elif failed_stage:
@@ -370,6 +378,13 @@ def _journey(state: dict) -> dict:
     kind = state["kind"]
     stage = state.get("stage") or {}
     recovery = state.get("recovery") or {}
+    if kind == "expert_running":
+        return {
+            "phase_index": 2, "state": "running",
+            "headline": f"{stage.get('title', 'Planning expert')} is working",
+            "detail": stage.get("activity") or "Preparing the design from the approved inputs.",
+            "next": {"label": "Watch planning", "detail": "No action needed until the artifact is ready or the expert asks a question.", "view": "planning"},
+        }
     if kind == "technical_ready" and state.get("revision"):
         return {
             "phase_index": 2, "state": "attention",
@@ -551,6 +566,7 @@ def planning_presentation(
         "publication_pending": "Retry ticket publication",
         "complete": "Planning complete",
         "product_running": "Continue planning",
+        "expert_running": "Planning is running",
     }
     continue_label = (
         f"Enter a correction for {(state.get('stage') or {}).get('title', 'expert')}"
@@ -565,6 +581,7 @@ def planning_presentation(
         (decision or {}).get("planning")
         or (blocked_stage or {}).get("id")
         or (failed_stage or {}).get("id")
+        or ((state.get("stage") or {}).get("id") if kind == "expert_running" else "")
         or (sequence[0].get("id") if sequence else "")
     )
     return {

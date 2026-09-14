@@ -181,6 +181,15 @@ MOD- ID defined in this artifact. Do not create tickets.
 
 Schema: [program_design.json](planning_schemas/program_design.json).
 
+For live generation, the factory writes a run-specific schema that restricts
+references to the exact IDs from validated upstream artifacts. Module, type, and
+function `notes` hold rationale and constraints and appear in the Markdown
+review. Invalid structured output returns to the same read-only expert with its
+validation error and rejected response, for at most two automatic repairs within
+the Charter retry limit. Repair instructions require preserving scope and
+unanswered human questions; repairs do not approve artifacts. See each stage's
+`repair_history` in the manifest for evidence.
+
 ### 4. Vertical Slices
 
 **Task:** Divide the aligned plan into implementable, end-to-end tickets.

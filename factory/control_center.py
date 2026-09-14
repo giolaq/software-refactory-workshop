@@ -1348,7 +1348,14 @@ class ControlCenter:
         }.get(operation.get("action"), phase_index)
         if operation.get("status") in {"running", "stopping"}:
             phase_index = operation_phase
-            if qa_review or blocked or in_review or supervising:
+            if operation_phase == 2 and presentation.get("state") == "expert_running":
+                state = "running"
+                headline = planning_journey["headline"]
+                detail = planning_journey["detail"]
+                next_label = planning_journey["next"]["label"]
+                next_detail = planning_journey["next"]["detail"]
+                next_view = "planning"
+            elif qa_review or blocked or in_review or supervising:
                 # A required human decision is more useful than the fact that the
                 # scheduler process remains alive while it waits.
                 pass

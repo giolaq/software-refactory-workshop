@@ -1,0 +1,23 @@
+[
+  {
+    "name": "prose_in_requirements",
+    "collection": "functions",
+    "field": "requirements",
+    "values": ["Pure read: no normalisation, no derivation, no mutation of the parsed structure."],
+    "expected_field": "functions[].requirements"
+  },
+  {
+    "name": "decision_ids_in_requirements",
+    "collection": "types",
+    "field": "requirements",
+    "values": ["DEC_CSS_ONLY_ART", "DEC_DERIVE_TOTAL", "DEC_RAILS_DERIVED"],
+    "expected_field": "types[].requirements"
+  },
+  {
+    "name": "prose_in_calls",
+    "collection": "functions",
+    "field": "calls",
+    "values": ["Replaces load_catalog at demo-app/app.py:13. Reads demo-app/catalog.json."],
+    "expected_field": "functions[].calls"
+  }
+]
