@@ -311,9 +311,48 @@ The Control Center shows preparation, checking, and correction activity. Leave
 the operation running while it corrects its output; do not click Retry.
 
 This loop never approves a plan, answers human questions, or retries login,
-quota, or process failures. If repairs run out, inspect the saved error, send a
+quota, or unrelated process failures. If repairs run out, inspect the saved error, send a
 correction, or switch adapter. Approved upstream artifacts stay unchanged.
 Rehearsal fixtures do not retry because replaying a fixed file cannot repair it.
+
+### Context limits and personal agent configuration
+
+The built-in Claude launcher excludes inherited MCP servers and skills for each
+factory invocation. It retains login, repository instructions, permissions, and
+hooks; it does not edit personal settings. Codex invocations skip the user config
+while retaining the existing authentication location. Custom command adapters
+remain responsible for their own configuration isolation.
+
+Cursor has no documented per-run MCP exclusion flag. Readiness and launch checks
+refuse detected MCP configuration before starting a model request. Use Claude or
+Codex, or a separate Cursor environment without MCP servers. The factory does not
+delete servers, copy credentials, or bypass managed policies. Claude enterprise-
+managed MCP configurations also need an administrator-compatible setup.
+
+Assignments over 48,000 characters become file-backed inputs. The full original
+text and ordered parts of at most 12,000 characters are saved under the working
+repository's `.factory/context/`; no requirements are summarized or dropped.
+These are conservative character limits, not model-specific token guarantees.
+
+A recognized context-window error gets one fresh-session retry with file-backed
+input, if the Charter permits retries. Planning counts this against the same
+retry allowance as output repair. Implementation, QA, review, and supervisor
+invocations also get at most one context restart per invocation. Existing work is
+retained, and the replacement session must inspect it before continuing. Normal
+validators, tests, and human approval gates still apply.
+
+The Control Center reports recovery while it runs. If the provider still cannot
+fit the task, choose another configured adapter or a larger-context model, or
+revise the PRD into smaller runs. Repeated identical retries cannot increase a
+provider's context window. Large repository instructions, plugins, tool results,
+and provider-specific limits can still exhaust it. This safeguard reduces and
+recovers failures; it does not promise unlimited context.
+
+Provider references: [Claude CLI](https://code.claude.com/docs/en/cli-reference),
+[managed MCP](https://code.claude.com/docs/en/managed-mcp),
+[Codex CLI](https://developers.openai.com/codex/cli/reference),
+[Cursor configuration](https://cursor.com/docs/cli/reference/configuration), and
+[Cursor MCP](https://cursor.com/docs/cli/mcp).
 
 ```sh
 cp factory/PRD_TEMPLATE.md workshop-prd.md

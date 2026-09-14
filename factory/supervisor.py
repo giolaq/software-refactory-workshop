@@ -24,6 +24,7 @@ from factory_charter import FactoryCharter
 from adapter_capabilities import role_environment
 from json_response import extract_last_json_object
 from adapter_diagnostics import agent_failure_detail
+from agent_context import CONTEXT_ACTIVITY, CONTEXT_RECOVERY, claude_configuration_issue, isolated_template, is_context_error, prepare_context
 
 
 SCHEMA_VERSION = 1
@@ -586,6 +587,8 @@ class AgentSupervisor:
         return path
 
     def _invoke(self, prompt: Path, sequence: int) -> tuple[int, str]:
+        if self.agent == "claude" and (issue := claude_configuration_issue()):
+            return 2, issue
         worktree = self.repo.parent / f"{self.repo.name}-supervisor-wt"
         subprocess.run(
             ["git", "worktree", "remove", "--force", str(worktree)],
@@ -599,7 +602,15 @@ class AgentSupervisor:
         if added.returncode:
             raise SupervisorError((added.stdout + added.stderr).strip())
         try:
-            command = self.template.format(
+            source_prompt = prompt
+            if self.agent in {"claude", "codex", "cursor"}:
+                original = prompt.read_text()
+                bounded = prepare_context(original, worktree)
+                if bounded != original:
+                    prompt = prompt.with_name(prompt.stem + "-file-backed.md")
+                    prompt.write_text(bounded)
+            template = isolated_template(self.agent, self.template)
+            command = template.format(
                 prompt=shlex.quote(str(prompt)),
                 ticket=0,
                 python=shlex.quote(self.python),
@@ -621,7 +632,23 @@ class AgentSupervisor:
                     timeout=self.agent_timeout if self.mock else None,
                     env=self.environment.copy(),
                 )
-                return result.returncode, result.stdout + result.stderr
+                output = result.stdout + result.stderr
+                if result.returncode and is_context_error(output) and self.agent in {"claude", "codex", "cursor"}:
+                    source_prompt.with_suffix(".context-error.log").write_text(output)
+                    if self.charter.max_retries > 0:
+                        print(CONTEXT_ACTIVITY, flush=True)
+                        recovery_prompt = source_prompt.with_name(source_prompt.stem + "-context-recovery.md")
+                        recovery_prompt.write_text(prepare_context(source_prompt.read_text(), worktree, force=True))
+                        command = command.replace(shlex.quote(str(prompt)), shlex.quote(str(recovery_prompt)), 1)
+                        result = subprocess.run(
+                            command, cwd=worktree, text=True, shell=True, executable="/bin/sh",
+                            capture_output=True, timeout=self.agent_timeout if self.mock else None,
+                            env=self.environment.copy(),
+                        )
+                        output = result.stdout + result.stderr
+                    if result.returncode and is_context_error(output):
+                        output += "\n" + CONTEXT_RECOVERY
+                return result.returncode, output
             except subprocess.TimeoutExpired as exc:
                 stdout = exc.stdout.decode(errors="replace") if isinstance(exc.stdout, bytes) else (exc.stdout or "")
                 stderr = exc.stderr.decode(errors="replace") if isinstance(exc.stderr, bytes) else (exc.stderr or "")

@@ -428,6 +428,9 @@ class DiagnosticSuite:
         return False, detail
 
     def _probe_claude(self) -> tuple[bool, str]:
+        from agent_context import claude_configuration_issue
+        if issue := claude_configuration_issue():
+            return False, issue
         found = shutil.which("claude")
         if not found:
             return False, "not installed"
@@ -438,6 +441,10 @@ class DiagnosticSuite:
             return False, "not signed in; run claude auth login"
         if self.planning_agent == "claude" and not structured:
             return False, "update Claude Code; --json-schema is required for planning"
+        if any(flag not in help_result.stdout + help_result.stderr for flag in (
+            "--strict-mcp-config", "--mcp-config", "--disable-slash-commands",
+        )):
+            return False, "update Claude Code; per-run MCP isolation flags are required"
         return True, found
 
     def _probe_cursor(self) -> tuple[bool, str]:

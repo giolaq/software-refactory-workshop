@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from session_config import PLANNING_AGENTS
+from agent_context import is_context_error
 
 
 RETRYABLE_PLANNING_STATUSES = {
@@ -70,7 +71,22 @@ def planning_recovery(stage: dict | None, current_adapter: str, adapters: list[s
         attempts if not stage.get("same_failure_count") else 0,
     )
     recommended_adapter = alternatives[0] if alternatives else ""
-    if stage.get("failure_kind") == "validation":
+    if stage.get("failure_kind") == "context_limit" or is_context_error(error):
+        kind = "context_limit"
+        tried = "even after a fresh-session recovery" if stage.get("context_recoveries") else "with no recovery available within the retry limit"
+        summary = (
+            f"The provider could not fit this task, {tried}. "
+            "Your approved work is saved. Choose another adapter or a larger-context model; "
+            "if needed, split the PRD into smaller planning runs."
+        )
+        retry_same = False
+        recommended_action = "switch_adapter" if recommended_adapter else "correct_and_retry"
+    elif "mcp configuration" in normalized or "enterprise-managed mcp" in normalized:
+        kind = "adapter_setup"
+        summary = error
+        retry_same = False
+        recommended_action = "switch_adapter" if recommended_adapter else "preflight"
+    elif stage.get("failure_kind") == "validation":
         kind = "validation"
         summary = "The artifact must be corrected before planning can continue."
         if stage.get("automatic_repairs"):

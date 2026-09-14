@@ -118,6 +118,68 @@ class PlanningRepairTests(unittest.TestCase):
                 with self.assertRaises(RuntimeError): self.invoke()
                 self.assertEqual(adapter.call_count, 1)
 
+    def test_context_overflow_restarts_expert_with_smaller_file_backed_prompt(self):
+        prompts = []
+
+        def answer(command, repo, prompt, log, stage):
+            prompts.append(prompt)
+            if len(prompts) == 1:
+                return subprocess.CompletedProcess(command, 1, "", "Context too big"), None
+            self.assertLess(len(prompt), len(prompts[0]))
+            self.assertIn("Read", prompt)
+            return SUCCESS, self.program
+
+        with patch("planning_pipeline._run_claude_agent", side_effect=answer):
+            self.invoke()
+        self.assertEqual(len(prompts), 2)
+        self.assertEqual(self.manifest["stages"]["program_design"]["status"], "complete")
+
+    def test_claude_planning_excludes_personal_mcp_servers(self):
+        with patch("planning_pipeline._run_claude_agent", return_value=(SUCCESS, self.program)) as adapter:
+            self.invoke()
+        command = adapter.call_args.args[0]
+        self.assertIn("--strict-mcp-config", command)
+        self.assertEqual(json.loads(command[command.index("--mcp-config") + 1]), {"mcpServers": {}})
+
+    def test_context_recovery_stops_after_one_restart_without_touching_approvals(self):
+        approvals = copy.deepcopy(self.manifest["approvals"])
+        with patch("planning_pipeline._run_claude_agent", return_value=(
+            subprocess.CompletedProcess(["claude"], 1, "", "Context too big"), None,
+        )) as adapter:
+            with self.assertRaisesRegex(RuntimeError, "still cannot fit"):
+                self.invoke()
+        self.assertEqual(adapter.call_count, 2)
+        self.assertEqual(self.manifest["approvals"], approvals)
+        stage = self.manifest["stages"]["program_design"]
+        self.assertEqual(stage["failure_kind"], "context_limit")
+        self.assertEqual(len(stage["context_history"]), 2)
+
+    def test_codex_and_cursor_context_recovery_keep_the_same_validation(self):
+        for provider in ("codex", "cursor"):
+            with self.subTest(provider=provider):
+                calls = []
+
+                def codex(command, repo, prompt, log, stage, **kwargs):
+                    calls.append(prompt)
+                    if len(calls) == 1:
+                        return subprocess.CompletedProcess(command, 1, "", "context_length_exceeded")
+                    Path(command[command.index("-o") + 1]).write_text(json.dumps(self.program))
+                    return SUCCESS
+
+                def cursor(binary, repo, prompt, **kwargs):
+                    calls.append(prompt)
+                    if len(calls) == 1:
+                        return subprocess.CompletedProcess([binary], 1, "", "prompt is too long")
+                    return subprocess.CompletedProcess([binary], 0, json.dumps(self.program), "")
+
+                with patch("planning_pipeline._run_codex_agent", side_effect=codex), patch(
+                    "planning_pipeline.invoke_cursor", side_effect=cursor,
+                ):
+                    self.invoke(provider)
+                self.assertEqual(len(calls), 2)
+                self.assertIn("file-backed", calls[1])
+                self.assertEqual(self.manifest["stages"]["program_design"]["status"], "complete")
+
     def test_human_questions_are_not_answered_by_the_repair_loop(self):
         value = copy.deepcopy(self.program)
         value["blocking_questions"] = ["Should recipes support offline storage?"]

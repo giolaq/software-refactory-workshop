@@ -1,5 +1,6 @@
 import json
 import os
+import shlex
 import shutil
 import subprocess
 import sys
@@ -26,6 +27,34 @@ from project_contract import ProjectContract
 
 
 class SupervisorTests(unittest.TestCase):
+    def test_live_invocation_restarts_context_failure_without_recreating_worktree(self):
+        with tempfile.TemporaryDirectory() as directory:
+            repo = self.make_repo(directory)
+            subprocess.run(["git", "init", "-q", str(repo)], check=True)
+            subprocess.run(["git", "-C", str(repo), "-c", "user.name=Test", "-c", "user.email=test@example.com",
+                            "commit", "--allow-empty", "-qm", "baseline"], check=True)
+            prompt = repo / ".factory/prompts/supervisor.md"
+            prompt.parent.mkdir(parents=True)
+            prompt.write_text("Inspect the existing approved candidate. Do not change it.")
+            script = repo / "fake_adapter.py"
+            script.write_text(
+                "import pathlib,sys\n"
+                "text = pathlib.Path(sys.argv[1]).read_text()\n"
+                "if 'file-backed' not in text:\n"
+                "    print('Context too big'); sys.exit(1)\n"
+                "assert list(pathlib.Path('.factory/context').glob('*/assignment.md'))\n"
+                "print('recovered')\n"
+            )
+            supervisor = self.supervisor(repo, {})
+            supervisor.agent = "codex"
+            supervisor.mock = False
+            supervisor.template = '{python} ' + shlex.quote(str(script)) + ' {prompt}'
+            code, output = supervisor._invoke(prompt, 1)
+            self.assertEqual(code, 0, output)
+            self.assertIn("recovered", output)
+            self.assertIn("Context too big", prompt.with_suffix(".context-error.log").read_text())
+            self.assertFalse((repo.parent / f"{repo.name}-supervisor-wt").exists())
+
     def test_provider_failure_surfaces_terminal_diagnostic_without_prompt_output(self):
         with tempfile.TemporaryDirectory() as directory:
             repo = self.make_repo(directory)

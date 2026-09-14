@@ -22,6 +22,12 @@ retry limit, then stops with the rejected output and recovery options. Product
 questions and approval gates still need your decision. Login or quota errors
 stop immediately instead of consuming the repair budget.
 
+If a provider reports a full context window, the factory can restart that expert
+once with a smaller, file-backed assignment. Keep the operation running while it
+says **Recovering from the context limit**. Full requirements and approved work
+remain saved. If recovery fails, follow the panel to switch adapter or reduce
+scope instead of repeating an unchanged request.
+
 | Screen | Attendee action | Factory result |
 | --- | --- | --- |
 | Setup → Connection | Connect the repository, create the contract, then review and approve | Publishes setup where needed, prepares the environment, and runs readiness checks automatically |

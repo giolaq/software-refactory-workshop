@@ -38,6 +38,7 @@ from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
 
 from doctor import run_doctor
+from agent_context import CONTEXT_ACTIVITY, CONTEXT_RECOVERY, claude_configuration_issue, isolated_template, is_context_error, prepare_context
 from codex_cli import (
     codex_auth_ready,
     codex_region_environment,
@@ -1579,12 +1580,16 @@ def resolve_planning_cli(agent: str) -> str:
         return str(Path(__file__).with_name("bedrock_adapter.py"))
     if agent != "claude":
         raise ValueError(f"unsupported planning adapter: {agent}")
+    if issue := claude_configuration_issue():
+        raise RuntimeError(issue)
     binary = shutil.which("claude")
     if not binary:
         raise RuntimeError("Claude Code CLI not found. Install Claude Code, then run `claude auth login`.")
     help_result = subprocess.run([binary, "--help"], text=True, capture_output=True, timeout=10)
-    if help_result.returncode or "--json-schema" not in help_result.stdout + help_result.stderr:
-        raise RuntimeError("Claude Code is too old for structured planning output. Update it, then retry.")
+    if help_result.returncode or any(flag not in help_result.stdout + help_result.stderr for flag in (
+        "--json-schema", "--strict-mcp-config", "--mcp-config", "--disable-slash-commands",
+    )):
+        raise RuntimeError("Update Claude Code: structured output and per-run MCP isolation flags are required for factory planning.")
     auth = subprocess.run(
         [binary, "auth", "status", "--text"], text=True, capture_output=True, timeout=10,
     )
@@ -3369,7 +3374,7 @@ class Factory:
 
     def run_adapter(
         self, agent: str, ticket: dict, worktree: Path, prompt: Path, log_name: str,
-        phase: str,
+        phase: str, *, context_retry: bool = False,
     ):
         capability = self.capabilities[agent]
         if "worktree" not in capability.allowed_working_roots:
@@ -3386,6 +3391,16 @@ class Factory:
         )
         if not template:
             return 2, f"Unknown agent adapter: {agent}"
+        if agent == "claude" and (issue := claude_configuration_issue()):
+            return 2, issue
+        template = isolated_template(agent, template)
+        source_prompt = prompt
+        if agent in {"claude", "codex", "cursor"}:
+            original = prompt.read_text()
+            bounded = prepare_context(original, worktree, force=context_retry)
+            if bounded != original:
+                prompt = prompt.with_name(prompt.stem + ("-context-recovery" if context_retry else "-file-backed") + prompt.suffix)
+                prompt.write_text(bounded)
         if read_only_role and not capability.supports_read_only:
             ticket.setdefault("warnings", []).append(
                 f"Adapter {agent} cannot enforce read-only execution; worktree mutation detection remains active."
@@ -3440,6 +3455,7 @@ class Factory:
         log.parent.mkdir(parents=True, exist_ok=True)
         ticket.update(
             phase=phase,
+            activity=CONTEXT_ACTIVITY if context_retry else "",
             current_prompt=str(prompt.relative_to(self.repo)),
             current_log=str(log.relative_to(self.repo)),
             current_assignment=str(assignment_path.relative_to(self.repo)),
@@ -3559,6 +3575,7 @@ class Factory:
             ticket_events = []
         ticket.update(
             last_agent_exit=returncode,
+            activity="",
             phase_finished_at=now(),
             adapter_events=ticket_events,
             adapter_result=(
@@ -3568,6 +3585,23 @@ class Factory:
             ),
         )
         self._sync_store()
+        if returncode and not protocol_errors and is_context_error(output) and agent in {"claude", "codex", "cursor"}:
+            ticket.setdefault("context_history", []).append({
+                "at": now(), "phase": phase, "log": str(log.relative_to(self.repo)),
+                "prompt": str(prompt.relative_to(self.repo)),
+            })
+            if not context_retry and self.charter.max_retries > 0:
+                ticket["activity"] = CONTEXT_ACTIVITY
+                self._sync_store()
+                print(CONTEXT_ACTIVITY, flush=True)
+                return self.run_adapter(
+                    agent, ticket, worktree, source_prompt,
+                    Path(log_name).stem + "-context-recovery.log", phase, context_retry=True,
+                )
+            output += "\n" + CONTEXT_RECOVERY
+            with log.open("a") as stream:
+                stream.write("\n" + CONTEXT_RECOVERY + "\n")
+            self._sync_store()
         return returncode, output
 
     def adapter_timeout(self, agent: str | None = None) -> int | None:

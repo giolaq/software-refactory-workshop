@@ -790,7 +790,7 @@ function renderTickets(factory, planning = {}, operation = {}) {
     const cards = items.map((ticket) => {
       const intake = ticket.intake?.proposal;
       const steward = ticket.status === "Done" ? null : ticket.merge_steward?.state;
-      const phase = ticket.status === "Done" ? "Completed" : (ticket.phase || ticket.status).replaceAll("_", " ");
+      const phase = ticket.status === "Done" ? "Completed" : ticket.activity ? "Recovering context" : (ticket.phase || ticket.status).replaceAll("_", " ");
       const interfaceState = intake && !ticket.intake?.human_approved
         ? `<span class="ticket-interface-state intake">Intake · ${esc(intake.classification)}</span>`
         : steward && steward !== "not-applicable"

@@ -20,6 +20,7 @@ from collections.abc import Mapping
 from pathlib import Path
 
 from adapter_capabilities import role_environment
+from sensitive_data import redact_credentials
 
 
 REQUIRED_OPTIONS = ("--print", "--output-format", "--force", "--mode", "--sandbox")
@@ -42,6 +43,41 @@ CURSOR_ENVIRONMENT = (
 
 class CursorCLIError(RuntimeError):
     """Raised when the installed Cursor CLI cannot satisfy the adapter contract."""
+
+
+def cursor_configuration_issue(cwd: Path) -> str:
+    """Fail before model startup when undocumented isolation would be required.
+
+    Cursor documents configuration inheritance but no per-run MCP exclusion flag.
+    Do not edit personal settings or silently reuse an unrelated tool catalog.
+    """
+    root = cwd.resolve()
+    candidates = {parent / ".cursor/mcp.json" for parent in (root, *root.parents)}
+    candidates.add(Path.home() / ".cursor/mcp.json")
+    if os.environ.get("CURSOR_CONFIG_DIR"):
+        candidates.add(Path(os.environ["CURSOR_CONFIG_DIR"]) / "mcp.json")
+    if os.environ.get("XDG_CONFIG_HOME"):
+        candidates.add(Path(os.environ["XDG_CONFIG_HOME"]) / "cursor/mcp.json")
+    for directory, children, files in os.walk(root) if (root / ".git").exists() else ():
+        children[:] = [name for name in children if name not in {
+            ".git", ".factory", "node_modules", ".venv", "venv", "dist", "build", ".next",
+        }]
+        if Path(directory).name == ".cursor" and "mcp.json" in files:
+            candidates.add(Path(directory) / "mcp.json")
+    for path in sorted(candidates):
+        if not path.is_file():
+            continue
+        try:
+            value = json.loads(path.read_text())
+        except (ValueError, OSError):
+            return f"Cursor MCP configuration cannot be checked: {path}. Fix its JSON before running the factory."
+        if not isinstance(value, dict) or value.get("mcpServers"):
+            return (
+                f"Cursor MCP configuration detected at {path}. The supported CLI has no verified per-run MCP exclusion. "
+                "Choose Claude or Codex in Setup, or use a separate Cursor environment without MCP servers and sign in there. "
+                "The factory has not changed your personal settings."
+            )
+    return ""
 
 
 def cursor_environment(*additional: str) -> dict[str, str]:
@@ -75,6 +111,9 @@ def probe_cursor_cli(
     timeout: int = 10,
 ) -> tuple[bool, str]:
     """Verify the local CLI contract and login without making a model request."""
+    issue = cursor_configuration_issue(cwd)
+    if issue:
+        return False, issue
     environment = cursor_environment()
     try:
         help_result = subprocess.run(
@@ -159,8 +198,9 @@ def cursor_result(output: str) -> str:
         raise CursorCLIError(f"Cursor returned invalid JSON output: {exc}") from exc
     if not isinstance(payload, dict):
         raise CursorCLIError("Cursor returned a non-object JSON result")
-    if payload.get("type") != "result" or payload.get("subtype") != "success":
-        raise CursorCLIError("Cursor did not return a successful result envelope")
+    if payload.get("type") != "result" or payload.get("subtype") != "success" or payload.get("is_error"):
+        detail = redact_credentials(str(payload.get("result") or payload.get("error") or ""))[-2000:]
+        raise CursorCLIError(f"Cursor did not return a successful result envelope: {detail}")
     result = payload.get("result")
     if not isinstance(result, str) or not result.strip():
         raise CursorCLIError("Cursor returned no final response text")
@@ -177,6 +217,9 @@ def invoke_cursor(
 ) -> subprocess.CompletedProcess[str]:
     """Run Cursor once and normalize its result to plain assistant text."""
     command = cursor_command(binary, read_only=read_only)
+    issue = cursor_configuration_issue(cwd)
+    if issue:
+        return subprocess.CompletedProcess(command, 2, "", issue)
     try:
         completed = subprocess.run(
             command,
@@ -215,6 +258,10 @@ def _tool_label(event: dict) -> str:
 
 def stream_cursor(binary: str, cwd: Path, prompt: str, *, read_only: bool) -> int:
     """Stream bounded Cursor tool activity, then emit the final response text."""
+    issue = cursor_configuration_issue(cwd)
+    if issue:
+        print(issue, file=sys.stderr)
+        return 2
     command = cursor_command(
         binary,
         read_only=read_only,

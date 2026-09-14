@@ -33,9 +33,13 @@ from codex_cli import codex_environment
 from cursor_cli import invoke_cursor
 from triage import classify_controls
 from adapter_diagnostics import agent_failure_detail
+from agent_context import (
+    AgentContextError, CLAUDE_CONTEXT_FLAGS, CONTEXT_ACTIVITY,
+    CONTEXT_RECOVERY, claude_configuration_issue, is_context_error, prepare_context,
+)
 
 
-PROMPT_VERSION = "2.1"
+PROMPT_VERSION = "2.2"
 MAX_PLANNING_REPAIRS = 2
 
 
@@ -170,6 +174,8 @@ def _run_claude_agent(
     command: list[str], repo: Path, prompt: str, log: Path, stage: str,
 ) -> tuple[subprocess.CompletedProcess, dict | None]:
     """Run Claude with safe, realtime progress while retaining structured output."""
+    if issue := claude_configuration_issue():
+        raise RuntimeError(issue)
     title = stage.replace("_", " ").title()
     log.write_text("")
     last_message = ""
@@ -874,6 +880,7 @@ def write_dashboard_state(repo: Path, run_dir: Path, manifest: dict):
             "activity": record.get("activity", ""),
             "automatic_repairs": record.get("automatic_repairs", 0),
             "repair_limit": record.get("repair_limit", 0),
+            "context_recoveries": record.get("context_recoveries", 0),
         })
     state = {
         "plan_id": manifest["plan_id"],
@@ -1092,6 +1099,10 @@ def _run_stage_agent_impl(
     suffix = f"-revision-{revision_number}" if revision_number else ""
     if repair_attempt:
         suffix += f"-repair-{stage_record.get('failure_count', 0)}"
+    if stage_record.get("context_recoveries"):
+        suffix += "-context-recovery"
+    if not mock:
+        prompt = prepare_context(prompt, repo, force=bool(stage_record.get("context_recoveries")))
     prompt_path = repo / ".factory/prompts" / f"planner-{manifest['plan_id']}-{stage}{suffix}.md"
     prompt_path.parent.mkdir(parents=True, exist_ok=True)
     prompt_path.write_text(prompt)
@@ -1122,6 +1133,7 @@ def _run_stage_agent_impl(
         elif planning_agent == "claude":
             command = [
                 agent_bin, "-p", "--permission-mode", "plan",
+                *CLAUDE_CONTEXT_FLAGS,
                 "--tools", "Read,Glob,Grep", "--no-session-persistence",
                 "--output-format", "stream-json", "--verbose", "--include-partial-messages",
                 "--json-schema", claude_json_schema(schema),
@@ -1163,6 +1175,9 @@ def _run_stage_agent_impl(
             raise ValueError(f"unsupported planning adapter: {planning_agent}")
         if result.returncode:
             detail = agent_failure_detail(result.stderr or result.stdout)
+            if is_context_error(result.stderr + result.stdout):
+                append_log(log, f"Context limit: {detail}")
+                raise AgentContextError(f"{stage.replace('_', ' ')}: {detail}")
             if detail:
                 append_log(log, f"Agent error: {detail}")
                 raise RuntimeError(f"{stage.replace('_', ' ')} expert failed: {detail}; see {log}")
@@ -1224,6 +1239,8 @@ def _run_stage_agent_impl(
         "prompt": relative_path(prompt_path, repo),
         "automatic_repairs": repair_attempt,
         "repair_limit": stage_record.get("repair_limit", 0),
+        "context_recoveries": stage_record.get("context_recoveries", 0),
+        "context_history": stage_record.get("context_history", []),
         "repair_history": stage_record.get("repair_history", []),
         "failure_count": stage_record.get("failure_count", 0),
         "activity": "Design checked. Review the artifact before approving it.",
@@ -1262,7 +1279,7 @@ def _run_stage_agent(
     """Run a planning role and retain a structured failure handoff when it blocks."""
     record = manifest["stages"][stage]
     limit = 0 if mock else min(MAX_PLANNING_REPAIRS, FactoryCharter.load(repo, require_approved=True).max_retries)
-    record.update(status="running", automatic_repairs=0, repair_limit=limit,
+    record.update(status="running", automatic_repairs=0, context_recoveries=0, repair_limit=limit,
                   activity="Preparing the design from the approved inputs.")
     record.pop("error", None)
     record.pop("failure_kind", None)
@@ -1276,12 +1293,24 @@ def _run_stage_agent(
             except PlanningArtifactError:
                 if attempt == limit:
                     raise
-                record.update(status="running", automatic_repairs=attempt + 1,
-                              activity=f"Correcting invalid planning output (repair {attempt + 1} of {limit}). No action needed.")
+                repairs = record.get("automatic_repairs", 0) + 1
+                repair_limit = limit - record.get("context_recoveries", 0)
+                record.update(status="running", automatic_repairs=repairs, repair_limit=repair_limit,
+                              activity=f"Correcting invalid planning output (repair {repairs} of {repair_limit}). No action needed.")
                 record.pop("error", None)
                 record.pop("failure_kind", None)
                 save_manifest(repo, run_dir, manifest)
                 print(record["activity"], flush=True)
+            except AgentContextError as exc:
+                record.setdefault("context_history", []).append({
+                    "at": now(), "error": redact_credentials(str(exc))[:2000],
+                    "prompt": record.get("prompt", ""), "log": record.get("log", ""),
+                })
+                if attempt == limit or record.get("context_recoveries"):
+                    raise AgentContextError(CONTEXT_RECOVERY) from exc
+                record.update(status="running", context_recoveries=1, activity=CONTEXT_ACTIVITY)
+                save_manifest(repo, run_dir, manifest)
+                print(CONTEXT_ACTIVITY, flush=True)
     except Exception as exc:
         contract = role_input(repo, stage)
         record = manifest["stages"][stage]
@@ -1289,7 +1318,8 @@ def _run_stage_agent(
             record["failure_count"] = int(record.get("failure_count", 0)) + 1
         if not record.get("failure_kind"):
             record["failure_kind"] = (
-                "validation" if isinstance(exc, ValueError)
+                "context_limit" if isinstance(exc, AgentContextError)
+                else "validation" if isinstance(exc, ValueError)
                 else "agent" if isinstance(exc, RuntimeError)
                 else "internal"
             )
