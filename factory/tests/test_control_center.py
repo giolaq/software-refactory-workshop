@@ -1184,6 +1184,21 @@ class ControlCenterTests(unittest.TestCase):
             self.assertEqual(journey["next"]["label"], "Review System Architecture")
             self.assertEqual(journey["next"]["view"], "planning")
 
+    def test_running_operation_keeps_the_experts_repair_activity_visible(self):
+        with tempfile.TemporaryDirectory() as directory:
+            center = ControlCenter(self.make_repo(directory))
+            planning = {
+                "status": "planning_program_design", "approvals": {"product": {}},
+                "stages": [{"id": "program_design", "title": "Program Design", "status": "running",
+                            "activity": "Correcting invalid planning output (repair 1 of 2). No action needed."}],
+            }
+            journey = center.journey(planning, {"tickets": []},
+                                     {"status": "running", "action": "continue-plan", "title": "Run remaining experts"},
+                                     {"saved": True}, [])
+            self.assertEqual(journey["headline"], "Program Design is working")
+            self.assertIn("repair 1 of 2", journey["detail"])
+            self.assertEqual(journey["next"]["view"], "planning")
+
     def test_blocked_planning_can_retry_with_another_live_adapter(self):
         with tempfile.TemporaryDirectory() as directory:
             center = ControlCenter(self.make_repo(directory))

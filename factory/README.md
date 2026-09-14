@@ -297,6 +297,24 @@ pipeline. Each expert is a fresh, read-only invocation of the planning CLI
 selected by the workshop preset. Each stage has a distinct role, prompt, strict
 JSON schema, Markdown review artifact, prompt, and log.
 
+Planning handles routine output errors before asking you to intervene. Each run
+gets a schema containing the exact upstream requirement, component, and contract
+IDs available to that expert. References created within the same artifact still
+need the local validator. Cursor receives the schema in its prompt; constrained
+output support depends on the adapter, so validation always runs afterward.
+
+If a live expert returns malformed JSON or an invalid artifact, the factory sends
+the rejected output and validation error back for a focused correction. It tries
+at most two automatic repairs, or fewer if the approved Charter's `max_retries`
+is lower. Each repair is another provider invocation and adds time and cost.
+The Control Center shows preparation, checking, and correction activity. Leave
+the operation running while it corrects its output; do not click Retry.
+
+This loop never approves a plan, answers human questions, or retries login,
+quota, or process failures. If repairs run out, inspect the saved error, send a
+correction, or switch adapter. Approved upstream artifacts stay unchanged.
+Rehearsal fixtures do not retry because replaying a fixed file cannot repair it.
+
 ```sh
 cp factory/PRD_TEMPLATE.md workshop-prd.md
 # Edit workshop-prd.md
@@ -344,6 +362,10 @@ The run lives at `.factory/plans/PLAN_ID/` and contains:
 - `03-program-design.{json,md}`.
 - `04-vertical-slices.{json,md}`.
 - `traceability.json` and `alignment-review.md`.
+- `schemas/` with the run-specific output constraints and `rejected/` with each
+  rejected response, including malformed JSON. The manifest's `repair_history`
+  links failures to their output and logs; repair prompts and logs use distinct
+  filenames under `.factory/prompts/` and `.factory/logs/`.
 
 The generated traceability matrix connects each product requirement to
 architecture contracts, program elements, vertical slices, and QA evidence.

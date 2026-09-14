@@ -35,7 +35,14 @@ from triage import classify_controls
 from adapter_diagnostics import agent_failure_detail
 
 
-PROMPT_VERSION = "2.0"
+PROMPT_VERSION = "2.1"
+MAX_PLANNING_REPAIRS = 2
+
+
+class PlanningArtifactError(ValueError):
+    """A generated artifact failed checks and can be returned to its author."""
+
+
 STAGES = (
     ("product_review", "01-product-review", "Product Review"),
     ("system_architecture", "02-system-architecture", "System Architecture"),
@@ -282,12 +289,20 @@ def unique_ids(items: list[dict], label: str) -> set[str]:
     return result
 
 
-def require_references(values: list[str], allowed: set[str], label: str):
+def require_references(values: list[str], allowed: set[str], label: str, field: str = ""):
     if not isinstance(values, list) or not all(isinstance(value, str) for value in values):
         raise ValueError(f"{label} references must be a list of IDs")
     unknown = set(values) - allowed
     if unknown:
-        raise ValueError(f"{label} references unknown IDs: {', '.join(sorted(unknown))}")
+        # Keep the actionable field and legal IDs visible even for long prose.
+        invalid = ", ".join(sorted(unknown))
+        message = f"{label} references unknown IDs: {invalid[:500]}"
+        if field:
+            legal = sorted(allowed)
+            shown = ", ".join(legal[:12]) + (", ..." if len(legal) > 12 else "")
+            message += f". Field {field} accepts only these IDs: {shown or '(none defined)'}"
+            message += ". Prose, file paths, and IDs of another kind are never valid here"
+        raise ValueError(message)
 
 
 def validate_product(product: dict):
@@ -313,7 +328,7 @@ def validate_product(product: dict):
         raise ValueError("product review requires at least one journey")
     unique_ids(product["journeys"], "journey")
     for journey in product["journeys"]:
-        require_references(journey.get("requirements", []), requirement_ids, journey["id"])
+        require_references(journey.get("requirements", []), requirement_ids, journey["id"], "journeys[].requirements")
         if not journey.get("steps") or not journey.get("outcome"):
             raise ValueError(f"{journey['id']} requires steps and an observable outcome")
     scope = product.get("scope")
@@ -329,16 +344,16 @@ def validate_architecture(architecture: dict, product: dict):
     component_ids = unique_ids(components, "component")
     covered_requirements: set[str] = set()
     for component in components:
-        require_references(component.get("requirements", []), requirement_ids, component["id"])
+        require_references(component.get("requirements", []), requirement_ids, component["id"], "components[].requirements")
         covered_requirements.update(component["requirements"])
     contracts = architecture.get("contracts")
     if not isinstance(contracts, list) or not contracts:
         raise ValueError("architecture requires at least one component contract")
     unique_ids(contracts, "contract")
     for contract in contracts:
-        require_references([contract.get("provider")], component_ids, contract["id"])
-        require_references(contract.get("consumers", []), component_ids, contract["id"])
-        require_references(contract.get("requirements", []), requirement_ids, contract["id"])
+        require_references([contract.get("provider")], component_ids, contract["id"], "contracts[].provider")
+        require_references(contract.get("consumers", []), component_ids, contract["id"], "contracts[].consumers")
+        require_references(contract.get("requirements", []), requirement_ids, contract["id"], "contracts[].requirements")
         if not contract.get("input") or not contract.get("output"):
             raise ValueError(f"{contract['id']} requires input and output contracts")
     for collection, label in (("data_models", "data model"), ("decisions", "decision")):
@@ -347,7 +362,7 @@ def validate_architecture(architecture: dict, product: dict):
             raise ValueError(f"architecture {collection} must be a list")
         unique_ids(items, label)
         for item in items:
-            require_references(item.get("requirements", []), requirement_ids, item["id"])
+            require_references(item.get("requirements", []), requirement_ids, item["id"], f"{collection}[].requirements")
     missing = requirement_ids - covered_requirements
     if missing:
         raise ValueError(f"requirements without an owning component: {', '.join(sorted(missing))}")
@@ -372,7 +387,7 @@ def validate_program(program: dict, product: dict, architecture: dict):
         raise ValueError("program design requires at least one module")
     module_ids = unique_ids(modules, "module")
     for module in modules:
-        require_references(module.get("components", []), component_ids, module["id"])
+        require_references(module.get("components", []), component_ids, module["id"], "modules[].components")
         if not module.get("path") or not module.get("responsibility"):
             raise ValueError(f"{module['id']} requires a path and responsibility")
     function_ids: set[str] = set()
@@ -384,14 +399,14 @@ def validate_program(program: dict, product: dict, architecture: dict):
         if collection == "functions":
             function_ids = ids
         for item in items:
-            require_references(item.get("requirements", []), requirement_ids, item["id"])
+            require_references(item.get("requirements", []), requirement_ids, item["id"], f"{collection}[].requirements")
             if "module" in item:
-                require_references([item["module"]], module_ids, item["id"])
+                require_references([item["module"]], module_ids, item["id"], f"{collection}[].module")
             if collection == "functions":
-                require_references(item.get("contracts", []), contract_ids, item["id"])
+                require_references(item.get("contracts", []), contract_ids, item["id"], "functions[].contracts")
     for function in program["functions"]:
         internal_calls = [item for item in function["calls"] if not item.startswith("external:")]
-        require_references(internal_calls, function_ids, function["id"])
+        require_references(internal_calls, function_ids, function["id"], "functions[].calls")
     if not isinstance(program.get("blocking_questions"), list):
         raise ValueError("program design blocking_questions must be a list")
 
@@ -422,9 +437,9 @@ def validate_vertical_slices(slices: dict, product: dict, architecture: dict, pr
         for field in ("requirement_ids", "contract_ids", "program_element_ids", "qa_evidence", "file_ownership"):
             if not isinstance(ticket.get(field), list) or not ticket[field]:
                 raise ValueError(f"{ticket['key']} requires non-empty {field}")
-        require_references(ticket["requirement_ids"], requirement_ids, ticket["key"])
-        require_references(ticket["contract_ids"], contract_ids, ticket["key"])
-        require_references(ticket["program_element_ids"], element_ids, ticket["key"])
+        require_references(ticket["requirement_ids"], requirement_ids, ticket["key"], "tickets[].requirement_ids")
+        require_references(ticket["contract_ids"], contract_ids, ticket["key"], "tickets[].contract_ids")
+        require_references(ticket["program_element_ids"], element_ids, ticket["key"], "tickets[].program_element_ids")
         if not ticket.get("vertical_outcome"):
             raise ValueError(f"{ticket['key']} requires an end-to-end vertical outcome")
         covered_requirements.update(ticket["requirement_ids"])
@@ -462,7 +477,9 @@ def validate_lean_vertical_slices(slices: dict, product: dict) -> list[str]:
         for field in ("contract_ids", "program_element_ids"):
             if not isinstance(ticket.get(field), list):
                 raise ValueError(f"{ticket['key']} {field} must be a list")
-        require_references(ticket["requirement_ids"], requirement_ids, ticket["key"])
+            if ticket[field]:
+                raise ValueError(f"{ticket['key']} {field} must be empty in Lean: no upstream design defines these IDs")
+        require_references(ticket["requirement_ids"], requirement_ids, ticket["key"], "tickets[].requirement_ids")
         if not ticket.get("vertical_outcome"):
             raise ValueError(f"{ticket['key']} requires an end-to-end vertical outcome")
         covered_requirements.update(ticket["requirement_ids"])
@@ -554,13 +571,31 @@ Return only JSON matching the supplied schema. This artifact is an auditable con
     roles = {
         "product_review": """You are the Product Review expert. Clarify the problem, users, observable behavior, scope, journeys, success evidence, mockup needs, assumptions, and blocking questions. Give requirements stable IDs R1, R2, and so on. Cite the PRD section or phrase in each requirement's source. Do not design architecture or create implementation tickets.""",
         "system_architecture": """You are the System Architecture expert. Inspect the existing repository and, using the approved product review, define components, ownership boundaries, data models, explicit component contracts, architectural decisions, constraints, and risks. Map every item to product requirement IDs. Every requirement must have an owning component. Do not assign tickets or write low-level implementation code.""",
-        "program_design": """You are the Program Design expert. Inspect the existing code and turn the approved architecture into a concrete code design: modules and paths, types, function signatures, call relationships, error behavior, call flows, and test seams. Use stable IDs (MOD-, TYPE-, FN-, FLOW-, TEST-), reference contracts and requirements, and prefix calls outside this design with external:. modules[].components must contain only component IDs copied from System Architecture. Never put function IDs, type IDs, constants, or prose in modules[].components. Every type and function module reference must name a MOD- ID defined in this artifact. Do not create tickets.""",
+        "program_design": """You are the Program Design expert. Inspect the existing code and turn the approved architecture into a concrete code design: modules and paths, types, function signatures, call relationships, error behavior, call flows, and test seams. Use stable IDs (MOD-, TYPE-, FN-, FLOW-, TEST-), reference contracts and requirements, and prefix calls outside this design with external:. modules[].components must contain only component IDs copied from System Architecture. Never put function IDs, type IDs, constants, or prose in modules[].components. Every type and function module reference must name a MOD- ID defined in this artifact. Put design rationale, provenance, and purity constraints in the notes field of the module, type, or function it describes — never in an ID list. Do not create tickets.""",
         "vertical_slices": f"""You are the Vertical Slices expert. Divide the aligned product, architecture, and program design into {minimum}-{maximum} small end-to-end tickets. Each ticket must deliver an observable vertical outcome, own explicit files, name QA evidence, and map requirement, contract, and program-element IDs. Every program element and requirement must have an owner. Each ticket must be implementable within {max_diff_lines} implementation-owned changed lines; independently authored protected QA acceptance tests are measured separately. Split a ticket when its production implementation is likely to exceed that measurable limit. Overlapping file ownership is allowed only when one ticket depends on the other. Keep the dependency graph acyclic and maximize safe parallel work. Default agent to {default_agent}.""",
     }
     planning_roles = set(factory_profile(profile_name)["planning_roles"])
     if stage == "vertical_slices" and "system_architecture" not in planning_roles:
         roles[stage] = f"""You are the Vertical Slices expert for the Lean Factory Profile. Divide the approved product intent into {minimum}-{maximum} small end-to-end tickets. Each ticket must deliver an observable outcome, own explicit files, name evidence from existing tests, and map product requirement IDs. Each ticket must be implementable within {max_diff_lines} implementation-owned changed lines; split work that is likely to exceed that measurable limit. Set contract_ids and program_element_ids to empty arrays because this profile intentionally omits architecture and program-design roles. Keep dependencies acyclic and default agent to {default_agent}."""
     identifier_guidance = ""
+    if stage == "program_design":
+        product = inputs.get("product_review", {})
+        architecture = inputs.get("system_architecture", {})
+        requirement_ids = sorted(item["id"] for item in product.get("requirements", []))
+        contract_ids = sorted(item["id"] for item in architecture.get("contracts", []))
+        component_ids = sorted(item["id"] for item in architecture.get("components", []))
+        identifier_guidance = (
+            "\n\n## Exact Program Design traceability identifiers\n\n"
+            f"Allowed requirement IDs: {', '.join(requirement_ids)}\n\n"
+            f"Allowed contract IDs: {', '.join(contract_ids)}\n\n"
+            f"Allowed component IDs: {', '.join(component_ids)}\n\n"
+            "Copy identifiers exactly from these lists. Every `requirements` entry must be an "
+            "allowed requirement ID, every `contracts` entry an allowed contract ID, and every "
+            "`modules[].components` entry an allowed component ID. `calls` entries must be "
+            "function IDs defined in this artifact or `external:` prefixed. Never put a sentence, "
+            "a file path, a decision ID, or a component ID in a field that expects another kind "
+            "of ID: prose belongs in notes."
+        )
     if stage == "vertical_slices" and "system_architecture" in planning_roles:
         architecture = inputs.get("system_architecture", {})
         program = inputs.get("program_design", {})
@@ -634,11 +669,18 @@ def render_program(value: dict, plan_id: str) -> str:
     lines = ["# Program design", "", f"Plan ID: `{plan_id}`", "", "## Modules", "", "| ID | Path | Responsibility |", "| --- | --- | --- |"]
     for item in value["modules"]:
         lines.append(f"| {item['id']} | `{item['path']}` | {item['responsibility']} |")
+    for item in value["modules"]:
+        if item.get("notes"):
+            lines += ["", f"- **{item['id']} notes:** {item['notes']}"]
     lines += ["", "## Types and functions", ""]
     for item in value["types"]:
         lines += [f"- **{item['id']} `{item['name']}`** in {item['module']}: {item['definition']}"]
+        if item.get("notes"):
+            lines += [f"  - {item['notes']}"]
     for item in value["functions"]:
         lines += [f"- **{item['id']} `{item['signature']}`** in {item['module']}; errors: {item['error_behavior']}"]
+        if item.get("notes"):
+            lines += [f"  - {item['notes']}"]
     lines += ["", "## Call flows", ""]
     for item in value["call_flows"]:
         lines += [f"### {item['id']} — {item['name']}", "", " → ".join(item["steps"]), ""]
@@ -811,7 +853,7 @@ def write_dashboard_state(repo: Path, run_dir: Path, manifest: dict):
         record = manifest["stages"][stage]
         json_path, md_path = _stage_paths(run_dir, stage)
         questions = []
-        if json_path.is_file():
+        if json_path.is_file() and not record.get("failure_kind"):
             value = read_json(json_path)
             questions = value.get("blocking_questions", value.get("open_questions", []))
         stages.append({
@@ -829,6 +871,9 @@ def write_dashboard_state(repo: Path, run_dir: Path, manifest: dict):
             "rejected_artifact": record.get("rejected_artifact", ""),
             "failure_count": record.get("failure_count", 0),
             "same_failure_count": record.get("same_failure_count", 0),
+            "activity": record.get("activity", ""),
+            "automatic_repairs": record.get("automatic_repairs", 0),
+            "repair_limit": record.get("repair_limit", 0),
         })
     state = {
         "plan_id": manifest["plan_id"],
@@ -919,12 +964,77 @@ def _rejected_stage_path(repo: Path, stage_record: dict) -> Path | None:
     return candidate if candidate.is_file() else None
 
 
+def planning_output_schema(repo: Path, run_dir: Path, stage: str, inputs: dict, manifest: dict) -> Path:
+    """Bind upstream references to real IDs without modifying shared schemas.
+
+    References defined within this same output still need semantic validation.
+    An empty upstream collection permits only an empty reference array.
+    """
+    source = repo / "factory/planning_schemas" / f"{stage}.json"
+    if not source.is_file():
+        source = Path(__file__).with_name("planning_schemas") / f"{stage}.json"
+    schema = read_json(source)
+    requirements = [item["id"] for item in inputs.get("product_review", {}).get("requirements", [])]
+    architecture = inputs.get("system_architecture", {})
+    references = {}
+    if stage == "system_architecture":
+        references = {f"{collection}.requirements": requirements for collection in (
+            "components", "contracts", "data_models", "decisions",
+        )}
+    elif stage == "program_design":
+        references = {f"{collection}.requirements": requirements for collection in (
+            "types", "functions", "call_flows", "test_seams",
+        )}
+        references["modules.components"] = [item["id"] for item in architecture.get("components", [])]
+        references["functions.contracts"] = [item["id"] for item in architecture.get("contracts", [])]
+    elif stage == "vertical_slices":
+        full = "system_architecture" in factory_profile(manifest.get("profile", "standard"))["planning_roles"]
+        references = {
+            "tickets.requirement_ids": requirements,
+            "tickets.contract_ids": [item["id"] for item in architecture.get("contracts", [])] if full else [],
+            "tickets.program_element_ids": sorted(program_element_ids(inputs.get("program_design", {}))) if full else [],
+        }
+        schema["properties"]["tickets"].update(
+            minItems=manifest["ticket_limits"]["minimum"],
+            maxItems=manifest["ticket_limits"]["maximum"],
+        )
+    for reference, allowed in references.items():
+        collection, field = reference.split(".")
+        target = schema["properties"][collection]["items"]["properties"][field]
+        if allowed:
+            target["items"]["enum"] = sorted(set(allowed))
+        else:
+            target["maxItems"] = 0
+    destination = run_dir / "schemas" / f"{stage}.json"
+    write_json(destination, schema)
+    return destination
+
+
+def _reject_stage_output(repo: Path, run_dir: Path, stage: str, record: dict, log: Path, output: str, error: Exception):
+    """Save the unmodified rejection before allowing any automatic repair."""
+    number = int(record.get("failure_count", 0)) + 1
+    rejected = run_dir / "rejected" / f"{stage}-attempt-{number}.json"
+    rejected.parent.mkdir(parents=True, exist_ok=True)
+    rejected.write_text(output)
+    message = redact_credentials(str(error))[:2000]
+    record.update(failure_count=number, failure_kind="validation", error=message,
+                  validation_error=message, rejected_artifact=relative_path(rejected, repo))
+    record.setdefault("repair_history", []).append({
+        "at": now(), "error": message, "rejected_artifact": relative_path(rejected, repo),
+        "log": relative_path(log, repo),
+    })
+    append_log(log, f"Deterministic validation failed: {message}")
+    raise PlanningArtifactError(message) from error
+
+
 def _run_stage_agent_impl(
     repo: Path, run_dir: Path, stage: str, manifest: dict,
     planning_agent: str, agent_bin: str, mock: bool, feedback: str | None = None,
 ) -> dict:
     json_path, _ = _stage_paths(run_dir, stage)
     raw = run_dir / f".{stage}-raw.json"
+    # An interrupted invocation must not supply the next invocation's result.
+    raw.unlink(missing_ok=True)
     inputs = _stage_inputs(run_dir, stage)
     charter = FactoryCharter.load(repo, require_approved=True)
     prompt = stage_prompt(
@@ -939,6 +1049,7 @@ def _run_stage_agent_impl(
         f"{charter.context()}\n```\n"
     )
     stage_record = manifest["stages"][stage]
+    repair_attempt = stage_record.get("automatic_repairs", 0)
     previous_validation_error = stage_record.get("validation_error", "")
     rejected_path = _rejected_stage_path(repo, stage_record)
     if previous_validation_error:
@@ -949,6 +1060,10 @@ def _run_stage_agent_impl(
             "\n## Previous validation failure\n\n"
             "The previous structured artifact was rejected by the deterministic validator. "
             "Return a complete corrected replacement; do not merely explain the error.\n\n"
+            "Repair only the fields needed to satisfy the error. Preserve valid IDs, product scope, "
+            "design decisions and unanswered human questions. Move prose to notes where supported. "
+            "Do not invent references, drop requirements, or weaken checks to make validation pass. "
+            "If a mapping is ambiguous, return a blocking question for the human.\n\n"
             f"Validator error: {previous_validation_error}\n"
         )
         if rejected_content:
@@ -964,7 +1079,7 @@ def _run_stage_agent_impl(
             )
         prompt += (
             "\n## Current artifact\n\n"
-            f"```json\n{json.dumps(read_json(revision_source), indent=2)}\n```\n"
+            f"```json\n{revision_source.read_text()}\n```\n"
             "\n## Human revision feedback\n\n"
             f"{feedback}\n\nRevise only the {stage.replace('_', ' ')} artifact. "
             "Treat the human decisions as authoritative, resolve the answered "
@@ -975,11 +1090,15 @@ def _run_stage_agent_impl(
     contract = role_input(repo, stage)
     prompt += "\n" + contract["text"]
     suffix = f"-revision-{revision_number}" if revision_number else ""
+    if repair_attempt:
+        suffix += f"-repair-{stage_record.get('failure_count', 0)}"
     prompt_path = repo / ".factory/prompts" / f"planner-{manifest['plan_id']}-{stage}{suffix}.md"
     prompt_path.parent.mkdir(parents=True, exist_ok=True)
     prompt_path.write_text(prompt)
     log = repo / ".factory/logs" / f"planner-{manifest['plan_id']}-{stage}{suffix}.log"
     log.parent.mkdir(parents=True, exist_ok=True)
+    stage_record.update(prompt=relative_path(prompt_path, repo), log=relative_path(log, repo))
+    save_manifest(repo, run_dir, manifest)
     if mock:
         fixture = _fixture_path(repo, stage)
         if feedback and stage == "product_review":
@@ -989,9 +1108,7 @@ def _run_stage_agent_impl(
         shutil.copyfile(fixture, raw)
         log.write_text(f"Mock {stage} expert copied {fixture}\n")
     else:
-        schema = repo / "factory/planning_schemas" / f"{stage}.json"
-        if not schema.is_file():
-            schema = Path(__file__).with_name("planning_schemas") / f"{stage}.json"
+        schema = planning_output_schema(repo, run_dir, stage, inputs, manifest)
         if planning_agent == "codex":
             command = [
                 agent_bin, "exec", "--json", "--sandbox", "read-only", "--ephemeral",
@@ -1031,8 +1148,7 @@ def _run_stage_agent_impl(
                 try:
                     raw.write_text(_extract_json_object(result.stdout))
                 except ValueError as exc:
-                    append_log(log, f"Structured output error: {exc}")
-                    raise
+                    _reject_stage_output(repo, run_dir, stage, stage_record, log, result.stdout, exc)
                 append_log(log, "Cursor returned a structured planning artifact.")
         elif planning_agent == "bedrock":
             command = [sys.executable, agent_bin, "plan", "--schema", str(schema)]
@@ -1051,13 +1167,22 @@ def _run_stage_agent_impl(
                 append_log(log, f"Agent error: {detail}")
                 raise RuntimeError(f"{stage.replace('_', ' ')} expert failed: {detail}; see {log}")
             raise RuntimeError(f"{stage.replace('_', ' ')} expert failed; see {log}")
+    stage_record["activity"] = "Checking the generated design and its references."
+    save_manifest(repo, run_dir, manifest)
+    append_log(log, stage_record["activity"])
+    output = ""
     try:
-        value = read_json(raw)
+        output = raw.read_text() if raw.is_file() else ""
+        value = json.loads(output)
+        if not isinstance(value, dict):
+            raise ValueError("Planning output must be a JSON object")
+    except (ValueError, UnicodeError) as exc:
+        _reject_stage_output(repo, run_dir, stage, stage_record, log, output, exc)
     finally:
         raw.unlink(missing_ok=True)
     if stage == "vertical_slices":
         planning_roles = factory_profile(manifest.get("profile", "standard"))["planning_roles"]
-        if "system_architecture" not in planning_roles:
+        if mock and "system_architecture" not in planning_roles:
             for ticket in value.get("tickets", []):
                 ticket["contract_ids"] = []
                 ticket["program_element_ids"] = []
@@ -1082,22 +1207,12 @@ def _run_stage_agent_impl(
                     f"vertical slices expert returned {count} tickets; "
                     f"expected {minimum}-{maximum}"
                 )
-    except ValueError as exc:
-        failure_number = int(stage_record.get("failure_count", 0)) + 1
-        rejected_path = run_dir / "rejected" / f"{stage}-attempt-{failure_number}.json"
-        write_json(rejected_path, value)
-        message = redact_credentials(str(exc))[:2000]
-        stage_record.update({
-            "failure_kind": "validation",
-            "error": message,
-            "validation_error": message,
-            "rejected_artifact": relative_path(rejected_path, repo),
-        })
-        append_log(log, f"Deterministic validation failed: {message}")
-        raise
+        rendered = _render_stage(stage, value, manifest["plan_id"], json_path)
+    except (ValueError, KeyError, TypeError, AttributeError) as exc:
+        _reject_stage_output(repo, run_dir, stage, stage_record, log, output, exc)
     write_json(json_path, value)
     _, markdown_path = _stage_paths(run_dir, stage)
-    markdown_path.write_text(_render_stage(stage, value, manifest["plan_id"], json_path))
+    markdown_path.write_text(rendered)
     manifest["stages"][stage] = {
         "status": "blocked" if value.get("blocking_questions", value.get("open_questions", [])) else "complete",
         "sha256": sha_file(json_path),
@@ -1107,6 +1222,11 @@ def _run_stage_agent_impl(
         "created_at": now(),
         "log": relative_path(log, repo),
         "prompt": relative_path(prompt_path, repo),
+        "automatic_repairs": repair_attempt,
+        "repair_limit": stage_record.get("repair_limit", 0),
+        "repair_history": stage_record.get("repair_history", []),
+        "failure_count": stage_record.get("failure_count", 0),
+        "activity": "Design checked. Review the artifact before approving it.",
     }
     receipt = handoff_receipt(
         run_id=manifest["plan_id"],
@@ -1140,23 +1260,33 @@ def _run_stage_agent(
     feedback: str | None = None,
 ) -> dict:
     """Run a planning role and retain a structured failure handoff when it blocks."""
-    manifest["stages"][stage]["status"] = "running"
+    record = manifest["stages"][stage]
+    limit = 0 if mock else min(MAX_PLANNING_REPAIRS, FactoryCharter.load(repo, require_approved=True).max_retries)
+    record.update(status="running", automatic_repairs=0, repair_limit=limit,
+                  activity="Preparing the design from the approved inputs.")
+    record.pop("error", None)
+    record.pop("failure_kind", None)
     save_manifest(repo, run_dir, manifest)
     try:
-        return _run_stage_agent_impl(
-            repo,
-            run_dir,
-            stage,
-            manifest,
-            planning_agent,
-            agent_bin,
-            mock,
-            feedback,
-        )
+        for attempt in range(limit + 1):
+            try:
+                return _run_stage_agent_impl(
+                    repo, run_dir, stage, manifest, planning_agent, agent_bin, mock, feedback,
+                )
+            except PlanningArtifactError:
+                if attempt == limit:
+                    raise
+                record.update(status="running", automatic_repairs=attempt + 1,
+                              activity=f"Correcting invalid planning output (repair {attempt + 1} of {limit}). No action needed.")
+                record.pop("error", None)
+                record.pop("failure_kind", None)
+                save_manifest(repo, run_dir, manifest)
+                print(record["activity"], flush=True)
     except Exception as exc:
         contract = role_input(repo, stage)
         record = manifest["stages"][stage]
-        record["failure_count"] = int(record.get("failure_count", 0)) + 1
+        if not isinstance(exc, PlanningArtifactError):
+            record["failure_count"] = int(record.get("failure_count", 0)) + 1
         if not record.get("failure_kind"):
             record["failure_kind"] = (
                 "validation" if isinstance(exc, ValueError)
@@ -1178,8 +1308,8 @@ def _run_stage_agent(
         )
         attempt = len(manifest.get("revisions", [])) + 1 if feedback else 1
         suffix = f"-revision-{attempt}" if feedback else ""
-        prompt_path = repo / ".factory/prompts" / f"planner-{manifest['plan_id']}-{stage}{suffix}.md"
-        log_path = repo / ".factory/logs" / f"planner-{manifest['plan_id']}-{stage}{suffix}.log"
+        prompt_path = repo / record.get("prompt", f".factory/prompts/planner-{manifest['plan_id']}-{stage}{suffix}.md")
+        log_path = repo / record.get("log", f".factory/logs/planner-{manifest['plan_id']}-{stage}{suffix}.log")
         receipt = handoff_receipt(
             run_id=manifest["plan_id"],
             role=stage,
@@ -1206,7 +1336,7 @@ def _run_stage_agent(
         receipt_path = write_handoff_receipt(repo, receipt)
         receipt_reference = relative_path(receipt_path, repo)
         manifest.setdefault("receipts", []).append(receipt_reference)
-        record.update(status="blocked", receipt=receipt_reference)
+        record.update(status="blocked", receipt=receipt_reference, activity="Planning stopped. Inspect the saved error and correction options.")
         manifest["status"] = "blocked"
         save_manifest(repo, run_dir, manifest)
         raise

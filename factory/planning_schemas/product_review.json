@@ -52,7 +52,7 @@
           "outcome": { "type": "string" },
           "steps": { "type": "array", "items": { "type": "string" } },
           "edge_cases": { "type": "array", "items": { "type": "string" } },
-          "requirements": { "type": "array", "items": { "type": "string" } }
+          "requirements": { "type": "array", "items": { "type": "string", "pattern": "^[A-Z][A-Z0-9_-]{0,31}$" } }
         },
         "required": ["id", "name", "outcome", "steps", "edge_cases", "requirements"]
       }
