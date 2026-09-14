@@ -73,7 +73,26 @@ try {
     check("document.querySelector('#journey-next').textContent.includes('Connect')");
     navigate("connect");
     check("document.querySelectorAll('.setup-flow > li').length === 3");
+    check("!document.querySelector('#attention-surface')");
+    // Display Live setup without contacting GitHub; the fixture remains local.
+    browser("select", "#connect-mode", "live");
+    browser("fill", '[name="github_repository"]', "https://github.com/your-account/factory-tablestory-workshop");
+    browser("fill", '[name="project_number"]', "https://github.com/users/your-account/projects/1/views/1");
+    check("document.querySelector('[name=project_number]').checkValidity()");
+    check("!document.querySelector('[name=project_number]').closest('details')");
+    browser("set", "viewport", "1440", "1200");
+    browser("check", '[name="bootstrap_workshop"]');
     shot("connect");
+    browser("uncheck", '[name="bootstrap_workshop"]');
+    browser("set", "viewport", "1440", "980");
+    // Submit through the real form in Rehearsal: exercise parsing and persistence
+    // without cloning a repository or creating a GitHub Project.
+    browser("select", "#connect-mode", "rehearsal");
+    browser("click", '#config-form button[type="submit"]');
+    browser("wait", "--fn", "app.snapshot?.config?.project_number === 1 && app.snapshot?.operation?.status === 'succeeded'");
+    browser("reload");
+    browser("wait", "--fn", "app.snapshot?.config?.project_number === 1");
+    check("document.querySelector('[name=project_number]').value === '1'");
   });
   await fixture("product", () => {
     // A new browser restores the server's run mode, not a stale local default.
@@ -143,7 +162,8 @@ try {
   });
   await fixture("running", () => {
     navigate("planning");
-    check("document.querySelector('#artifact-content').textContent.includes('The expert is working')");
+    check("app.snapshot.planning.stages.find(stage => stage.id === 'product_review').status === 'running'");
+    check("document.querySelector('#artifact-content').textContent.includes(app.snapshot.planning.stages.find(stage => stage.id === 'product_review').activity || 'The expert is working')");
     check("document.querySelector('#open-artifact').hidden");
     check("!performance.getEntriesByType('resource').some(entry => entry.name.endsWith('/api/artifact?path='))");
     navigate("evidence");
@@ -151,6 +171,8 @@ try {
     check("document.querySelector('#run-app-status').textContent.includes('separate terminal')");
   });
   await fixture("qa", () => {
+    shot("overview");
+    check("!document.querySelector('#attention-surface') && document.querySelector('#journey-next').textContent.length > 0");
     // A slow companion action gives feedback and cannot be submitted twice.
     assert.equal(browser("eval", `(async () => {
       const originalRequest = request, originalConfirm = window.confirm;
@@ -170,7 +192,7 @@ try {
           && !document.querySelector('#toast-region').textContent.includes('Submitting retry');
       } finally { request = originalRequest; window.confirm = originalConfirm; }
     })()`), "true");
-    shot("overview");
+    browser("wait", "--fn", "!document.querySelector('#toast-region').children.length");
     navigate("tickets");
     check("document.querySelector('#issue-listener-state').hidden");
     shot("tickets");
@@ -245,8 +267,9 @@ try {
       capturedAt: new Date().toISOString(),
       baseRevision: execFileSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf8" }).trim(),
       workingTreeChanges: Boolean(execFileSync("git", ["status", "--porcelain"], { cwd: root, encoding: "utf8" }).trim()),
-      scenario: "Disposable Standard Rehearsal; mock providers; not Live GitHub evidence",
+      scenario: "Disposable Standard Rehearsal; mock providers. Connection screenshot displays unsaved example Live URLs; no GitHub calls or Live evidence.",
       viewport: { width: 1440, height: 980 },
+      viewportOverrides: { "control-center-connect.jpg": { width: 1440, height: 1200 } },
       sources: Object.fromEntries(sources.map(path => [path, hash(path)])),
       images: Object.fromEntries(images.map(path => [path, hash(path)])),
     }, null, 2) + "\n");

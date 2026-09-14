@@ -388,7 +388,6 @@ function renderSnapshot(data) {
   renderOperation(data.operation || {});
   syncOperationPolling(data.operation || {});
   renderJourney(data.journey || {});
-  renderDecisions(data);
   renderPlanning(data.planning || {});
   renderTickets(data.factory || {}, data.planning || {}, data.operation || {});
   renderSupervisor(data.supervisor || {}, data.factory || {}, data.config || {});
@@ -513,27 +512,6 @@ function renderOperation(operation) {
     const busy = status === "running" || status === "stopping";
     button.disabled = busy || (button.dataset.action === "listen" && mode() !== "live");
   });
-}
-
-function renderDecisions(data) {
-  const decisions = data.decisions || [];
-  $("#run-grid").classList.toggle("has-decisions", decisions.length > 0);
-  $("#attention-surface").hidden = decisions.length === 0;
-  $("#decision-count").textContent = decisions.length;
-  $("#attention-surface").classList.toggle("has-attention", decisions.length > 0);
-  $("#attention-intro").textContent = decisions.length
-    ? `${decisions.length} ${decisions.length === 1 ? "decision is" : "decisions are"} blocking or pacing delivery.`
-    : "Nothing needs you now. The factory can continue without a human decision.";
-  $("#decision-list").innerHTML = decisions.length ? decisions.map((item, index) => `<article class="decision"><b>${esc(item.title)}</b><p>${esc(item.text)}</p><button class="button" type="button" data-decision="${index}">Review decision</button></article>`).join("") : '<p class="empty-state">No decisions are waiting.</p>';
-  $$('[data-decision]').forEach((button) => button.addEventListener("click", () => {
-    const item = decisions[Number(button.dataset.decision)];
-    if (item.ticket) return openTicket(item.ticket.number);
-    if (item.planning) {
-      app.selectedPlanning = item.planning;
-      app.loadedPlanningArtifact = "";
-    }
-    if (item.view) showView(item.view);
-  }));
 }
 
 function planningSequence(planning) {

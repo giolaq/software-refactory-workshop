@@ -1,6 +1,6 @@
 # Software (re)-Factory workshop guide
 
-Release: `workshop-v1.2.2`
+Release: `workshop-v1.2.3`
 
 The attendee procedure guide uses the existing **Setup → Plan → Deliver → Review**
 screens, framed as agree on the change, build it, inspect evidence, and accept it.

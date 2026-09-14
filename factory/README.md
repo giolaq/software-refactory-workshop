@@ -1,6 +1,6 @@
 # Software (re)-Factory
 
-Release: `workshop-v1.2.2`
+Release: `workshop-v1.2.3`
 
 Software (re)-Factory is a legible control layer for running several coding
 agents against a dependency-mapped backlog. GitHub Issues are tickets, Projects
@@ -153,6 +153,20 @@ the PRD into GitHub Issues and the worker roles create the product and tests;
 the local factory implementation is never copied into the product repository.
 State the intended language, framework, and required verification in the PRD
 and review the generic contract before approval.
+
+Two complete greenfield examples are available:
+
+- [BorrowBox equipment lending desk](../borrowbox-prd.md): a Flask/SQLite app
+  for inventory, checkout, returns, and overdue loans.
+- [TrailMix conference agenda planner](../trailmix-prd.md): a static browser
+  app with saved sessions, conflict resolution, and a printable agenda.
+
+Use a separate empty repository and GitHub Project for each exercise. Leave
+**Seed the guided Pocket Cinema starter** unchecked, complete Setup, then paste
+the chosen PRD into **Plan → Requirements**. These examples require Live mode;
+the Rehearsal simulator does not implement arbitrary PRDs. They are alternatives
+to the main TableStory transformation, not extra work to fit into the same
+three-hour session.
 
 ## Architecture tour
 

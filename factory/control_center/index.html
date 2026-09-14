@@ -82,11 +82,6 @@
             <article><span>Completed</span><strong id="metric-done">0</strong></article>
           </div>
         </section>
-        <aside class="surface attention-surface" id="attention-surface" hidden>
-          <div class="surface-heading"><div><span class="section-label">Attention queue</span><h2>Needs your decision</h2></div><span class="attention-count" id="decision-count">0</span></div>
-          <p class="attention-intro" id="attention-intro">Human gates and blocked work appear here in priority order.</p>
-          <div class="decision-list" id="decision-list"><p class="empty-state">No decisions are waiting.</p></div>
-        </aside>
       </div>
 
       <section class="surface journey-surface">
@@ -145,10 +140,11 @@
               <label>Run mode<select id="connect-mode"><option value="rehearsal">Rehearsal</option><option value="live">Live</option></select></label>
               <label>Profile<select name="profile"><option value="standard">Standard</option><option value="lean">Lean</option><option value="assured">Assured</option><option value="autonomous-demo">Autonomous Demo</option></select></label>
               <label class="wide-field" data-live-setting>GitHub repository URL<input name="github_repository" type="url" inputmode="url" placeholder="https://github.com/you/workshop-repo"><small>Saving verifies access and opens an isolated managed checkout. The factory never repoints another repository's <code>origin</code>.</small></label>
+              <label class="wide-field" data-live-setting>GitHub Project URL or number<input name="project_number" type="text" placeholder="https://github.com/users/you/projects/1" aria-describedby="project-help"><small id="project-help">On GitHub, open your profile → Projects → New project. Choose Board and create a new workshop project under the same owner as your repository. Paste its URL here; the factory extracts the project number. Tickets appear after you approve the plan.</small></label>
             </div>
             <label class="check-row" id="bootstrap-workshop-option"><input name="bootstrap_workshop" type="checkbox"><span><b>Seed the guided Pocket Cinema starter</b><small>Copies only the starter product and its governance into an empty repository. Factory runtime and workshop documentation stay in this control checkout.</small></span></label>
             <details class="advanced-settings">
-              <summary><span><strong>Advanced role settings</strong><small>Parallelism, role adapters, QA policy, and GitHub Project</small></span><span class="summary-chevron" aria-hidden="true">⌄</span></summary>
+              <summary><span><strong>Advanced role settings</strong><small>Parallelism, role adapters, and QA policy</small></span><span class="summary-chevron" aria-hidden="true">⌄</span></summary>
               <div class="form-grid">
                 <label>Parallel tickets<input name="max_parallel" type="number" min="1" max="12" value="1"></label>
                 <label>Planning<select name="planning_agent" data-agent-select="planning"></select></label>
@@ -156,7 +152,6 @@
                 <label>Independent QA (Standard/Assured)<select name="qa_agent" data-agent-select="qa"></select></label>
                 <label>Supervisor (Assured/Autonomous Demo)<select name="supervisor_agent" data-agent-select="supervisor"></select></label>
                 <label>Code review (Standard/Assured)<select name="review_agent" data-agent-select="review"></select></label>
-                <label data-live-setting>GitHub Project number<input name="project_number" type="number" min="1" placeholder="Create during approval"></label>
               </div>
               <label class="check-row"><input name="review_qa_tests" type="checkbox" checked><span><b>Require human QA approval</b><small>Implementation waits until a person approves the acceptance tests.</small></span></label>
               <label class="check-row safety-note" id="autonomous-merge-warning" hidden><input id="autonomous-merge-opt-in" type="checkbox"><span><b>Delegate final merge accountability for this demonstration</b><small>This delegates final merge accountability: the Supervisor recommends and the orchestrator executes an exact-revision merge. This is a workshop contrast, not the normal shipping path. The choice is not saved and must be made again after a reload.</small></span></label>

@@ -1687,6 +1687,44 @@ class ControlCenter:
             raise InputError(f"{key.replace('_', ' ').title()} must be a positive number.")
         return number
 
+    def _project_number(self, payload: dict, repository: str = "") -> int | None:
+        """Accept board/view URLs without confusing an owner's project number."""
+        value = payload.get("project_number")
+        if value is None or value == "":
+            return None
+        if isinstance(value, int) and not isinstance(value, bool) and value > 0:
+            return value
+        if isinstance(value, str) and len(value) <= 2048:
+            value = value.strip()
+            if not value:
+                return None
+            if re.fullmatch(r"[0-9]+", value) and int(value) > 0:
+                return int(value)
+            try:
+                url = urlparse(value)
+                match = re.fullmatch(
+                    r"/(?:users|orgs)/([A-Za-z0-9-]+)/projects/([1-9][0-9]*)(?:/views/[1-9][0-9]*)?/?",
+                    url.path,
+                )
+            except ValueError:
+                match = None
+            if match and url.scheme == "https" and url.netloc.lower() == "github.com":
+                repository = repository or self.session_config().get("github_repository", "")
+                target = repository_from_remote(repository) if repository else repository_from_remote(
+                    run_text(["git", "remote", "get-url", "origin"], self.repo)
+                )
+                owner = target.slug.split("/", 1)[0] if target else ""
+                if owner and match[1].lower() != owner.lower():
+                    raise InputError(
+                        f"The GitHub Project must belong to {owner}, the repository owner. "
+                        "Create a board under that owner and paste its URL."
+                    )
+                return int(match[2])
+        raise InputError(
+            "Enter a GitHub Project URL such as https://github.com/users/you/projects/1 "
+            "(or /orgs/your-org/projects/1), or a positive project number."
+        )
+
     def _plan_id(self, payload: dict) -> str:
         value = self._string(payload, "plan_id") or self.latest_plan_id()
         if not PLAN_ID.fullmatch(value):
@@ -1926,6 +1964,7 @@ class ControlCenter:
                 raise InputError("Enter the GitHub repository URL before saving Live configuration.")
             if bootstrap_workshop and mode != "live":
                 raise InputError("Workshop bootstrap is available only for a Live repository.")
+            project = self._project_number(payload, repository)
             if mode == "live":
                 try:
                     requested = parse_github_repository(repository)
@@ -1981,7 +2020,6 @@ class ControlCenter:
                     raise InputError("Planning must use Bedrock, Claude, Codex, or Cursor.")
                 command += ["--planning-agent", planning]
             parallel = self._positive_int(payload, "max_parallel")
-            project = self._positive_int(payload, "project_number")
             if parallel:
                 command += ["--max-parallel", str(parallel)]
             if project:
@@ -2109,7 +2147,7 @@ class ControlCenter:
                     raise InputError("Unknown rehearsal scenario.")
                 return "Approve rehearsal tickets", [[str(self.factory), "approve-rehearsal", plan, "--yes", "--scenario", scenario]]
             command = base + ["approve", plan, "--yes"]
-            project = self._positive_int(payload, "project_number") or self.session_config().get("project_number")
+            project = self._project_number(payload) or self.session_config().get("project_number")
             title = self._string(payload, "project_title", max_length=80)
             if project:
                 command += ["--project-number", str(project)]
@@ -2166,7 +2204,7 @@ class ControlCenter:
             command = base + ["merge", str(issue), "--repo", str(self.repo), "--yes"]
             if mock:
                 command.append("--mock")
-            project = self._positive_int(payload, "project_number") or self.session_config().get("project_number")
+            project = self._project_number(payload) or self.session_config().get("project_number")
             if project and not mock:
                 command += ["--project-number", str(project)]
             return f"Merge exact revision for ticket #{issue}", [command]
@@ -2320,7 +2358,7 @@ class ControlCenter:
             command = base + ["retry", str(issue), "--repo", str(self.repo)]
             if mock:
                 command.append("--mock")
-            project = self._positive_int(payload, "project_number") or self.session_config().get("project_number")
+            project = self._project_number(payload) or self.session_config().get("project_number")
             if project and not mock:
                 command += ["--project-number", str(project)]
             command += ["--reason", reason]

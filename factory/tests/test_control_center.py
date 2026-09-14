@@ -742,6 +742,51 @@ class ControlCenterTests(unittest.TestCase):
             self.assertIn("https://github.com/attendee/workshop", commands[1])
             self.assertIn("--repo", commands[1])
 
+    def test_project_url_is_normalized_to_number_in_configure_command(self):
+        with tempfile.TemporaryDirectory() as directory:
+            center = ControlCenter(self.make_repo(directory))
+            for value in (15, "15", " 15 ",
+                          "https://github.com/users/attendee/projects/15",
+                          "https://github.com/orgs/ATTENDEE/projects/15/",
+                          " https://github.com/users/attendee/projects/15/views/2?filterQuery=is%3Aopen#top "):
+                with self.subTest(value=value):
+                    _, commands = center.build_commands("configure", {
+                        "mode": "live", "preset": "claude-workshop",
+                        "github_repository": "https://github.com/attendee/workshop",
+                        "project_number": value,
+                    })
+                    command = commands[-1]
+                    self.assertEqual(command[command.index("--project-number") + 1], "15")
+
+    def test_project_input_rejects_wrong_urls_and_non_integer_numbers(self):
+        with tempfile.TemporaryDirectory() as directory:
+            center = ControlCenter(self.make_repo(directory))
+            for value in (True, 1.5, 0, -1, "1.5", "15; exit", [], "1" * 5000,
+                          "http://github.com/users/attendee/projects/15",
+                          "https://example.com/users/attendee/projects/15",
+                          "https://github.com@evil.test/users/attendee/projects/15",
+                          "https://github.com/attendee/workshop/projects/15",
+                          "https://github.com/users/attendee/projects/0",
+                          "https://github.com/users/attendee/projects/15/settings",
+                          "https://["):
+                with self.subTest(value=value), self.assertRaisesRegex(InputError, "GitHub Project URL"):
+                    center._project_number({"project_number": value})
+            for value in (None, "", "  "):
+                self.assertIsNone(center._project_number({"project_number": value}))
+
+    def test_project_url_must_match_selected_or_saved_repository_owner(self):
+        with tempfile.TemporaryDirectory() as directory:
+            center = ControlCenter(self.make_repo(directory))
+            payload = {"project_number": "https://github.com/users/someone-else/projects/15"}
+            with self.assertRaisesRegex(InputError, "must belong to attendee"):
+                center.build_commands("configure", {
+                    **payload, "mode": "live", "preset": "claude-workshop",
+                    "github_repository": "https://github.com/attendee/workshop",
+                })
+            with patch.object(center, "session_config", return_value={"github_repository": "attendee/workshop"}):
+                with self.assertRaisesRegex(InputError, "must belong to attendee"):
+                    center._project_number(payload)
+
             _, commands = center.build_commands("configure", {
                 "mode": "live",
                 "preset": "claude-workshop",
@@ -2283,7 +2328,6 @@ class ControlCenterTests(unittest.TestCase):
             "Reset or start again",
             "Start workshop over",
             "System health",
-            "Needs your decision",
             "Activity and CLI output",
             "Active lanes",
             "All lanes",
@@ -2307,13 +2351,12 @@ class ControlCenterTests(unittest.TestCase):
         self.assertIn("app.selectedPlanning !== selectedId", javascript)
         self.assertNotIn("app.selectedPlanning === id", javascript)
         self.assertIn("planning.presentation?.selected_stage", javascript)
-        self.assertIn("if (item.planning)", javascript)
         self.assertNotIn('id="planning-profile"', source)
         self.assertIn('id="connect-mode"', source)
         self.assertIn('full: mode() === "live"', javascript)
         self.assertIn("planning.can_continue", javascript)
         self.assertIn("planning.presentation?.continue_label", javascript)
-        self.assertIn("const decisions = data.decisions || [];", javascript)
+        self.assertNotIn("renderDecisions", javascript)
         self.assertNotIn("planning.presentation?.decision", javascript)
         self.assertIn("planning.presentation?.sequence", javascript)
         self.assertNotIn("planning.status === `awaiting_${stage}_approval`", javascript)
@@ -2411,7 +2454,9 @@ class ControlCenterTests(unittest.TestCase):
         self.assertNotIn('id="save-prd"', source)
         self.assertNotIn('id="planning-mode"', source)
         self.assertIn("function schedulePrdSave()", javascript)
-        self.assertIn('$("#attention-surface").hidden = decisions.length === 0', javascript)
+        self.assertNotIn('id="attention-surface"', source)
+        self.assertNotIn("attention-surface", styles)
+        self.assertIn('GitHub Project URL or number<input name="project_number" type="text"', source)
         self.assertIn('$("#continue-plan").hidden = !planning.can_continue', javascript)
         self.assertIn("grid-template-columns: repeat(4,1fr)", styles)
 

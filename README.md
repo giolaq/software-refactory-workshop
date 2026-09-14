@@ -1,6 +1,6 @@
 # Software (re)-Factory Workshop
 
-Release: `workshop-v1.2.2`
+Release: `workshop-v1.2.3`
 
 Software (re)-Factory helps you use coding agents to turn requirements into
 reviewed changes in a GitHub repository. You describe the result, review the
@@ -51,7 +51,7 @@ For this release, run the following in the folder where you keep your projects.
 If your facilitator supplies a different session tag, use that tag instead.
 
 ```sh
-git clone --branch workshop-v1.2.2 https://github.com/giolaq/software-refactory-workshop.git software-refactory-control
+git clone --branch workshop-v1.2.3 https://github.com/giolaq/software-refactory-workshop.git software-refactory-control
 cd software-refactory-control
 ./setup_demo.sh --scenario recipe-rebrand
 ./factory/factory control-center
@@ -72,10 +72,16 @@ for example `factory-tablestory-workshop`. Use your own account and leave README
 `.gitignore`, and license unselected. Copy its URL; you do not need to clone it.
 Keep this product repository separate from the factory checkout above.
 
+Create a new GitHub Project under the same account: **Your profile → Projects →
+New project → Board**. Name it `TableStory workshop`, select **Create project**,
+and copy the board URL from your browser. Use a dedicated board; the factory
+configures its Status columns and adds tickets after you approve the plan.
+
 In the Control Center, open **Setup → Connection**:
 
 1. **Connect:** select **Live**, **Standard**, and your agent preset. Paste your
-   product repository URL, select **Seed the guided Pocket Cinema starter**,
+   product repository URL and paste the board URL into **GitHub Project URL or
+   number** (the number is extracted automatically). Select **Seed the guided Pocket Cinema starter**,
    and select **Save and connect**. This copies the starting app, not tickets.
 2. **Create contract:** select **Create contract** to generate the repository
    settings and operating rules.
@@ -249,6 +255,18 @@ The whole workshop comes down to this:
 **Agree on the change. Let agents build it. Inspect the evidence. Decide whether to accept it.**
 
 In Standard, ordinary factory code coordinates this process. There is no AI Supervisor making scheduling or merge decisions.
+
+## v1.2.3 highlights
+
+- Planning validates generated references and provides bounded recovery from
+  provider context-limit failures.
+- Setup accepts a GitHub Project board URL and extracts its number. The guide
+  explains how to create the board before connecting.
+- The Control Center uses Current phase and Next safe action without a
+  separate Attention Queue; workshop screenshots match the updated interface.
+- Two new greenfield PRDs are available: [BorrowBox](borrowbox-prd.md), an
+  equipment lending desk, and [TrailMix](trailmix-prd.md), a conference agenda
+  planner. Both require Live agents and a separate empty repository.
 
 ## v1.2.2 highlights
 

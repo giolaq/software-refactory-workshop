@@ -61,12 +61,26 @@ the role's policy or authority.
 
 Setup has three attendee decisions:
 
-1. **Connect** — select the GitHub repository, run mode, Factory Profile, and
+1. **Connect** — select the GitHub repository, GitHub Project board, run mode, Factory Profile, and
    agent preset, then select **Save and connect**.
 2. **Create contract** — let the factory detect source folders, tests, gates,
    and a conservative operating policy.
 3. **Review and approve** — inspect the repository model and operating policy,
    then select **Approve contract and continue** once.
+
+For Live mode, create a new board first: on GitHub, open **Your profile →
+Projects → New project**, choose **Board**, name it, and select **Create
+project**. Use the same owner as your repository. Paste the board URL into
+**GitHub Project URL or number**, beside the repository URL. The factory accepts
+personal and organization Project URLs, including `/views/1` links, and saves
+the project number. A number alone still works. A URL for a different owner
+is rejected. Use a dedicated workshop board because the factory configures its
+Status columns. The board stays empty until you approve and publish the plan.
+Rehearsal does not need a GitHub Project.
+
+Current run uses **Current phase** and **Next safe action** to guide you.
+Review decisions in the linked planning stage or ticket; there is no separate
+Attention Queue.
 
 The final approval runs the mechanical work in order: publish the contract in
 Live mode, provision the checkout, run only declared setup commands, check

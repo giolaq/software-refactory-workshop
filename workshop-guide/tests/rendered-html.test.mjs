@@ -107,6 +107,10 @@ test("Control Center setup is direct and does not require a shell wizard", async
   assert.match(primary, /https:\/\/github.com\/new/);
   assert.match(primary, /Do not clone this repository yourself/);
   assert.match(primary, /In the same terminal/);
+  assert.match(primary, /Create your GitHub Project board/);
+  assert.match(primary, /Your profile → Projects → New project/);
+  assert.match(primary, /GitHub Project URL or number/);
+  assert.match(setup, /--project-number "\$PROJECT_NUMBER"/);
   assert.match(setup, /export TARGET="\$CONTROL\/\.factory\/repositories\/\$REPOSITORY"/);
 });
 

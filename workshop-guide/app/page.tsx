@@ -338,44 +338,52 @@ agent status`}</CodeBlock>
           {track === "live" && <>
             <h3>Sign in to GitHub</h3>
             <CodeBlock label="GitHub sign-in">{`gh auth login --web --git-protocol https --scopes project`}</CodeBlock>
-            <p>Follow the browser sign-in instructions and authorize access. If you already completed the GitHub checks above, skip this command.</p>
+            <p>Authorize access in your browser. Skip if already signed in with Projects access.</p>
           </>}
           <h3>Download the factory</h3>
-          <p>Replace <code>SESSION_TAG</code> with the session release tag your facilitator gives you. Open a terminal in the folder where you keep your projects, then run:</p>
+          <p>In your projects folder, run these commands. Replace <code>SESSION_TAG</code> with your facilitator’s session release tag.</p>
           <CodeBlock label="Download and prepare — run once">{track === "rehearsal" ? `git clone --branch SESSION_TAG https://github.com/giolaq/software-refactory-workshop.git software-refactory-rehearsal
 cd software-refactory-rehearsal
 ./setup_demo.sh --scenario recipe-rebrand
 git remote remove origin` : `git clone --branch SESSION_TAG https://github.com/giolaq/software-refactory-workshop.git software-refactory-control
 cd software-refactory-control
 ./setup_demo.sh --scenario recipe-rebrand`}</CodeBlock>
-          <p>The setup command installs the workshop dependencies and prepares the local starter. It does not create GitHub tickets. Do not rerun it to restart an existing workshop run; use the Control Center&apos;s Reset run action.</p>
+          <p>Setup installs dependencies and the starter, not tickets. To restart later, use <strong>Reset run</strong> in the Control Center, not this command.</p>
           {track === "live" && <>
             <h3>Create your workshop repository</h3>
             <ol>
               <li>Open <a href="https://github.com/new" target="_blank" rel="noreferrer">GitHub → New repository</a>. Use your personal account as the owner.</li>
               <li>Name it <code>factory-tablestory-workshop</code> and select <strong>Private</strong>. If that name already exists, choose another.</li>
               <li>Leave README, .gitignore, and license unselected. Select <strong>Create repository</strong>.</li>
-              <li>Copy its page URL. You will paste it into the Control Center in the next step. Do not clone this repository yourself.</li>
+              <li>Copy its URL for the Control Center. Do not clone this repository yourself.</li>
             </ol>
-            <p>If you already created an empty personal repository for this session, use it instead.</p>
+            <p>Already created an empty personal repository? Use it.</p>
+            <h3>Create your GitHub Project board</h3>
+            <ol>
+              <li>On GitHub, open your profile picture → <strong>Your profile → Projects → New project</strong>.</li>
+              <li>Choose <strong>Board</strong>, name it <code>TableStory workshop</code>, and select <strong>Create project</strong>. Use your repository’s owner account.</li>
+              <li>Copy its URL, such as <code>https://github.com/users/your-account/projects/1</code>. URLs ending in <code>/views/1</code> also work.</li>
+              <li>Keep the tab open. Tickets appear after plan approval.</li>
+            </ol>
+            <p>Use a new board: the factory configures its Status columns. <a href="https://docs.github.com/en/issues/planning-and-tracking-with-projects/creating-projects/creating-a-project" target="_blank" rel="noreferrer">GitHub’s project creation guide</a>.</p>
           </>}
           <div className="activity-card launch-card">
             <span className="activity-label">Keep this terminal running</span>
             <h3>Start the Control Center</h3>
-            <p>In the same terminal, still inside <code>{track === "live" ? "software-refactory-control" : "software-refactory-rehearsal"}</code>, run:</p>
+            <p>In the same terminal, inside <code>{track === "live" ? "software-refactory-control" : "software-refactory-rehearsal"}</code>, run:</p>
             <CodeBlock label="Start the Control Center — keep this running">{`./factory/factory control-center`}</CodeBlock>
             <ol>
               <li>Wait for <code>Factory Control Center: http://127.0.0.1:5050</code>.</li>
               <li>The browser should open automatically. Otherwise open <a href="http://127.0.0.1:5050">127.0.0.1:5050</a>.</li>
               <li>Leave this terminal running. <code>Ctrl+C</code> stops the Control Center.</li>
             </ol>
-            <p>Continue in the browser. You need another terminal only if you choose the optional CLI instructions or need to repair an error.</p>
+            <p>Continue in the browser. CLI alternatives are optional.</p>
           </div>
 
           <h3>Complete Setup in three steps</h3>
           <ol className="setup-sequence">
-            <li><span>1</span><div><strong>Connect</strong><p>Open <strong>Setup → Connection</strong>. Select <strong>{track === "live" ? "Live" : "Rehearsal"}</strong>, <strong>Standard</strong>, and your agent preset — which AI CLI the factory will use. {track === "live" ? <>Paste <em>your product repository</em> URL. Select <strong>Seed the guided Pocket Cinema starter</strong> for this exercise; leave it clear for your own existing product.</> : <>No GitHub settings are needed.</>} Select <strong>Save and connect</strong>.</p></div></li>
-            <li><span>2</span><div><strong>Create contract</strong><p>Select <strong>Create contract</strong>. The factory scans the repository and writes its settings: which folders it may change, and the checks every change must pass. No coding agent runs.</p></div></li>
+            <li><span>1</span><div><strong>Connect</strong><p>Open <strong>Setup → Connection</strong>. Select <strong>{track === "live" ? "Live" : "Rehearsal"}</strong>, <strong>Standard</strong>, and your agent preset. {track === "live" ? <>Paste your repository URL and your board URL into <strong>GitHub Project URL or number</strong>. Select <strong>Seed the guided Pocket Cinema starter</strong>.</> : <>No GitHub settings are needed.</>} Select <strong>Save and connect</strong>.</p></div></li>
+            <li><span>2</span><div><strong>Create contract</strong><p>Select <strong>Create contract</strong>. The factory detects allowed folders and required checks. No coding agent runs.</p></div></li>
             <li><span>3</span><div><strong>Review and approve</strong><p>Open <strong>Review repository model</strong> and <strong>Review operating policy</strong>. If they match the repository, select <strong>Approve contract and continue</strong>.</p></div></li>
           </ol>
           <details className="optional-detail setup-terms">
@@ -384,7 +392,7 @@ cd software-refactory-control
           </details>
 
           <Callout type="note" title="What happens after you approve">
-            <p>After Step 3, the factory publishes the contract (Live mode), prepares the environment, checks gates, and runs preflight. <strong>Activity and CLI output</strong> shows each substep and stops at the first error.</p>
+            <p>The factory publishes the contract (Live), prepares the environment, and checks readiness. Follow <strong>Activity and CLI output</strong>; it stops at the first error.</p>
           </Callout>
 
           <Callout type="warning" title="If automatic setup stops, fix the first error">
@@ -414,17 +422,18 @@ export TARGET="$CONTROL/.factory/repositories/$REPOSITORY"
 # ./factory/factory init --repo "$TARGET"
 
 AGENT_PRESET=claude-workshop # or codex-workshop or cursor-workshop
+PROJECT_NUMBER=1 # Replace with the number after /projects/ in your board URL.
 ./factory/factory configure --repo "$TARGET" --preset "$AGENT_PRESET" \\
-  --github-repository "https://github.com/$REPOSITORY"
+  --github-repository "https://github.com/$REPOSITORY" --project-number "$PROJECT_NUMBER"
 ./factory/factory approve-contract --repo "$TARGET" --live --yes` : `# setup_demo.sh already created the local contract.
 ./factory/factory approve-contract --yes`}</WorkshopPaths>
           <WorkshopMedia
             src="/screenshots/control-center-connect.jpg"
             alt="Control Center Setup screen with Connect, Create contract, and Review and approve steps"
             label="Setup → Connection"
-            caption="Three decisions: connect, create the contract, then review and approve."
+            caption="In Live mode, paste your repository URL and Project board URL before Save and connect. Rehearsal needs neither."
             width={1440}
-            height={980}
+            height={1200}
           />
           <Callout type="tip" title="Use Current run as your guide">
             <p><strong>Current phase</strong> explains the state. <strong>Next safe action</strong> is the one thing to do.</p>
@@ -608,8 +617,8 @@ read -r ISSUE_NUMBER
             continueWhen={<>Code review approves the commit and you select <strong>Merge exact revision</strong>. The ticket then moves to Done.</>}
             cliPurpose={<>Run eligible tickets and follow their GitHub Project state.</>}
             cliDirectory={track === "live" ? <><code>software-refactory-control</code>; commands target <code>$TARGET</code></> : <><code>software-refactory-rehearsal</code></>}
-          >{track === "live" ? `echo "Enter your GitHub Project number:"
-read -r PROJECT_NUMBER
+          >{track === "live" ? `# Use the board number you saved during setup.
+PROJECT_NUMBER=1 # Replace with your number after /projects/.
 gh project view "$PROJECT_NUMBER" --owner "@me" --web
 ./factory/factory run --repo "$TARGET"` : `./factory/factory run --mock --scenario recipe-rebrand`}</WorkshopPaths>
           <WorkshopMedia
@@ -802,7 +811,7 @@ gh project view "$PROJECT_NUMBER" --owner "@me" --web
 
       <footer>
         <span className="footer-brand"><span className="brand-mark" aria-hidden="true"><i /><i /><i /><i /></span>Software (re)-Factory</span>
-        <span>Setup. Plan. Deliver. Review. · workshop-v1.2.2</span>
+        <span>Setup. Plan. Deliver. Review. · workshop-v1.2.3</span>
       </footer>
     </>
   );
