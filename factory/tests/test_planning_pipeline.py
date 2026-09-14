@@ -26,6 +26,7 @@ from planning_pipeline import (
     sha_text,
     stage_prompt,
     validate_product,
+    validate_program,
     validate_vertical_slices,
     validate_project_paths,
     _run_codex_agent,
@@ -320,13 +321,14 @@ class PlanningPipelineTests(unittest.TestCase):
             stage = blocked["stages"]["vertical_slices"]
             self.assertEqual(stage["status"], "blocked")
             self.assertEqual(stage["failure_kind"], "validation")
-            self.assertEqual(stage["error"], "T1 references unknown IDs: C1")
+            self.assertIn("T1 references unknown IDs: C1", stage["error"])
+            self.assertIn("tickets[].contract_ids accepts only these IDs", stage["error"])
             rejected_path = self.repo / stage["rejected_artifact"]
             self.assertTrue(rejected_path.is_file())
             self.assertIn("C1", rejected_path.read_text())
             dashboard = json.loads((self.repo / ".factory/planning-state.json").read_text())
             dashboard_stage = next(item for item in dashboard["stages"] if item["id"] == "vertical_slices")
-            self.assertEqual(dashboard_stage["error"], "T1 references unknown IDs: C1")
+            self.assertIn("T1 references unknown IDs: C1", dashboard_stage["error"])
             self.assertEqual(dashboard_stage["failure_kind"], "validation")
             self.assertEqual(dashboard_stage["rejected_artifact"], stage["rejected_artifact"])
 
@@ -524,6 +526,107 @@ class PlanningPipelineTests(unittest.TestCase):
                 with self.subTest(schema=schema_path.name, property=name):
                     expected = ticket_pattern if name == "key" else id_pattern
                     self.assertEqual(property_schema.get("pattern"), expected)
+
+    def test_planning_schemas_constrain_every_cross_referenced_field(self):
+        """Reference fields must reject prose at generation time, not at validation time."""
+        id_pattern = "^[A-Z][A-Z0-9_-]{0,31}$"
+        reference_fields = {
+            "product_review.json": {"requirements": id_pattern},
+            "system_architecture.json": {
+                "requirements": id_pattern,
+                "provider": id_pattern,
+                "consumers": id_pattern,
+            },
+            "program_design.json": {
+                "requirements": id_pattern,
+                "components": id_pattern,
+                "module": id_pattern,
+                "contracts": id_pattern,
+                "calls": "^(external:\\S.*|[A-Z][A-Z0-9_-]{0,31})$",
+            },
+            "vertical_slices.json": {
+                "requirement_ids": id_pattern,
+                "contract_ids": id_pattern,
+                "program_element_ids": id_pattern,
+                "dependencies": "^[A-Z][A-Z0-9_-]{0,15}$",
+            },
+        }
+
+        def declared(value, name):
+            """Yield every schema declaring a property called name, at any depth."""
+            if isinstance(value, dict):
+                properties = value.get("properties", {})
+                if name in properties:
+                    yield properties[name]
+                for child in value.values():
+                    yield from declared(child, name)
+            elif isinstance(value, list):
+                for child in value:
+                    yield from declared(child, name)
+
+        for schema_name, fields in reference_fields.items():
+            schema = json.loads((SCHEMAS / schema_name).read_text())
+            for field, expected in fields.items():
+                found = list(declared(schema, field))
+                with self.subTest(schema=schema_name, field=field):
+                    self.assertTrue(found, f"{schema_name} no longer declares {field}")
+                    for property_schema in found:
+                        # An array of IDs constrains its items; a lone ID constrains itself.
+                        target = property_schema.get("items", property_schema)
+                        if target.get("type") != "string":
+                            continue
+                        self.assertEqual(
+                            target.get("pattern"), expected,
+                            f"{schema_name} {field} accepts prose; constrain it so the "
+                            "planner cannot emit a sentence where an ID belongs",
+                        )
+
+    def test_program_design_reference_failures_name_the_field_and_legal_ids(self):
+        product = {"requirements": [{"id": "R1"}, {"id": "R2"}]}
+        architecture = {"components": [{"id": "COMPONENT_API"}], "contracts": [{"id": "CONTRACT_READ"}]}
+        program = {
+            "modules": [{"id": "MOD_APP", "path": "app.py", "responsibility": "entry", "components": ["COMPONENT_API"]}],
+            "types": [],
+            "functions": [{
+                "id": "FN_LOAD_CATALOG",
+                "signature": "load_catalog() -> list",
+                "module": "MOD_APP",
+                "calls": [],
+                "contracts": ["CONTRACT_READ"],
+                "requirements": ["Pure read: no normalisation, no derivation."],
+                "error_behavior": "raises",
+            }],
+            "call_flows": [],
+            "test_seams": [],
+            "blocking_questions": [],
+        }
+
+        with self.assertRaises(ValueError) as caught:
+            validate_program(program, product, architecture)
+
+        message = str(caught.exception)
+        self.assertIn("FN_LOAD_CATALOG references unknown IDs", message)
+        self.assertIn("functions[].requirements", message)
+        self.assertIn("R1, R2", message)
+        self.assertIn("Prose, file paths, and IDs of another kind are never valid here", message)
+
+    def test_program_design_prompt_lists_the_allowed_identifiers(self):
+        prompt = stage_prompt(
+            "program_design", "# PRD",
+            {
+                "product_review": {"requirements": [{"id": "R1"}, {"id": "R2"}]},
+                "system_architecture": {
+                    "components": [{"id": "COMPONENT_API"}],
+                    "contracts": [{"id": "CONTRACT_READ"}],
+                },
+            },
+            "claude", 3, 12, "standard",
+        )
+
+        self.assertIn("Allowed requirement IDs: R1, R2", prompt)
+        self.assertIn("Allowed contract IDs: CONTRACT_READ", prompt)
+        self.assertIn("Allowed component IDs: COMPONENT_API", prompt)
+        self.assertIn("prose belongs in notes", prompt)
 
     def test_program_design_prompt_disambiguates_module_components(self):
         prompt = stage_prompt(

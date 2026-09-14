@@ -12,9 +12,10 @@
           "id": { "type": "string", "pattern": "^[A-Z][A-Z0-9_-]{0,31}$" },
           "path": { "type": "string" },
           "responsibility": { "type": "string" },
-          "components": { "type": "array", "items": { "type": "string" } }
+          "components": { "type": "array", "items": { "type": "string", "pattern": "^[A-Z][A-Z0-9_-]{0,31}$" } },
+          "notes": { "type": "string" }
         },
-        "required": ["id", "path", "responsibility", "components"]
+        "required": ["id", "path", "responsibility", "components", "notes"]
       }
     },
     "types": {
@@ -25,11 +26,12 @@
         "properties": {
           "id": { "type": "string", "pattern": "^[A-Z][A-Z0-9_-]{0,31}$" },
           "name": { "type": "string" },
-          "module": { "type": "string" },
+          "module": { "type": "string", "pattern": "^[A-Z][A-Z0-9_-]{0,31}$" },
           "definition": { "type": "string" },
-          "requirements": { "type": "array", "items": { "type": "string" } }
+          "requirements": { "type": "array", "items": { "type": "string", "pattern": "^[A-Z][A-Z0-9_-]{0,31}$" } },
+          "notes": { "type": "string" }
         },
-        "required": ["id", "name", "module", "definition", "requirements"]
+        "required": ["id", "name", "module", "definition", "requirements", "notes"]
       }
     },
     "functions": {
@@ -40,13 +42,14 @@
         "properties": {
           "id": { "type": "string", "pattern": "^[A-Z][A-Z0-9_-]{0,31}$" },
           "signature": { "type": "string" },
-          "module": { "type": "string" },
-          "calls": { "type": "array", "items": { "type": "string" } },
-          "contracts": { "type": "array", "items": { "type": "string" } },
-          "requirements": { "type": "array", "items": { "type": "string" } },
-          "error_behavior": { "type": "string" }
+          "module": { "type": "string", "pattern": "^[A-Z][A-Z0-9_-]{0,31}$" },
+          "calls": { "type": "array", "items": { "type": "string", "pattern": "^(external:\\S.*|[A-Z][A-Z0-9_-]{0,31})$" } },
+          "contracts": { "type": "array", "items": { "type": "string", "pattern": "^[A-Z][A-Z0-9_-]{0,31}$" } },
+          "requirements": { "type": "array", "items": { "type": "string", "pattern": "^[A-Z][A-Z0-9_-]{0,31}$" } },
+          "error_behavior": { "type": "string" },
+          "notes": { "type": "string" }
         },
-        "required": ["id", "signature", "module", "calls", "contracts", "requirements", "error_behavior"]
+        "required": ["id", "signature", "module", "calls", "contracts", "requirements", "error_behavior", "notes"]
       }
     },
     "call_flows": {
@@ -58,7 +61,7 @@
           "id": { "type": "string", "pattern": "^[A-Z][A-Z0-9_-]{0,31}$" },
           "name": { "type": "string" },
           "steps": { "type": "array", "items": { "type": "string" } },
-          "requirements": { "type": "array", "items": { "type": "string" } }
+          "requirements": { "type": "array", "items": { "type": "string", "pattern": "^[A-Z][A-Z0-9_-]{0,31}$" } }
         },
         "required": ["id", "name", "steps", "requirements"]
       }
@@ -72,7 +75,7 @@
           "id": { "type": "string", "pattern": "^[A-Z][A-Z0-9_-]{0,31}$" },
           "boundary": { "type": "string" },
           "strategy": { "type": "string" },
-          "requirements": { "type": "array", "items": { "type": "string" } }
+          "requirements": { "type": "array", "items": { "type": "string", "pattern": "^[A-Z][A-Z0-9_-]{0,31}$" } }
         },
         "required": ["id", "boundary", "strategy", "requirements"]
       }

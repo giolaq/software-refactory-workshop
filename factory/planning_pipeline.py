@@ -282,12 +282,18 @@ def unique_ids(items: list[dict], label: str) -> set[str]:
     return result
 
 
-def require_references(values: list[str], allowed: set[str], label: str):
+def require_references(values: list[str], allowed: set[str], label: str, field: str = ""):
     if not isinstance(values, list) or not all(isinstance(value, str) for value in values):
         raise ValueError(f"{label} references must be a list of IDs")
     unknown = set(values) - allowed
     if unknown:
-        raise ValueError(f"{label} references unknown IDs: {', '.join(sorted(unknown))}")
+        message = f"{label} references unknown IDs: {', '.join(sorted(unknown))}"
+        if field:
+            legal = sorted(allowed)
+            shown = ", ".join(legal[:12]) + (", ..." if len(legal) > 12 else "")
+            message += f". Field {field} accepts only these IDs: {shown or '(none defined)'}"
+            message += ". Prose, file paths, and IDs of another kind are never valid here"
+        raise ValueError(message)
 
 
 def validate_product(product: dict):
@@ -313,7 +319,7 @@ def validate_product(product: dict):
         raise ValueError("product review requires at least one journey")
     unique_ids(product["journeys"], "journey")
     for journey in product["journeys"]:
-        require_references(journey.get("requirements", []), requirement_ids, journey["id"])
+        require_references(journey.get("requirements", []), requirement_ids, journey["id"], "journeys[].requirements")
         if not journey.get("steps") or not journey.get("outcome"):
             raise ValueError(f"{journey['id']} requires steps and an observable outcome")
     scope = product.get("scope")
@@ -329,16 +335,16 @@ def validate_architecture(architecture: dict, product: dict):
     component_ids = unique_ids(components, "component")
     covered_requirements: set[str] = set()
     for component in components:
-        require_references(component.get("requirements", []), requirement_ids, component["id"])
+        require_references(component.get("requirements", []), requirement_ids, component["id"], "components[].requirements")
         covered_requirements.update(component["requirements"])
     contracts = architecture.get("contracts")
     if not isinstance(contracts, list) or not contracts:
         raise ValueError("architecture requires at least one component contract")
     unique_ids(contracts, "contract")
     for contract in contracts:
-        require_references([contract.get("provider")], component_ids, contract["id"])
-        require_references(contract.get("consumers", []), component_ids, contract["id"])
-        require_references(contract.get("requirements", []), requirement_ids, contract["id"])
+        require_references([contract.get("provider")], component_ids, contract["id"], "contracts[].provider")
+        require_references(contract.get("consumers", []), component_ids, contract["id"], "contracts[].consumers")
+        require_references(contract.get("requirements", []), requirement_ids, contract["id"], "contracts[].requirements")
         if not contract.get("input") or not contract.get("output"):
             raise ValueError(f"{contract['id']} requires input and output contracts")
     for collection, label in (("data_models", "data model"), ("decisions", "decision")):
@@ -347,7 +353,7 @@ def validate_architecture(architecture: dict, product: dict):
             raise ValueError(f"architecture {collection} must be a list")
         unique_ids(items, label)
         for item in items:
-            require_references(item.get("requirements", []), requirement_ids, item["id"])
+            require_references(item.get("requirements", []), requirement_ids, item["id"], f"{collection}[].requirements")
     missing = requirement_ids - covered_requirements
     if missing:
         raise ValueError(f"requirements without an owning component: {', '.join(sorted(missing))}")
@@ -372,7 +378,7 @@ def validate_program(program: dict, product: dict, architecture: dict):
         raise ValueError("program design requires at least one module")
     module_ids = unique_ids(modules, "module")
     for module in modules:
-        require_references(module.get("components", []), component_ids, module["id"])
+        require_references(module.get("components", []), component_ids, module["id"], "modules[].components")
         if not module.get("path") or not module.get("responsibility"):
             raise ValueError(f"{module['id']} requires a path and responsibility")
     function_ids: set[str] = set()
@@ -384,14 +390,14 @@ def validate_program(program: dict, product: dict, architecture: dict):
         if collection == "functions":
             function_ids = ids
         for item in items:
-            require_references(item.get("requirements", []), requirement_ids, item["id"])
+            require_references(item.get("requirements", []), requirement_ids, item["id"], f"{collection}[].requirements")
             if "module" in item:
-                require_references([item["module"]], module_ids, item["id"])
+                require_references([item["module"]], module_ids, item["id"], f"{collection}[].module")
             if collection == "functions":
-                require_references(item.get("contracts", []), contract_ids, item["id"])
+                require_references(item.get("contracts", []), contract_ids, item["id"], "functions[].contracts")
     for function in program["functions"]:
         internal_calls = [item for item in function["calls"] if not item.startswith("external:")]
-        require_references(internal_calls, function_ids, function["id"])
+        require_references(internal_calls, function_ids, function["id"], "functions[].calls")
     if not isinstance(program.get("blocking_questions"), list):
         raise ValueError("program design blocking_questions must be a list")
 
@@ -422,9 +428,9 @@ def validate_vertical_slices(slices: dict, product: dict, architecture: dict, pr
         for field in ("requirement_ids", "contract_ids", "program_element_ids", "qa_evidence", "file_ownership"):
             if not isinstance(ticket.get(field), list) or not ticket[field]:
                 raise ValueError(f"{ticket['key']} requires non-empty {field}")
-        require_references(ticket["requirement_ids"], requirement_ids, ticket["key"])
-        require_references(ticket["contract_ids"], contract_ids, ticket["key"])
-        require_references(ticket["program_element_ids"], element_ids, ticket["key"])
+        require_references(ticket["requirement_ids"], requirement_ids, ticket["key"], "tickets[].requirement_ids")
+        require_references(ticket["contract_ids"], contract_ids, ticket["key"], "tickets[].contract_ids")
+        require_references(ticket["program_element_ids"], element_ids, ticket["key"], "tickets[].program_element_ids")
         if not ticket.get("vertical_outcome"):
             raise ValueError(f"{ticket['key']} requires an end-to-end vertical outcome")
         covered_requirements.update(ticket["requirement_ids"])
@@ -462,7 +468,7 @@ def validate_lean_vertical_slices(slices: dict, product: dict) -> list[str]:
         for field in ("contract_ids", "program_element_ids"):
             if not isinstance(ticket.get(field), list):
                 raise ValueError(f"{ticket['key']} {field} must be a list")
-        require_references(ticket["requirement_ids"], requirement_ids, ticket["key"])
+        require_references(ticket["requirement_ids"], requirement_ids, ticket["key"], "tickets[].requirement_ids")
         if not ticket.get("vertical_outcome"):
             raise ValueError(f"{ticket['key']} requires an end-to-end vertical outcome")
         covered_requirements.update(ticket["requirement_ids"])
@@ -554,13 +560,31 @@ Return only JSON matching the supplied schema. This artifact is an auditable con
     roles = {
         "product_review": """You are the Product Review expert. Clarify the problem, users, observable behavior, scope, journeys, success evidence, mockup needs, assumptions, and blocking questions. Give requirements stable IDs R1, R2, and so on. Cite the PRD section or phrase in each requirement's source. Do not design architecture or create implementation tickets.""",
         "system_architecture": """You are the System Architecture expert. Inspect the existing repository and, using the approved product review, define components, ownership boundaries, data models, explicit component contracts, architectural decisions, constraints, and risks. Map every item to product requirement IDs. Every requirement must have an owning component. Do not assign tickets or write low-level implementation code.""",
-        "program_design": """You are the Program Design expert. Inspect the existing code and turn the approved architecture into a concrete code design: modules and paths, types, function signatures, call relationships, error behavior, call flows, and test seams. Use stable IDs (MOD-, TYPE-, FN-, FLOW-, TEST-), reference contracts and requirements, and prefix calls outside this design with external:. modules[].components must contain only component IDs copied from System Architecture. Never put function IDs, type IDs, constants, or prose in modules[].components. Every type and function module reference must name a MOD- ID defined in this artifact. Do not create tickets.""",
+        "program_design": """You are the Program Design expert. Inspect the existing code and turn the approved architecture into a concrete code design: modules and paths, types, function signatures, call relationships, error behavior, call flows, and test seams. Use stable IDs (MOD-, TYPE-, FN-, FLOW-, TEST-), reference contracts and requirements, and prefix calls outside this design with external:. modules[].components must contain only component IDs copied from System Architecture. Never put function IDs, type IDs, constants, or prose in modules[].components. Every type and function module reference must name a MOD- ID defined in this artifact. Put design rationale, provenance, and purity constraints in the notes field of the module, type, or function it describes — never in an ID list. Do not create tickets.""",
         "vertical_slices": f"""You are the Vertical Slices expert. Divide the aligned product, architecture, and program design into {minimum}-{maximum} small end-to-end tickets. Each ticket must deliver an observable vertical outcome, own explicit files, name QA evidence, and map requirement, contract, and program-element IDs. Every program element and requirement must have an owner. Each ticket must be implementable within {max_diff_lines} implementation-owned changed lines; independently authored protected QA acceptance tests are measured separately. Split a ticket when its production implementation is likely to exceed that measurable limit. Overlapping file ownership is allowed only when one ticket depends on the other. Keep the dependency graph acyclic and maximize safe parallel work. Default agent to {default_agent}.""",
     }
     planning_roles = set(factory_profile(profile_name)["planning_roles"])
     if stage == "vertical_slices" and "system_architecture" not in planning_roles:
         roles[stage] = f"""You are the Vertical Slices expert for the Lean Factory Profile. Divide the approved product intent into {minimum}-{maximum} small end-to-end tickets. Each ticket must deliver an observable outcome, own explicit files, name evidence from existing tests, and map product requirement IDs. Each ticket must be implementable within {max_diff_lines} implementation-owned changed lines; split work that is likely to exceed that measurable limit. Set contract_ids and program_element_ids to empty arrays because this profile intentionally omits architecture and program-design roles. Keep dependencies acyclic and default agent to {default_agent}."""
     identifier_guidance = ""
+    if stage == "program_design":
+        product = inputs.get("product_review", {})
+        architecture = inputs.get("system_architecture", {})
+        requirement_ids = sorted(item["id"] for item in product.get("requirements", []))
+        contract_ids = sorted(item["id"] for item in architecture.get("contracts", []))
+        component_ids = sorted(item["id"] for item in architecture.get("components", []))
+        identifier_guidance = (
+            "\n\n## Exact Program Design traceability identifiers\n\n"
+            f"Allowed requirement IDs: {', '.join(requirement_ids)}\n\n"
+            f"Allowed contract IDs: {', '.join(contract_ids)}\n\n"
+            f"Allowed component IDs: {', '.join(component_ids)}\n\n"
+            "Copy identifiers exactly from these lists. Every `requirements` entry must be an "
+            "allowed requirement ID, every `contracts` entry an allowed contract ID, and every "
+            "`modules[].components` entry an allowed component ID. `calls` entries must be "
+            "function IDs defined in this artifact or `external:` prefixed. Never put a sentence, "
+            "a file path, a decision ID, or a component ID in a field that expects another kind "
+            "of ID: prose belongs in notes."
+        )
     if stage == "vertical_slices" and "system_architecture" in planning_roles:
         architecture = inputs.get("system_architecture", {})
         program = inputs.get("program_design", {})
@@ -637,8 +661,12 @@ def render_program(value: dict, plan_id: str) -> str:
     lines += ["", "## Types and functions", ""]
     for item in value["types"]:
         lines += [f"- **{item['id']} `{item['name']}`** in {item['module']}: {item['definition']}"]
+        if item.get("notes"):
+            lines += [f"  - {item['notes']}"]
     for item in value["functions"]:
         lines += [f"- **{item['id']} `{item['signature']}`** in {item['module']}; errors: {item['error_behavior']}"]
+        if item.get("notes"):
+            lines += [f"  - {item['notes']}"]
     lines += ["", "## Call flows", ""]
     for item in value["call_flows"]:
         lines += [f"### {item['id']} — {item['name']}", "", " → ".join(item["steps"]), ""]
