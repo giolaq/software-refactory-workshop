@@ -505,6 +505,24 @@ input:focus, select:focus, textarea:focus { border-color: var(--blue); outline: 
 .detail-panel h3 { margin: 0 0 9px; color: var(--muted); font-size: 10px; letter-spacing: 0; text-transform: uppercase; }
 .detail-panel p { margin: 4px 0; }
 .detail-panel pre { max-height: 500px; margin: 0; overflow: auto; color: var(--secondary); font-size: 11px; line-height: 1.55; white-space: pre-wrap; overflow-wrap: anywhere; }
+.ticket-markdown { color: var(--ink); font-size: 14px; line-height: 1.65; overflow-wrap: anywhere; }
+.ticket-markdown > :first-child { margin-top: 0; }
+.ticket-markdown > :last-child { margin-bottom: 0; }
+.ticket-markdown p, .ticket-markdown ul, .ticket-markdown ol { margin: 0 0 12px; }
+.ticket-markdown ul, .ticket-markdown ol { padding-left: 24px; }
+.ticket-markdown li { margin: 5px 0; }
+.ticket-markdown li:has(> input[type="checkbox"]) { list-style: none; }
+.ticket-markdown li > p { margin-bottom: 5px; }
+.ticket-markdown li > ul, .ticket-markdown li > ol { margin-bottom: 0; }
+.ticket-markdown input[type="checkbox"] { width: auto; min-height: 0; margin-right: 6px; vertical-align: middle; }
+.ticket-markdown :is(h1,h2,h3,h4,h5,h6) { margin: 18px 0 8px; color: var(--ink); font-size: 16px; line-height: 1.4; text-transform: none; }
+.ticket-markdown code { padding: 2px 5px; border-radius: 4px; background: var(--surface-inset); font-size: .9em; }
+.ticket-markdown pre { padding: 12px; font-size: 13px; line-height: 1.6; white-space: pre; overflow-x: auto; }
+.ticket-markdown pre code { padding: 0; background: none; }
+.ticket-markdown blockquote { margin: 12px 0; padding-left: 14px; border-left: 3px solid var(--line); color: var(--muted); }
+.ticket-markdown table { display: block; max-width: 100%; margin: 12px 0; overflow-x: auto; border-collapse: collapse; }
+.ticket-markdown th, .ticket-markdown td { padding: 8px 10px; border: 1px solid var(--line); text-align: left; }
+.ticket-markdown th { background: var(--surface-inset); }
 .pill { display: inline-block; margin: 2px 4px 2px 0; padding: 3px 7px; border-radius: 4px; background: var(--surface-inset); color: var(--secondary); font-size: 10px; }
 .gate-result { padding: 10px 0; border-top: 1px solid var(--line-soft); }
 .gate-result:first-child { border: 0; }

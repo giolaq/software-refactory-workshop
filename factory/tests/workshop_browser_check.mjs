@@ -171,6 +171,7 @@ try {
     check("document.querySelector('#run-app-status').textContent.includes('separate terminal')");
   });
   await fixture("qa", () => {
+    assert.equal(browser("eval", readFileSync(resolve(root, "factory/tests/markdown_browser_checks.js"), "utf8")), '"PASS Markdown formatting and unsafe-content checks"');
     shot("overview");
     check("!document.querySelector('#attention-surface') && document.querySelector('#journey-next').textContent.length > 0");
     // A slow companion action gives feedback and cannot be submitted twice.
@@ -200,6 +201,7 @@ try {
     browser("wait", "[data-ticket-action=approve-tests]:not([disabled])");
     check("document.querySelector('#drawer-content').textContent.includes('RED PROVED')");
     check("document.querySelector('#drawer-content').textContent.includes('def test_')");
+    check("document.querySelector('#drawer-content .ticket-markdown')?.textContent.trim().length > 0");
     check("document.querySelector('#ticket-drawer').getAttribute('role') === 'dialog'");
     shot("ticket-tests");
     browser("eval", "document.querySelector('[data-ticket-action=approve-tests]').scrollIntoView({block:'center'})");
