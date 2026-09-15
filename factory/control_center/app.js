@@ -1196,18 +1196,12 @@ function wireQaDecision(ticket, content) {
 
 }
 
-async function loadTestProposal(ticket, content) {
+async function loadTestProposal(ticket) {
   const key = `${app.snapshot.repo.path}:${ticket.number}:${ticket.qa_commit}`;
-  try {
-    const proposal = app.testProposal?.key === key ? app.testProposal.value : await request(`/api/tickets/${ticket.number}/tests`);
-    if (app.selectedTicket?.number !== ticket.number || app.drawerTab !== "tests" || app.selectedTicket.qa_commit !== proposal.revision) return;
-    app.testProposal = { key, value: proposal };
-    $("#qa-test-source", content).innerHTML = `<p>QA revision <code>${esc(proposal.revision)}</code></p>${proposal.files.map(file => `<h4>${esc(file.path)}</h4><pre>${esc(file.content)}</pre>`).join("")}`;
-    const approve = $('[data-ticket-action="approve-tests"]', content);
-    if (approve) approve.disabled = !proposal.files.length || ticket.qa_evidence?.red?.result !== "RED PROVED";
-  } catch (error) {
-    if (app.selectedTicket?.number === ticket.number && app.drawerTab === "tests") $("#qa-test-source", content).textContent = error.message;
-  }
+  if (app.testProposal?.key === key) return app.testProposal.value;
+  const proposal = await request(`/api/tickets/${ticket.number}/tests`);
+  app.testProposal = { key, value: proposal };
+  return proposal;
 }
 
 async function renderDrawer({ preservePosition = false } = {}) {
@@ -1513,6 +1507,22 @@ async function renderDrawer({ preservePosition = false } = {}) {
     return;
   }
   if (app.drawerTab === "tests") {
+    const repoPath = app.snapshot.repo.path;
+    let proposal, source;
+    // Keep the complete panel visible during polling. A temporary placeholder
+    // shrinks the drawer and clamps its scroll position before tests return.
+    if (!preservePosition) replaceDrawerContent(content, '<p>Loading the committed test proposal…</p>', false);
+    const pendingApproval = $('[data-ticket-action="approve-tests"]', content);
+    if (pendingApproval) pendingApproval.disabled = true;
+    try {
+      proposal = await loadTestProposal(ticket);
+      source = `<p>QA revision <code>${esc(proposal.revision)}</code></p>${proposal.files.map(file => `<h4>${esc(file.path)}</h4><pre>${esc(file.content)}</pre>`).join("")}`;
+    } catch (error) {
+      source = esc(error.message);
+    }
+    if (app.snapshot.repo.path !== repoPath || app.selectedTicket?.number !== ticket.number
+        || app.drawerTab !== "tests" || app.selectedTicket.qa_commit !== ticket.qa_commit
+        || (proposal && proposal.revision !== ticket.qa_commit)) return;
     const tests = Object.keys(ticket.qa_tests || {});
     const gates = ticket.gate_results || [];
     const causal = ticket.qa_evidence || {};
@@ -1520,11 +1530,10 @@ async function renderDrawer({ preservePosition = false } = {}) {
     const causalEvidence = causal.focused_test_command
       ? `<section class="detail-panel"><h3>Acceptance evidence</h3><p>Confirm that the assertion checks the requested behavior. An assertion failure alone does not establish that the requirement is correct.</p><p>Identical focused command</p><pre>${esc(causal.focused_test_command)}</pre>${proof("Before implementation", causal.red, "RED NOT PROVED")}${proof("After implementation", causal.green, "Not run yet")}${causal.negative ? proof("Assured negative proof", causal.negative, "NEGATIVE PROOF NOT RUN") : ""}</section>`
       : `<section class="detail-panel"><h3>Causal acceptance evidence</h3><p>RED NOT PROVED · No focused Acceptance Test command has been accepted.</p></section>`;
-    replaceDrawerContent(content, `<section class="detail-panel"><h3>Acceptance criteria</h3>${renderTicketMarkdown(section(ticket.body, "Acceptance Criteria"))}<h3>Protected acceptance tests</h3>${tests.length ? tests.map((path) => `<span class="pill">${esc(path)}</span>`).join("") : "No tests recorded."}</section><div class="detail-panel" id="qa-test-source">Loading the committed test proposal…</div>${causalEvidence}${qaDecisionPanel(ticket)}<section class="detail-panel"><h3>Deterministic verification gates</h3><p>Selected level: <span class="pill">${esc(ticket.verification_level || "not selected")}</span> · ${ticket.verification_duration_seconds || 0}s total</p>${gates.length ? gates.map((gate) => { const verdict = gate.classification || (gate.exit_code === 0 ? "PASS" : "FAIL"); return `<div class="gate-result"><strong class="${verdict === "PASS" ? "pass" : "fail"}">${esc(verdict)} · ${esc(gate.name)} · ${esc(gate.level || "full")}</strong><p>${gate.duration_seconds || 0}s</p><pre>${esc(gate.output || "")}</pre></div>`; }).join("") : "No gates have run."}</section>`, preservePosition);
+    replaceDrawerContent(content, `<section class="detail-panel"><h3>Acceptance criteria</h3>${renderTicketMarkdown(section(ticket.body, "Acceptance Criteria"))}<h3>Protected acceptance tests</h3>${tests.length ? tests.map((path) => `<span class="pill">${esc(path)}</span>`).join("") : "No tests recorded."}</section><div class="detail-panel" id="qa-test-source">${source}</div>${causalEvidence}${qaDecisionPanel(ticket)}<section class="detail-panel"><h3>Deterministic verification gates</h3><p>Selected level: <span class="pill">${esc(ticket.verification_level || "not selected")}</span> · ${ticket.verification_duration_seconds || 0}s total</p>${gates.length ? gates.map((gate) => { const verdict = gate.classification || (gate.exit_code === 0 ? "PASS" : "FAIL"); return `<div class="gate-result"><strong class="${verdict === "PASS" ? "pass" : "fail"}">${esc(verdict)} · ${esc(gate.name)} · ${esc(gate.level || "full")}</strong><p>${gate.duration_seconds || 0}s</p><pre>${esc(gate.output || "")}</pre></div>`; }).join("") : "No gates have run."}</section>`, preservePosition);
     wireQaDecision(ticket, content);
     const approve = $('[data-ticket-action="approve-tests"]', content);
-    if (approve) approve.disabled = true;
-    loadTestProposal(ticket, content);
+    if (approve) approve.disabled = !proposal?.files.length || ticket.qa_evidence?.red?.result !== "RED PROVED";
     return;
   }
   if (app.drawerTab === "history") {

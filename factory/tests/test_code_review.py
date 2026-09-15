@@ -4,13 +4,14 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).parents[1]))
 
-from code_review import CodeReviewError, extract_review, render_review_comment, validate_review
+from code_review import CodeReviewError, CodeReviewTextTooLong, extract_review, render_review_comment, validate_review, validate_review_repair
 from factory_charter import FactoryCharter
 from orchestrator import Factory
 from project_contract import ProjectContract
@@ -102,6 +103,58 @@ class CodeReviewTests(unittest.TestCase):
         self.assertNotIn("@team", comment)
 
     def test_orchestrator_records_blocking_review_without_mutating_candidate(self):
+        self.check_orchestrator_review()
+
+    def test_overlong_review_is_automatically_repaired_on_same_candidate(self):
+        self.check_orchestrator_review(overlong=True)
+
+    def test_overlong_approval_is_repaired_without_changing_verdict(self):
+        self.check_orchestrator_review(overlong=True, approve=True)
+
+    def test_failed_text_repair_is_bounded_and_keeps_original(self):
+        self.check_orchestrator_review(overlong=True, repair_fails=True)
+
+    def test_charter_can_disable_text_repair(self):
+        self.check_orchestrator_review(overlong=True, retries=0)
+
+    def test_candidate_mutation_before_or_during_repair_fails_closed(self):
+        for call in (1, 2):
+            with self.subTest(call=call):
+                self.check_orchestrator_review(overlong=True, mutate_on_call=call)
+
+    def test_repair_cannot_drop_findings_change_verdict_or_retarget(self):
+        original = {"schema_version": 2, "decision": "REQUEST_CHANGES", "summary": "Short summary.",
+                    "findings": [{"severity": "blocking", "path": "app.py", "line": 1, "message": "Long. " * 500}]}
+        good = json.loads(json.dumps(original))
+        good["findings"][0]["message"] = "Fix the regression."
+        self.assertEqual(validate_review_repair(original, good, {"app.py", "other.py"}), good)
+        for change in ("drop", "approve", "path", "line", "severity", "summary"):
+            value = json.loads(json.dumps(good))
+            if change in {"drop", "approve"}:
+                value["findings"] = []
+                if change == "approve":
+                    value["decision"] = "APPROVE"
+            elif change == "summary":
+                value["summary"] = "Changed the conclusion."
+            else:
+                value["findings"][0][change] = {"path": "other.py", "line": 2, "severity": "note"}[change]
+            with self.subTest(change=change), self.assertRaises(CodeReviewError):
+                validate_review_repair(original, value, {"app.py", "other.py"})
+
+    def test_text_limit_does_not_hide_other_invalid_fields(self):
+        value = {"schema_version": 2, "decision": "REQUEST_CHANGES", "summary": "x" * 2001,
+                 "findings": [{"severity": "blocking", "path": "../unsafe", "line": 1, "message": "Problem"}]}
+        with self.assertRaises(CodeReviewError) as raised:
+            validate_review(value, {"app.py"})
+        self.assertNotIsInstance(raised.exception, CodeReviewTextTooLong)
+        value.update(decision="APPROVE", findings=[], summary="x" * 2000)
+        self.assertEqual(validate_review(value, set())["summary"], "x" * 2000)
+        value["summary"] += "x"
+        with self.assertRaises(CodeReviewTextTooLong):
+            validate_review(value, set())
+
+    def check_orchestrator_review(self, overlong=False, approve=False, repair_fails=False,
+                                  retries=2, mutate_on_call=0):
         with tempfile.TemporaryDirectory() as directory:
             repo = Path(directory)
             source = Path(__file__).parents[1]
@@ -130,6 +183,7 @@ class CodeReviewTests(unittest.TestCase):
             factory.review_agent = "reviewer"
             factory.args = SimpleNamespace(scenario="tv", mock=False)
             factory.record_receipt = mock.Mock()
+            factory.charter = replace(charter, max_retries=retries)
             factory.verify_qa_tests_unchanged = mock.Mock(return_value="")
             response = json.dumps({
                 "schema_version": 2,
@@ -142,7 +196,20 @@ class CodeReviewTests(unittest.TestCase):
                     "message": "Preserve the documented value contract.",
                 }],
             })
-            factory.run_adapter = mock.Mock(return_value=(0, response))
+            if approve:
+                value = json.loads(response)
+                value.update(decision="APPROVE", findings=[])
+                response = json.dumps(value)
+            original = json.loads(response)
+            original["summary"] = "Detailed review. " * 150
+            if original["findings"]:
+                original["findings"][0]["message"] = "Preserve the documented value contract. " * 80
+            responses = iter([(0, json.dumps(original)), (0, json.dumps(original) if repair_fails else response)] if overlong else [(0, response)])
+            def invoke(*args):
+                if factory.run_adapter.call_count == mutate_on_call:
+                    (repo / "app.py").write_text("unauthorized = True\n")
+                return next(responses)
+            factory.run_adapter = mock.Mock(side_effect=invoke)
             ticket = {
                 "number": 4, "title": "Preserve value", "body": "## Spec\nKeep the value stable.",
                 "attempt": 1, "gate_results": [], "qa_tests": {}, "current_log": "",
@@ -150,11 +217,40 @@ class CodeReviewTests(unittest.TestCase):
 
             failure = factory.run_code_review(ticket, repo, base, "https://example.test/pull/4")
 
-            self.assertIn("Code Review requested changes", failure)
-            self.assertEqual(ticket["code_review"]["result"]["decision"], "REQUEST_CHANGES")
+            invalid = repair_fails or retries == 0 or mutate_on_call
+            if invalid:
+                self.assertTrue(failure)
+                self.assertIsNone(ticket["code_review"]["result"])
+                self.assertEqual(ticket["code_review"]["status"], "invalid")
+                if mutate_on_call:
+                    self.assertIn("modified the worktree", failure)
+            elif approve:
+                self.assertEqual(failure, "")
+                self.assertEqual(ticket["code_review"]["result"]["decision"], "APPROVE")
+            else:
+                self.assertIn("Code Review requested changes", failure)
+                self.assertEqual(ticket["code_review"]["result"]["decision"], "REQUEST_CHANGES")
             self.assertTrue((repo / ticket["code_review"]["artifact"]).is_file())
             factory.record_receipt.assert_called_once()
-            self.assertEqual(git(repo, "status", "--porcelain"), "")
+            if not mutate_on_call:
+                self.assertEqual(git(repo, "status", "--porcelain"), "")
+            if overlong:
+                self.assertEqual(factory.run_adapter.call_count, 1 if retries == 0 or mutate_on_call == 1 else 2)
+                self.assertEqual(ticket["attempt"], 1)
+                recovery = ticket["code_review"]["recovery"]
+                if mutate_on_call == 1:
+                    self.assertEqual(recovery, {})
+                    return
+                self.assertEqual(recovery["status"], "failed" if invalid else "repaired")
+                saved = json.loads((repo / recovery["original_response"]).read_text())
+                self.assertEqual(saved, original)
+                if retries == 0:
+                    self.assertEqual(recovery["attempts"], 0)
+                    return
+                repair_call = factory.run_adapter.call_args_list[1].args
+                self.assertEqual(repair_call[2], repo)
+                self.assertIn("2000", repair_call[3].read_text())
+                self.assertIn(ticket["code_review"]["head"], repair_call[3].read_text())
 
 
 if __name__ == "__main__":

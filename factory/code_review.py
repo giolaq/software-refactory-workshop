@@ -17,6 +17,14 @@ class CodeReviewError(ValueError):
     """The review adapter returned an invalid or unsafe result."""
 
 
+class CodeReviewTextTooLong(CodeReviewError):
+    """An otherwise valid review needs prose shortening, not a new verdict."""
+
+    def __init__(self, review: dict, field: str):
+        super().__init__(f"Code review {field} is longer than {MAX_TEXT} characters.")
+        self.review = review
+
+
 def extract_review(output: str) -> dict:
     """Extract the last JSON object from adapter output.
 
@@ -31,11 +39,11 @@ def extract_review(output: str) -> dict:
     return value
 
 
-def _text(value, field: str) -> str:
+def _text(value, field: str, *, bounded: bool = True) -> str:
     if not isinstance(value, str) or not value.strip():
         raise CodeReviewError(f"Code review requires {field}.")
     value = value.strip()
-    if len(value) > MAX_TEXT:
+    if bounded and len(value) > MAX_TEXT:
         raise CodeReviewError(f"Code review {field} is longer than {MAX_TEXT} characters.")
     return value
 
@@ -52,7 +60,7 @@ def validate_review(value: dict, changed_paths: set[str]) -> dict:
     decision = value["decision"]
     if decision not in {"APPROVE", "REQUEST_CHANGES"}:
         raise CodeReviewError("Code review decision must be APPROVE or REQUEST_CHANGES.")
-    summary = _text(value["summary"], "summary")
+    summary = _text(value["summary"], "summary", bounded=False)
     findings = value["findings"]
     if not isinstance(findings, list) or len(findings) > MAX_FINDINGS:
         raise CodeReviewError(f"Code review findings must be a list of at most {MAX_FINDINGS} items.")
@@ -78,19 +86,40 @@ def validate_review(value: dict, changed_paths: set[str]) -> dict:
             "severity": severity,
             "path": path,
             "line": line,
-            "message": _text(finding["message"], "finding message"),
+            "message": _text(finding["message"], "finding message", bounded=False),
         })
 
     if decision == "REQUEST_CHANGES" and not normalized:
         raise CodeReviewError("REQUEST_CHANGES requires at least one review comment.")
     if decision == "APPROVE" and normalized:
         raise CodeReviewError("APPROVE cannot contain comments; request changes so implementation fixes them.")
-    return {
+    review = {
         "schema_version": SCHEMA_VERSION,
         "decision": decision,
         "summary": summary,
         "findings": normalized,
     }
+    # Only expose the repair path after every structural and safety check passes.
+    if len(summary) > MAX_TEXT:
+        raise CodeReviewTextTooLong(review, "summary")
+    if any(len(item["message"]) > MAX_TEXT for item in normalized):
+        raise CodeReviewTextTooLong(review, "finding message")
+    return review
+
+
+def validate_review_repair(original: dict, value: dict, changed_paths: set[str]) -> dict:
+    """A prose-only repair cannot turn findings into approval or drop a comment."""
+    review = validate_review(value, changed_paths)
+    if review["decision"] != original["decision"] or len(review["findings"]) != len(original["findings"]):
+        raise CodeReviewError("Review text repair changed the decision or removed/added findings.")
+    if len(original["summary"]) <= MAX_TEXT and review["summary"] != original["summary"]:
+        raise CodeReviewError("Review text repair changed an already valid summary.")
+    for before, after in zip(original["findings"], review["findings"]):
+        if any(before[key] != after[key] for key in ("severity", "path", "line")):
+            raise CodeReviewError("Review text repair changed a finding's identity or severity.")
+        if len(before["message"]) <= MAX_TEXT and before["message"] != after["message"]:
+            raise CodeReviewError("Review text repair changed an already valid finding message.")
+    return review
 
 
 def render_review_comment(review: dict, ticket_number: int, attempt: int) -> str:

@@ -204,6 +204,8 @@ try {
     check("document.querySelector('#drawer-content .ticket-markdown')?.textContent.trim().length > 0");
     check("document.querySelector('#ticket-drawer').getAttribute('role') === 'dialog'");
     shot("ticket-tests");
+    assert.equal(browser("eval", readFileSync(resolve(root, "factory/tests/drawer_scroll_browser_checks.js"), "utf8")),
+      '"PASS Tests tab keeps reading position and feedback across refreshes"');
     browser("eval", "document.querySelector('[data-ticket-action=approve-tests]').scrollIntoView({block:'center'})");
     shot("qa-decision");
     // A polling update must refresh the header as well as the decision content.

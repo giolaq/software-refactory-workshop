@@ -189,6 +189,12 @@ The orchestration flow is intentionally direct:
 9. On green gates, push or update the PR and give its exact candidate revision
    to the read-only Code Review role. Review comments return to the same
    Implementation adapter and consume the bounded retry budget; gates and review rerun.
+   An otherwise valid review whose summary or finding message exceeds 2,000
+   characters gets one automatic prose-only repair when Charter retries are
+   enabled. The reviewer keeps the same candidate, decision, and finding
+   identities; only overlong prose may change. The original response and repair
+   prompt/log are retained under `.factory/`. A failed repair blocks safely;
+   it does not start another implementation attempt or grant merge approval.
 10. Standard sends an exact-head `APPROVE` decision to human review without a
    second agent recommendation. Assured and Autonomous Demo add a Supervisor
    recommendation. The orchestrator rechecks the live PR head. Lean,

@@ -39,6 +39,14 @@ scope instead of repeating an unchanged request.
 | More tools → Repository monitor | Preview read-only health findings; publish only by explicit Live action | Finds stale claims, waits, drift, CI, and advisories without repairing code |
 | More tools → Factory interfaces | Check workspace revisions, inspect trigger proposals, and generate a reviewed improvement report | Makes optional production seams visible without changing the beginner workflow |
 
+If Code Review produces a summary or finding message longer than 2,000
+characters, the factory automatically requests one shorter response on the
+same candidate revision (unless the Charter disables retries). No attendee
+action is needed while it runs. **Activity and CLI output** reports the repair;
+the structured review artifact links the original response and repair evidence.
+The decision, finding count, locations, and severities must remain unchanged.
+If repair fails, the ticket stays blocked rather than accepting an invalid review.
+
 Every operation shows the exact equivalent CLI command and streams its output.
 The interface runs one command at a time, so two buttons cannot start competing
 factory processes.
