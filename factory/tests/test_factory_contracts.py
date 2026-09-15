@@ -52,6 +52,33 @@ class FactoryContractTests(unittest.TestCase):
             self.assertIn("error", rejected)
             self.assertNotIn("content", rejected)
 
+    def test_evidence_accepts_the_abbreviated_candidate_but_no_other_revision(self):
+        from factory_contracts import capture_review_evidence
+        with tempfile.TemporaryDirectory() as directory:
+            repo = Path(directory)
+            source = repo / "report.md"
+            head = "0b509ae82ff55251392302ae9bce3b6540fc93f6"
+            accepted = (
+                f"Candidate `{head[:7]}`, gates green.",
+                f"Candidate {head[:12].upper()} re-verified.",
+                f"Candidate `{head}` re-verified.",
+                f"Ran `git diff {head[:8]}..HEAD`; empty.",
+            )
+            for text in accepted:
+                source.write_text(text)
+                with self.subTest(text=text):
+                    report = capture_review_evidence(
+                        repo, source, author_role="implementation", revision=head, source_root=repo,
+                    )
+                    self.assertNotIn("error", report)
+                    self.assertEqual(report["candidate_head"], head)
+            for text in (f"Candidate {head[:6]}.", f"Candidate {head[:7]}9.", "Candidate 0b509aef.", f"x{head[:7]}"):
+                source.write_text(text)
+                with self.subTest(text=text):
+                    self.assertIn("error", capture_review_evidence(
+                        repo, source, author_role="implementation", revision=head, source_root=repo,
+                    ))
+
     def test_receipt_preserves_runtime_artifacts_when_retry_reuses_filenames(self):
         with tempfile.TemporaryDirectory() as directory:
             repo = Path(directory)

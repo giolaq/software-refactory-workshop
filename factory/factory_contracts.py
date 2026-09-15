@@ -11,6 +11,21 @@ from uuid import uuid4
 from sensitive_data import redact_credentials
 
 
+def _names_revision(content: str, revision: str) -> bool:
+    """Report whether evidence names this candidate in full or abbreviated form.
+
+    Git prints abbreviated object names by default, so a report citing `0b509ae`
+    has still bound itself to this exact candidate: a prefix of the true head
+    cannot be produced from a different revision, which is the property the
+    evidence contract needs. Accepting only the 40-character form discarded
+    correct evidence and cost tickets a retry over a formatting rule.
+    """
+    for match in re.finditer(r"(?<![0-9A-Za-z])([0-9A-Fa-f]{7,64})(?![0-9A-Za-z])", content):
+        if revision.startswith(match.group(1).lower()):
+            return True
+    return False
+
+
 def capture_review_evidence(
     repo: Path, source: Path, *, author_role: str, revision: str, source_root: Path,
 ) -> dict:
@@ -32,8 +47,8 @@ def capture_review_evidence(
         content = redact_credentials(content).strip()
         if not content:
             raise ValueError("Evidence must not be empty")
-        if revision not in content:
-            raise ValueError(f"Evidence must name the full candidate revision: {revision}")
+        if not _names_revision(content, revision):
+            raise ValueError(f"Evidence must name the candidate revision: {revision}")
         digest = hashlib.sha256(content.encode()).hexdigest()
         target = repo / ".factory/reviews" / f"{author_role}-{digest}.md"
         if not target.resolve().is_relative_to(repo.resolve()) or target.is_symlink():

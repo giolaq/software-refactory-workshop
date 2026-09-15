@@ -317,7 +317,8 @@ coordination. Retries add previous failure details and any human retry direction
 
 **Output:** Committed production changes and implementation-owned tests. When
 the ticket requires a report, an uncommitted `.factory/review-handoff.md` contains
-the full candidate SHA, actual checks, artifact paths, and unresolved work. The
+the candidate SHA (full, or abbreviated to at least 7 characters of the same
+value), actual checks, artifact paths, and unresolved work. The
 factory snapshots that report as implementation-authored evidence, not approval.
 
 **Prompt excerpts** from `make_prompt()`:

@@ -431,7 +431,8 @@ that descendant revision when protected tests still match. The repair must pass
 fresh verification and review; its predecessor's approval does not apply.
 
 Coding agents can also supply a report in their worktree at
-`.factory/review-handoff.md`. The report must name the full candidate revision
+`.factory/review-handoff.md`. The report must name the candidate revision — the
+full 40-character value or a Git abbreviation of at least 7 characters of it —
 and stay within 20 KB. The Factory redacts credentials, saves a content-hashed
 copy, and passes it to review and supervision as an implementation-authored
 claim. This is not independent verification or human approval. Runtime reports
