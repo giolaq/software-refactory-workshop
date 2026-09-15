@@ -11,7 +11,7 @@ from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).parents[1]))
 
-from code_review import CodeReviewError, CodeReviewTextTooLong, extract_review, render_review_comment, validate_review, validate_review_repair
+from code_review import MAX_TEXT, CodeReviewError, CodeReviewTextTooLong, extract_review, render_review_comment, validate_review, validate_review_repair
 from factory_charter import FactoryCharter
 from orchestrator import Factory
 from project_contract import ProjectContract
@@ -124,7 +124,8 @@ class CodeReviewTests(unittest.TestCase):
 
     def test_repair_cannot_drop_findings_change_verdict_or_retarget(self):
         original = {"schema_version": 2, "decision": "REQUEST_CHANGES", "summary": "Short summary.",
-                    "findings": [{"severity": "blocking", "path": "app.py", "line": 1, "message": "Long. " * 500}]}
+                    "findings": [{"severity": "blocking", "path": "app.py", "line": 1,
+                                  "message": "Long. " * (MAX_TEXT // len("Long. ") + 1)}]}
         good = json.loads(json.dumps(original))
         good["findings"][0]["message"] = "Fix the regression."
         self.assertEqual(validate_review_repair(original, good, {"app.py", "other.py"}), good)
@@ -142,13 +143,13 @@ class CodeReviewTests(unittest.TestCase):
                 validate_review_repair(original, value, {"app.py", "other.py"})
 
     def test_text_limit_does_not_hide_other_invalid_fields(self):
-        value = {"schema_version": 2, "decision": "REQUEST_CHANGES", "summary": "x" * 2001,
+        value = {"schema_version": 2, "decision": "REQUEST_CHANGES", "summary": "x" * (MAX_TEXT + 1),
                  "findings": [{"severity": "blocking", "path": "../unsafe", "line": 1, "message": "Problem"}]}
         with self.assertRaises(CodeReviewError) as raised:
             validate_review(value, {"app.py"})
         self.assertNotIsInstance(raised.exception, CodeReviewTextTooLong)
-        value.update(decision="APPROVE", findings=[], summary="x" * 2000)
-        self.assertEqual(validate_review(value, set())["summary"], "x" * 2000)
+        value.update(decision="APPROVE", findings=[], summary="x" * MAX_TEXT)
+        self.assertEqual(validate_review(value, set())["summary"], "x" * MAX_TEXT)
         value["summary"] += "x"
         with self.assertRaises(CodeReviewTextTooLong):
             validate_review(value, set())
@@ -201,9 +202,11 @@ class CodeReviewTests(unittest.TestCase):
                 value.update(decision="APPROVE", findings=[])
                 response = json.dumps(value)
             original = json.loads(response)
-            original["summary"] = "Detailed review. " * 150
+            def past_limit(sentence: str) -> str:
+                return sentence * (MAX_TEXT // len(sentence) + 1)
+            original["summary"] = past_limit("Detailed review. ")
             if original["findings"]:
-                original["findings"][0]["message"] = "Preserve the documented value contract. " * 80
+                original["findings"][0]["message"] = past_limit("Preserve the documented value contract. ")
             responses = iter([(0, json.dumps(original)), (0, json.dumps(original) if repair_fails else response)] if overlong else [(0, response)])
             def invoke(*args):
                 if factory.run_adapter.call_count == mutate_on_call:
@@ -249,7 +252,7 @@ class CodeReviewTests(unittest.TestCase):
                     return
                 repair_call = factory.run_adapter.call_args_list[1].args
                 self.assertEqual(repair_call[2], repo)
-                self.assertIn("2000", repair_call[3].read_text())
+                self.assertIn(str(MAX_TEXT), repair_call[3].read_text())
                 self.assertIn(ticket["code_review"]["head"], repair_call[3].read_text())
 
 

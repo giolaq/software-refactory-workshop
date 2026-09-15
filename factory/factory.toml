@@ -34,7 +34,10 @@ allowed_working_roots = ["worktree"]
 network_expectation = "provider-only"
 environment_allowlist = ["PATH", "HOME", "TMPDIR", "LANG", "TERM", "CLAUDE_CONFIG_DIR"]
 credential_names = []
-read_only_template = 'claude -p "$(cat {prompt})" --permission-mode plan'
+# Plan mode persists the deliverable to a plan file instead of stdout, so the
+# structured decision never reaches the orchestrator. Deny the editing tools
+# instead; worktree mutation detection remains the enforcing check.
+read_only_template = 'claude -p "$(cat {prompt})" --permission-mode acceptEdits --disallowedTools Edit,Write,NotebookEdit'
 
 [agent_capabilities.codex]
 protocol_version = 1

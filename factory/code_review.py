@@ -9,7 +9,10 @@ from json_response import extract_last_json_object
 
 SCHEMA_VERSION = 2
 MAX_FINDINGS = 30
-MAX_TEXT = 2_000
+# Bounds untrusted prose in a published PR comment. A thorough approval of a
+# multi-file cutover does not fit in 2000 characters, and repeatedly asking the
+# reviewer to shorten a correct verdict blocks tickets that passed every gate.
+MAX_TEXT = 4_000
 SEVERITIES = {"blocking", "warning", "note"}
 
 
