@@ -762,19 +762,21 @@ function renderTickets(factory, planning = {}, operation = {}) {
     button.setAttribute("aria-pressed", String(active));
   });
   const board = $("#ticket-board");
+  const focusedTicket = document.activeElement?.closest('[data-ticket]')?.dataset.ticket;
   board.className = `ticket-board mode-${app.boardMode}${visibleStates.length === 1 ? " single-lane" : ""}`;
   board.innerHTML = visibleStates.map((state) => {
     const items = tickets.filter((ticket) => ticket.status === state);
     const cards = items.map((ticket) => {
       const intake = ticket.intake?.proposal;
       const steward = ticket.status === "Done" ? null : ticket.merge_steward?.state;
-      const phase = ticket.status === "Done" ? "Completed" : ticket.activity ? "Recovering context" : (ticket.phase || ticket.status).replaceAll("_", " ");
+      const queued = ticket.status === "Ready" && (ticket.qa_approval_pending || ticket.qa_approved);
+      const phase = queued ? "Queued for implementation" : ticket.status === "Done" ? "Completed" : ticket.activity ? "Recovering context" : (ticket.phase || ticket.status).replaceAll("_", " ");
       const interfaceState = intake && !ticket.intake?.human_approved
         ? `<span class="ticket-interface-state intake">Intake · ${esc(intake.classification)}</span>`
         : steward && steward !== "not-applicable"
           ? `<span class="ticket-interface-state steward">Steward · ${esc(steward.replaceAll("-", " "))}</span>`
           : "";
-      const content = `<div class="ticket-top"><span class="ticket-number">#${ticket.number}</span><span>${esc(ticket.agent || "unassigned")}</span></div><h3>${esc(ticket.title)}</h3>${interfaceState}<div class="ticket-meta"><div><b>${esc(phase)}</b><span>${ticket.preview ? "Awaiting local load" : `Attempt ${ticket.attempt || 0}`}</span></div><div><span>Needs</span><span class="dependency-list">${ticket.dependencies?.length ? ticket.dependencies.map((number) => `<i>#${number}</i>`).join("") : "None"}</span></div></div>`;
+      const content = `<div class="ticket-top"><span class="ticket-number">#${ticket.number}</span><span>${esc(ticket.agent || "unassigned")}</span></div><h3>${esc(ticket.title)}</h3>${interfaceState}<div class="ticket-meta"><div><b>${esc(phase)}</b><span>${queued ? "Approval saved · waiting to run" : ticket.preview ? "Awaiting local load" : `Attempt ${ticket.attempt || 0}`}</span></div><div><span>Needs</span><span class="dependency-list">${ticket.dependencies?.length ? ticket.dependencies.map((number) => `<i>#${number}</i>`).join("") : "None"}</span></div></div>`;
       return ticket.preview
         ? `<a class="ticket-card" href="${esc(ticket.url)}" target="_blank" rel="noreferrer">${content}</a>`
         : `<button class="ticket-card" type="button" data-ticket="${ticket.number}">${content}</button>`;
@@ -784,6 +786,7 @@ function renderTickets(factory, planning = {}, operation = {}) {
     return `<section class="ticket-column state-${esc(stateClass)}" aria-label="${esc(state)}: ${countLabel}"><header><h2>${esc(state)}</h2><span aria-label="${countLabel}">${items.length}</span></header><div class="ticket-cards">${cards || '<p class="ticket-empty">No tickets in this state</p>'}</div></section>`;
   }).join("");
   $$('[data-ticket]').forEach((card) => card.addEventListener("click", () => openTicket(Number(card.dataset.ticket))));
+  if (focusedTicket) $(`[data-ticket="${Number(focusedTicket)}"]`)?.focus({preventScroll: true});
 }
 
 function renderSupervisor(supervisor, factory, config) {
@@ -957,9 +960,18 @@ async function action(name, extra = {}) {
     const destructive = ["publish-plan", "approve-product", "approve-stage", "approve-tests", "request-test-changes", "retry", "save-ticket-and-retry", "release-claim", "approve-intake"].includes(name);
     if (destructive && !window.confirm("Record this decision and continue?")) return;
     app.pendingActions.add(key);
-    pendingMessage = toast(`Submitting ${name.replaceAll("-", " ")}${extra.issue ? ` for ticket #${extra.issue}` : ""}… If workers are running, this action waits for their wave to finish. GitHub synchronization may also take a moment.`, false, 0);
+    pendingMessage = toast(name === "approve-tests" ? `Saving approval for ticket #${extra.issue}… This does not need a free executor.` : `Submitting ${name.replaceAll("-", " ")}${extra.issue ? ` for ticket #${extra.issue}` : ""}… If workers are running, this action waits for their wave to finish. GitHub synchronization may also take a moment.`, false, 0);
     const operation = await request(`/api/actions/${name}`, { method: "POST", body: JSON.stringify(basePayload(extra)) });
     if (operation.companion) {
+      if (name === "approve-tests") {
+        if (app.selectedTicket?.number === Number(extra.issue)) closeDrawer();
+        await refreshSnapshot();
+        if ($("#ticket-drawer").hidden && document.activeElement === document.body) {
+          $(`[data-ticket="${Number(extra.issue)}"]`)?.focus({preventScroll: true});
+        }
+        toast(`Approval saved for #${extra.issue}. ${approvalQueueMessage()}`, false, 10000);
+        return operation;
+      }
       toast(`${operation.companion.title} completed.`);
       return operation;
     }
@@ -1178,12 +1190,26 @@ function candidateEvidence(ticket) {
   return `<section class="detail-panel"><h3>Candidate evidence</h3><p>Reviewed revision <code>${esc(review.head || "not reviewed")}</code></p><p>Before: ${esc(qa.red?.result || "not recorded")} · After: ${esc(qa.green?.result || "not recorded")} · Review: ${esc(review.result?.decision || "pending")}</p><p>${gates.length ? gates.map(gate => `${esc(gate.name)}: ${esc(gate.classification || "unknown")}`).join(" · ") : "No gate results recorded."}</p><p>Inspect test output in Tests and findings in Code review before deciding.</p>${reports.map(report => `<details><summary>${esc(report.author_role)} report · submitted for ${esc((report.candidate_head || "").slice(0, 12))}</summary><p>Authored claims, not independent verification or approval.</p><p>Content SHA-256: <code>${esc(report.sha256 || "not captured")}</code></p><pre>${esc(report.error || report.content || "No content")}</pre></details>`).join("")}</section>`;
 }
 
+function approvalQueueMessage() {
+  const operation = app.snapshot?.operation || {};
+  if (operation.status === "running" && ["run", "listen"].includes(operation.action)) {
+    return "Queued for implementation. The runner picks it up at its next safe checkpoint when an executor is available and dependencies are complete.";
+  }
+  if (operation.status === "running" && operation.action === "run-once") {
+    return "Queued for implementation. Run one cycle may finish before picking it up; choose Run factory afterwards to continue.";
+  }
+  return "Queued for implementation. Choose Run factory to continue; approval is already saved.";
+}
+
 function qaDecisionPanel(ticket) {
-  return ticket.status === "QA Review" ? `<section class="detail-panel"><h3>Acceptance Test decision</h3><label for="qa-revision-feedback">Revision feedback</label><textarea id="qa-revision-feedback" rows="4" placeholder="Describe what the revised tests must change or cover."></textarea><p class="field-help">Request a new test revision here. Edit the GitHub issue only when its requirements or acceptance criteria are wrong.</p><div class="form-actions"><button class="button" type="button" data-ticket-action="request-test-changes">Request test changes</button><button class="button button-primary" type="button" data-ticket-action="approve-tests">Approve tests</button></div></section>` : "";
+  if (ticket.qa_approval_pending || (ticket.qa_approved && ticket.status === "Ready")) {
+    return `<section class="detail-panel"><h3>Approval saved · Queued</h3><p>${esc(approvalQueueMessage())}</p></section>`;
+  }
+  return ticket.status === "QA Review" ? `<section class="detail-panel"><h3>Acceptance Test decision</h3><p>Approval saves your decision even while executors are busy. The ticket waits in the implementation queue until the factory can run it.</p><label for="qa-revision-feedback">Revision feedback</label><textarea id="qa-revision-feedback" rows="4" placeholder="Describe what the revised tests must change or cover."></textarea><p class="field-help">Request a new test revision here. Edit the GitHub issue only when its requirements or acceptance criteria are wrong.</p><div class="form-actions"><button class="button" type="button" data-ticket-action="request-test-changes">Request test changes</button><button class="button button-primary" type="button" data-ticket-action="approve-tests">Approve tests</button></div></section>` : "";
 }
 
 function wireQaDecision(ticket, content) {
-    $('[data-ticket-action="approve-tests"]', content)?.addEventListener("click", () => action("approve-tests", { issue: ticket.number }));
+    $('[data-ticket-action="approve-tests"]', content)?.addEventListener("click", () => action("approve-tests", { issue: ticket.number, qa_commit: ticket.qa_commit }));
     $('[data-ticket-action="request-test-changes"]', content)?.addEventListener("click", () => {
       const feedback = $("#qa-revision-feedback", content)?.value.trim() || "";
       if (!feedback) {
@@ -1403,7 +1429,7 @@ async function renderDrawer({ preservePosition = false } = {}) {
         </div>
       </section>`;
     const intakePanel = intakeProposal.case_id && !ticket.intake?.human_approved ? `<section class="detail-panel intake-decision"><span class="section-label">Raw feedback intake</span><h3>${esc(intakeProposal.classification)}</h3><p>${esc(intakeProposal.rationale || "Review the bounded intake evidence before choosing the next workflow.")}</p>${intakeProposal.missing?.length ? `<p><b>Missing evidence</b><br>${intakeProposal.missing.map((item) => `<code>${esc(item)}</code>`).join(" ")}</p>` : ""}${intakeProposal.classification === "READY_TO_IMPLEMENT" ? `<label>Human approval reason<textarea id="intake-approval-reason" rows="3" placeholder="Explain why the revisions, reproduction, criteria, and ownership are sufficient."></textarea></label><div class="form-actions"><button class="button button-primary" type="button" data-ticket-action="approve-intake">Approve intake for triage</button></div>` : intakeProposal.classification === "READY_TO_PLAN" ? '<div class="form-actions"><button class="button" type="button" data-intake-view="planning">Move the request into planning</button></div>' : ""}<p class="field-help">The proposal cannot dispatch work. Your decision is recorded separately from the original classification.</p></section>` : "";
-    const qaDecision = ticket.status === "QA Review" ? '<section class="detail-panel"><h3>Acceptance Test decision</h3><button class="button button-primary" type="button" data-open-tests>Inspect tests and decide</button></section>' : "";
+    const qaDecision = ticket.qa_approval_pending || (ticket.qa_approved && ticket.status === "Ready") ? qaDecisionPanel(ticket) : ticket.status === "QA Review" ? '<section class="detail-panel"><h3>Acceptance Test decision</h3><button class="button button-primary" type="button" data-open-tests>Inspect tests and decide</button></section>' : "";
     const stewardReady = !mergeSteward.state || mergeSteward.state === "ready-for-human-merge";
     const actions = ticket.status === "In Review" && ticket.merge_authority === "human" && mergeState.allowed && stewardReady ? `<button class="button button-primary" type="button" data-ticket-action="merge">Merge exact revision</button>` : "";
     const merge = ticket.status === "In Review" ? `<section class="detail-panel"><span class="section-label">Human merge decision</span><h3>${esc((mergeSteward.state || "human-decision-required").replaceAll("-", " "))}</h3><p><span class="pill">${esc(ticket.merge_authority || "human")}</span> Approved head <code>${esc(ticket.approved_head || "not recorded")}</code></p><p>${esc((mergeSteward.reasons || [ticket.supervisor_merge_decision || "Inspect the exact-revision evidence before deciding."]).join(" "))}</p>${mergeSteward.state === "steward-updating" ? '<div class="form-actions"><button class="button" type="button" data-ticket-action="steward-sync">Synchronize and re-verify</button></div><p class="field-help">A changed head revokes gates and Code Review. The steward never merges.</p>' : ""}</section>` : "";

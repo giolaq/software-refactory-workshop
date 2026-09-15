@@ -33,6 +33,7 @@ function navigate(view) {
   browser("wait", `[data-view="${view}"]:not([hidden])`);
 }
 async function fixture(stage, work) {
+  if (process.env.FACTORY_BROWSER_STAGE && process.env.FACTORY_BROWSER_STAGE !== stage) return;
   const server = spawn(python, ["factory/tests/serve_workshop_fixture.py", "--stage", stage, "--port", port], {
     cwd: root, stdio: ["ignore", "pipe", "pipe"],
   });
@@ -208,9 +209,12 @@ try {
       '"PASS Tests tab keeps reading position and feedback across refreshes"');
     browser("eval", "document.querySelector('[data-ticket-action=approve-tests]').scrollIntoView({block:'center'})");
     shot("qa-decision");
+    assert.equal(browser("eval", readFileSync(resolve(root, "factory/tests/approval_queue_browser_checks.js"), "utf8")),
+      '"PASS approval queues while executor busy, closes on success, and stays open on failure"');
     // A polling update must refresh the header as well as the decision content.
-    browser("eval", "app.selectedTicket = {...app.selectedTicket, status: 'Ready'}; renderDrawer({preservePosition:true})");
-    check("document.querySelector('#drawer-issue').textContent === '#1 · Ready'");
+    // Assert in the same browser task so a real SSE update cannot replace this
+    // synthetic state between separate command round trips.
+    assert.equal(browser("eval", "app.selectedTicket = {...app.selectedTicket, status: 'Ready'}; renderDrawer({preservePosition:true}); document.querySelector('#drawer-issue').textContent === '#1 · Ready'"), "true");
     browser("press", "Escape");
     check("document.querySelector('#ticket-drawer').hidden");
     check("document.activeElement.matches('[data-ticket]')");

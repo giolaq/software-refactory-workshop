@@ -580,7 +580,7 @@ read -r PLAN_ID
             click={<>Open <strong>Deliver → Tickets</strong>. Open <strong>Run options</strong> and select <strong>Run one cycle</strong>. Open the ticket labeled <strong>QA Review</strong>, select <strong>Tests</strong>, and read the proposed test and baseline failure. Approve it there, or request a revision.</>}
             whyStopped={<>The factory runs the new test before implementation. <strong>RED PROVED</strong> records an assertion failure on the baseline. Read the assertion to confirm it tests the requested behavior.</>}
             inspect={<>Decide approve or revise, and explain which assertion proves the requirement. Setup, syntax, and unrelated failures are not valid behavior evidence.</>}
-            continueWhen={<>Tests approved? Go to <a href="#factory">Deliver tickets</a> and select <strong>Run factory</strong> to resume; do not wait for the whole room.</>}
+            continueWhen={<>Approval closes the panel and shows <strong>Queued for implementation</strong>. If the factory is running, it picks up the ticket when an executor is available and dependencies are complete. If stopped or using <strong>Run one cycle</strong>, go to <a href="#factory">Deliver tickets</a> and select <strong>Run factory</strong>. You do not need to approve again.</>}
             cliPurpose={<>Run one ticket through QA RED evidence, then approve its acceptance tests.</>}
             cliDirectory={track === "live" ? <><code>software-refactory-control</code>; commands target <code>$TARGET</code></> : <><code>software-refactory-rehearsal</code></>}
           >{track === "live" ? `./factory/factory run --repo "$TARGET" --review-qa-tests --once

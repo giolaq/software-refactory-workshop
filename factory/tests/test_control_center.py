@@ -16,9 +16,39 @@ from control_center import ControlCenter, ControlCenterServer, InputError, plann
 from factory_charter import FactoryCharter
 from orchestrator import parser
 from project_contract import ProjectContract
+from qa_approval import queue_approval
 
 
 class ControlCenterTests(unittest.TestCase):
+    def test_queued_approval_is_visible_without_mutating_canonical_ticket(self):
+        with tempfile.TemporaryDirectory() as directory:
+            center = ControlCenter(self.make_repo(directory))
+            ticket = {"number": 2, "title": "Waiting ticket", "status": "QA Review",
+                      "qa_commit": "reviewed", "qa_tests": {}, "qa_evidence": {}}
+            path = center.repo / ".factory/state.json"
+            path.write_text(json.dumps({"tickets": [ticket]}))
+            queue_approval(center.repo, ticket)
+            snapshot = center.snapshot()
+            projected = snapshot["factory"]["tickets"][0]
+            self.assertEqual(projected["status"], "Ready")
+            self.assertTrue(projected["qa_approval_pending"])
+            self.assertEqual(projected["phase"], "Queued")
+            self.assertFalse(any(d.get("title") == "Approve tests for #2" for d in snapshot["decisions"]))
+            self.assertEqual(snapshot["factory"]["human_attention"]["awaiting_human"], 0)
+            self.assertEqual(json.loads(path.read_text())["tickets"][0]["status"], "QA Review")
+
+    def test_approval_is_acknowledged_synchronously_without_a_running_factory(self):
+        with tempfile.TemporaryDirectory() as directory:
+            center = ControlCenter(self.make_repo(directory))
+            # Another companion may itself be waiting for the worker wave.
+            # Saving approval must not wait behind that unrelated action either.
+            with center.companion_lock:
+                result = center.start("approve-tests", {"issue": 2, "qa_commit": "reviewed"})
+            self.assertEqual(result["companion"]["status"], "succeeded")
+            self.assertIsNone(center.worker)
+            _, commands = center.build_commands("approve-tests", {"issue": 2, "qa_commit": "reviewed"})
+            self.assertEqual(commands[0][-2:], ["--qa-commit", "reviewed"])
+
     def test_workshop_preview_uses_product_port_not_control_center_readme_url(self):
         with tempfile.TemporaryDirectory() as directory:
             center = ControlCenter(self.make_repo(directory))

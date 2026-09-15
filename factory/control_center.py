@@ -22,6 +22,7 @@ import time
 import tomllib
 import uuid
 import webbrowser
+from contextlib import nullcontext
 from datetime import datetime, timezone
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -44,6 +45,7 @@ from github_repository import (
 )
 from factory_charter import CHARTER_PATH, FactoryCharter, FactoryCharterError
 from human_attention import human_attention_snapshot
+from qa_approval import pending_approval
 from planning_presentation import (
     REPLAN_REQUIRED_STATUSES,
     planning_blocking_stage,
@@ -1614,6 +1616,9 @@ class ControlCenter:
             except FactoryCharterError:
                 pass
         for ticket in factory.get("tickets", []):
+            if pending_approval(self.repo, ticket):
+                # Presentation only: the runner owns canonical ticket transitions.
+                ticket.update(canonical_status=ticket["status"], status="Ready", phase="Queued", qa_approval_pending=True)
             ticket["merge_steward"] = self.merge_steward_snapshot(ticket)
         factory["human_attention"] = human_attention_snapshot(
             self.repo,
@@ -2165,7 +2170,11 @@ class ControlCenter:
         if action == "approve-tests":
             issue = self._positive_int(payload, "issue", required=True)
             self._ticket_action_context(issue, mode)
-            return f"Approve tests for ticket #{issue}", [base + ["approve-tests", str(issue), "--yes"]]
+            command = base + ["approve-tests", str(issue), "--yes"]
+            revision = self._string(payload, "qa_commit", max_length=64)
+            if revision:
+                command += ["--qa-commit", revision]
+            return f"Approve tests for ticket #{issue}", [command]
         if action == "request-test-changes":
             issue = self._positive_int(payload, "issue", required=True)
             ticket = self._ticket_action_context(issue, mode)
@@ -2458,10 +2467,14 @@ class ControlCenter:
                 action in COMPANION_ACTIONS
                 and self.operation.get("action") in {"run", "run-once", "listen"}
                 and self.operation.get("status") == "running"
-                and process_running
+                and (process_running or action == "approve-tests")
             )
             if (operation_running or process_running) and not companion:
                 raise InputError("Another factory operation is already running.")
+            # Approval only writes a revision-bound inbox receipt, not delivery
+            # state. Complete it in the request even when no runner is active.
+            if action == "approve-tests":
+                companion = True
             if not companion:
                 operation_id = uuid.uuid4().hex[:12]
                 log = self.control_repo / ".factory" / "logs" / f"control-center-{operation_id}.log"
@@ -2506,7 +2519,7 @@ class ControlCenter:
         )
         exit_code = 0
         output = ""
-        with self.companion_lock:
+        with (nullcontext() if action == "approve-tests" else self.companion_lock):
             with log.open("w") as stream:
                 for command in commands:
                     stream.write("$ " + shlex.join(command) + "\n\n")

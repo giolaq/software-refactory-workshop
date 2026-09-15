@@ -14,6 +14,15 @@ from orchestrator import FactoryCLI
 
 
 class ExecutionTests(unittest.TestCase):
+    def test_approval_submission_does_not_wait_for_busy_executor(self):
+        with tempfile.TemporaryDirectory() as directory:
+            repo = Path(directory)
+            cli = FactoryCLI(SimpleNamespace(command="approve-tests", issue=1, yes=True), repo, {})
+            with mock.patch("orchestrator.execution_lock", side_effect=ValueError("Executor busy")), \
+                    mock.patch.object(cli, "_planning_commands") as approve:
+                cli.run()
+                approve.assert_called_once()
+
     def test_companion_waits_for_wave_and_lock_releases_after_failure(self):
         with tempfile.TemporaryDirectory() as directory:
             repo = Path(directory)
@@ -71,7 +80,7 @@ class ExecutionTests(unittest.TestCase):
                 state.write_text(json.dumps({"tickets": [{"number": 1, "qa_commit": "new"}]}))
                 yield
 
-            cli = FactoryCLI(SimpleNamespace(command="approve-tests", issue=1), repo, {})
+            cli = FactoryCLI(SimpleNamespace(command="request-test-changes", issue=1), repo, {})
             with mock.patch("orchestrator.execution_lock", next_checkpoint), \
                     mock.patch.object(cli, "_planning_commands") as approve:
                 with self.assertRaisesRegex(ValueError, "revision changed"):

@@ -28,6 +28,8 @@ def install_delivery_plan(repo, plan_id):
     }))
 
 sys.path.insert(0, str(Path(__file__).parents[1]))
+from execution import execution_lock
+from qa_approval import pending_approval
 
 from doctor import (
     Check,
@@ -2815,8 +2817,25 @@ class RuntimeTests(unittest.TestCase):
                 },
             }
             state_path.write_text(json.dumps(state))
-            approve_qa_tests(repo, 12, assume_yes=True)
+            before = state_path.read_bytes()
+            script = (
+                "import sys; from pathlib import Path; from types import SimpleNamespace; "
+                f"sys.path.insert(0, {str(Path(__file__).parents[1])!r}); "
+                "from orchestrator import FactoryCLI; "
+                "FactoryCLI(SimpleNamespace(command='approve-tests', issue=12, yes=True), Path(sys.argv[1]), {}).run()"
+            )
+            # A real CLI subprocess must complete even while the executor owns
+            # both locks. It may write the inbox receipt, not canonical state.
+            with execution_lock(repo, runner=True), execution_lock(repo):
+                result = subprocess.run([sys.executable, "-c", script, str(repo)],
+                                        capture_output=True, text=True, timeout=5)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn("Approval saved", result.stdout)
+            self.assertEqual(state_path.read_bytes(), before)
+            self.assertTrue(pending_approval(repo, state["tickets"][0]))
             self.assertTrue((repo / ".factory/qa-approvals/12").is_file())
+            with self.assertRaisesRegex(ValueError, "test revision changed"):
+                approve_qa_tests(repo, 12, assume_yes=True, expected_commit="stale")
 
     def test_human_can_request_an_exact_qa_revision_with_feedback(self):
         with tempfile.TemporaryDirectory() as directory:

@@ -125,6 +125,7 @@ from session_config import (
 )
 from supervisor import AgentSupervisor
 from execution import execution_lock
+from qa_approval import pending_approval, queue_approval
 from code_review import (
     CodeReviewError,
     CodeReviewTextTooLong,
@@ -2492,6 +2493,11 @@ class Factory:
         for ticket in self.tickets.values():
             marker = approval_dir / str(ticket["number"])
             if ticket["status"] != "QA Review" or not marker.is_file():
+                continue
+            if not pending_approval(self.repo, ticket):
+                marker.unlink(missing_ok=True)
+                ticket["failure"] = "Queued test approval no longer matches this revision. Inspect the current tests and approve again."
+                self._sync_store()
                 continue
             worktree = worktree_path(self.repo, ticket["number"])
             failure = self.verify_qa_tests_unchanged(ticket, worktree)
@@ -5711,13 +5717,15 @@ def request_qa_test_changes(
     )
 
 
-def approve_qa_tests(repo: Path, number: int, assume_yes=False):
+def approve_qa_tests(repo: Path, number: int, assume_yes=False, *, expected_commit: str = ""):
     store = StateStore(repo)
     ticket = next((item for item in store.data.get("tickets", []) if item["number"] == number), None)
     if not ticket:
         raise ValueError(f"Ticket #{number} not found in factory state")
     if ticket.get("status") != "QA Review":
         raise ValueError(f"Ticket #{number} is {ticket.get('status')}, not QA Review")
+    if expected_commit and expected_commit != ticket.get("qa_commit"):
+        raise ValueError("The test revision changed. Inspect the current tests before approving.")
     evidence = ticket.get("qa_evidence", {})
     red = evidence.get("red", {})
     command = evidence.get("focused_test_command", "")
@@ -5770,10 +5778,8 @@ def approve_qa_tests(repo: Path, number: int, assume_yes=False):
             raise ValueError("interactive approval required; rerun in a terminal or pass --yes") from exc
         if answer != "APPROVE TESTS":
             raise ValueError("Acceptance Test approval cancelled")
-    marker = repo / ".factory/qa-approvals" / str(number)
-    marker.parent.mkdir(parents=True, exist_ok=True)
-    marker.write_text(now() + "\n")
-    print(f"Approved Acceptance Tests for #{number}. The running factory will resume it automatically.")
+    queue_approval(repo, ticket)
+    print(f"Approval saved for #{number}; queued for implementation. A running factory picks it up at its next safe checkpoint when capacity and dependencies permit. If stopped, start Run factory.")
 
 
 def positive_int(value: str) -> int:
@@ -7164,6 +7170,7 @@ def parser():
     approve_tests = sub.add_parser("approve-tests", help="approve protected Acceptance Tests for one ticket")
     approve_tests.add_argument("issue", type=int); approve_tests.add_argument("--repo", default=".")
     approve_tests.add_argument("--yes", action="store_true")
+    approve_tests.add_argument("--qa-commit", default="", help="exact test revision inspected by the reviewer")
     request_test_changes = sub.add_parser(
         "request-test-changes",
         help="reject protected Acceptance Tests and request a revised test set",
@@ -7219,16 +7226,17 @@ class FactoryCLI:
 
     def run(self) -> None:
         handler_name = CLI_COMMAND_GROUPS.get(self.args.command, "_run_factory")
-        # Inspection and the server itself never own delivery state.
+        # Inspection, the server, and revision-bound QA inbox submissions never
+        # own delivery state. Only the runner consumes approval receipts.
         if handler_name == "_run_factory" or self.args.command in {
-            "control-center", "status", "profiles", "review", "workspace-check", "adapter-check", "release-check", "monitor",
+            "control-center", "status", "profiles", "review", "workspace-check", "adapter-check", "release-check", "monitor", "approve-tests",
         }:
             getattr(self, handler_name)()
             return
         expected = self.ticket_revision()
         # Setup/reset must not invalidate a running factory between worker waves.
         companion = self.args.command in {
-            "retry", "merge", "approve-tests", "request-test-changes", "release-claim",
+            "retry", "merge", "request-test-changes", "release-claim",
             "steward", "evidence", "canvas", "intake", "approve-intake", "improve", "trigger",
         }
         with (nullcontext() if companion else execution_lock(self.repo, runner=True)), execution_lock(self.repo):
@@ -7687,7 +7695,7 @@ class FactoryCLI:
             print(f"Approved rehearsal tickets: {tickets_path}")
             print(f"Next: ./factory/factory run --mock --scenario {args.scenario} --dry-run")
         elif args.command == "approve-tests":
-            approve_qa_tests(repo, args.issue, args.yes)
+            approve_qa_tests(repo, args.issue, args.yes, expected_commit=getattr(args, "qa_commit", ""))
         elif args.command == "request-test-changes":
             feedback_text = args.feedback
             if args.feedback_file:

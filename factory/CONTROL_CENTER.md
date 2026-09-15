@@ -362,6 +362,14 @@ recorded Git blob hashes; it does not show an uncommitted working copy.
 Request corrections in the same tab. RED PROVED classifies an assertion
 failure; it does not establish that the assertion tests the right requirement.
 
+**Approve tests** saves your decision and closes the panel, even when an
+executor is busy. The ticket appears in **Ready** as **Queued for implementation**.
+The running factory picks it up at its next safe checkpoint when capacity and
+dependencies permit. If the factory is stopped, or **Run one cycle** finishes,
+choose **Run factory**. You do not need to approve again. A changed test revision
+or changed evidence requires a new approval.
+The queue is local; the runner updates GitHub when it processes the approval.
+
 At **Review → Run app**, the branch, revision, local-change warning, and completed
 ticket count identify what is being previewed. Unmerged ticket worktrees are not
 part of this checkout. Stop the app, select **Export run evidence**, open the
@@ -376,9 +384,10 @@ terminal. This previews the managed checkout, not unmerged ticket worktrees.
 If an action fails, read the operation output first. The same command is shown
 above it, so you can copy it into a terminal when deeper diagnosis is useful.
 
-Only one runner can own a repository. A ticket action submitted while workers
-are active waits for their wave to finish before changing state. Keep the page
-open until it reports completion. You can still inspect the run while waiting.
+Only one runner can own a repository. Test approvals go straight into a durable,
+revision-bound inbox; you can leave the panel once approval is saved. Other
+ticket actions wait for the current worker wave before changing delivery state.
+Keep the page open until those actions report completion.
 Stop the runner before changing setup or resetting; do not launch another runner.
 
 If GitHub fails while approved tickets are being published, the alignment
