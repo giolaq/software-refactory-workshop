@@ -959,6 +959,36 @@ class RuntimeTests(unittest.TestCase):
         self.assertEqual(stale_merge["action"], "create_replacement_ticket")
         self.assertFalse(stale_merge["retry_allowed"])
 
+    def test_review_prose_naming_the_contract_still_retries_from_the_candidate(self):
+        finding = (
+            "demo-app/README.md lists `git diff --check` as optional, but "
+            "factory.project.toml marks repository-integrity as required: true."
+        )
+        rework = ticket_recovery({
+            "number": 9,
+            "status": "Blocked",
+            "phase": "code-review",
+            "failure": finding,
+            "code_review": {"status": "changes_requested", "result": {
+                "decision": "REQUEST_CHANGES",
+                "summary": "One blocking finding remains.",
+                "findings": [{
+                    "severity": "note", "path": "demo-app/README.md",
+                    "line": 153, "message": finding,
+                }],
+            }},
+        })
+        self.assertEqual(rework["kind"], "retry")
+        self.assertTrue(rework["retry_allowed"])
+
+        broken = ticket_recovery({
+            "number": 9,
+            "status": "Blocked",
+            "failure": "Gate api-tests points outside the configured test roots.",
+        })
+        self.assertEqual(broken["kind"], "project_configuration")
+        self.assertFalse(broken["retry_allowed"])
+
     def test_self_review_fallback_proposes_exact_merge_instead_of_retry(self):
         reviewed_head = "a" * 40
         recovery = ticket_recovery({

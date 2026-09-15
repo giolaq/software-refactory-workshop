@@ -1365,7 +1365,15 @@ def ticket_recovery(ticket: dict, repo: Path | None = None) -> dict:
                 "zero skipped tests and the corrected classifier now recognizes it."
             ),
         )
-    configuration_failure = any(marker in lowered for marker in (
+    # Review prose quotes repository files by name as a matter of course, so a
+    # finding that merely mentions the Project Contract is not evidence that the
+    # Contract is broken. Misreading one reroutes an ordinary rework retry into
+    # "repair the Contract", which refuses the retry and would restart the ticket
+    # from the repository base, discarding a sound candidate and approved QA tests.
+    requested_changes = (
+        (ticket.get("code_review") or {}).get("result") or {}
+    ).get("decision") == "REQUEST_CHANGES"
+    configuration_failure = not requested_changes and any(marker in lowered for marker in (
         "outside the configured test roots",
         "verification level",
         "has no required gate",
