@@ -1,6 +1,6 @@
 # Software (re)-Factory Workshop
 
-Release: `workshop-v1.2.3`
+Release: `workshop-v1.2.4`
 
 Software (re)-Factory helps you use coding agents to turn requirements into
 reviewed changes in a GitHub repository. You describe the result, review the
@@ -51,7 +51,7 @@ For this release, run the following in the folder where you keep your projects.
 If your facilitator supplies a different session tag, use that tag instead.
 
 ```sh
-git clone --branch workshop-v1.2.3 https://github.com/giolaq/software-refactory-workshop.git software-refactory-control
+git clone --branch workshop-v1.2.4 https://github.com/giolaq/software-refactory-workshop.git software-refactory-control
 cd software-refactory-control
 ./setup_demo.sh --scenario recipe-rebrand
 ./factory/factory control-center

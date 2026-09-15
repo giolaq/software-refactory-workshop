@@ -1,6 +1,6 @@
 # Factory interfaces
 
-Release: `workshop-v1.2.3`
+Release: `workshop-v1.2.4`
 
 Software (re)-Factory is a delivery system, not a collection of agents. Its
 interfaces separate responsibilities that change for different reasons. A
