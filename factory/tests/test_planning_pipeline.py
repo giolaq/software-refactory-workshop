@@ -29,6 +29,7 @@ from planning_pipeline import (
     validate_program,
     validate_vertical_slices,
     validate_project_paths,
+    _extract_json_object,
     _run_codex_agent,
     delivery_planning_context,
 )
@@ -478,6 +479,24 @@ class PlanningPipelineTests(unittest.TestCase):
         manifest = load_manifest(run)
         self.assertEqual(manifest["planning_agent"], "cursor")
         self.assertEqual(manifest["stages"]["product_review"]["agent"], "cursor")
+
+    def test_cursor_planner_accepts_json_object_wrapped_in_agent_prose(self):
+        product = json.loads((FIXTURES / "01-product-review.json").read_text())
+        wrapped = (
+            "I'll read the assignment, then return only JSON."
+            f"{json.dumps(product)}"
+        )
+        extracted = json.loads(_extract_json_object(wrapped))
+        self.assertEqual(extracted["project"], product["project"])
+        response = subprocess.CompletedProcess(["agent"], 0, wrapped, "")
+        with patch("planning_pipeline.invoke_cursor", return_value=response):
+            run = plan_prd(
+                self.repo, self.prd, None, "cursor", 3, 12,
+                "cursor", "agent", mock=False,
+            )
+        manifest = load_manifest(run)
+        self.assertEqual(manifest["stages"]["product_review"]["status"], "complete")
+        self.assertTrue((run / "01-product-review.json").is_file())
 
     def test_bedrock_planner_uses_the_schema_adapter_without_github_credentials(self):
         product = (FIXTURES / "01-product-review.json").read_text()
