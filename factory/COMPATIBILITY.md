@@ -20,11 +20,10 @@ It contains no file contents or credentials.
 
 ## Update a managed checkout
 
-Clone the desired tagged release beside the attendee repository:
+Clone the current release beside the attendee repository:
 
 ```sh
-git clone --branch workshop-v1.2.4 \
-  https://github.com/giolaq/software-refactory-workshop.git \
+git clone https://github.com/giolaq/software-refactory-workshop.git \
   ../software-refactory-release
 ```
 

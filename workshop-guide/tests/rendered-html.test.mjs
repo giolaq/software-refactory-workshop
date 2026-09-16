@@ -61,8 +61,9 @@ test("both command paths use valid shell syntax and explicit inputs", async () =
   }
   assert.doesNotMatch(source, /<plan-id-from-output>|<project-number>|open "\$CONTROL|YOUR-REPOSITORY|YOUR-NAME/);
   assert.match(source, /read -r PLAN_ID/);
-  assert.match(source, /--branch SESSION_TAG/);
-  assert.match(html, /Replace <code>SESSION_TAG<\/code>/);
+  // Attendees clone the current default branch; no session tag to substitute.
+  assert.doesNotMatch(source, /--branch|SESSION_TAG/);
+  assert.match(source, /git clone https:\/\/github\.com\/giolaq\/software-refactory-workshop\.git/);
   assert.match(source, /recipe-app-prd\.md/);
   assert.doesNotMatch(source, /workshop-search-prd\.md/);
   assert.match(source, /factory approve-rehearsal/);

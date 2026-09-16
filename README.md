@@ -44,11 +44,11 @@ Docker, AWS, or entering an OpenAI API key in the factory.
 
 ### 2. Download and start the factory
 
-For this release, run the following in the folder where you keep your projects.
-If your facilitator supplies a different session tag, use that tag instead.
+Run the following in the folder where you keep your projects. This clones the
+current `main`, which is the version the workshop is run against.
 
 ```sh
-git clone --branch workshop-v1.2.4 https://github.com/giolaq/software-refactory-workshop.git software-refactory-control
+git clone https://github.com/giolaq/software-refactory-workshop.git software-refactory-control
 cd software-refactory-control
 ./setup_demo.sh --scenario recipe-rebrand
 ./factory/factory control-center

@@ -341,11 +341,11 @@ agent status`}</CodeBlock>
             <p>Authorize access in your browser. Skip if already signed in with Projects access.</p>
           </>}
           <h3>Download the factory</h3>
-          <p>In your projects folder, run these commands. Replace <code>SESSION_TAG</code> with your facilitator’s session release tag.</p>
-          <CodeBlock label="Download and prepare — run once">{track === "rehearsal" ? `git clone --branch SESSION_TAG https://github.com/giolaq/software-refactory-workshop.git software-refactory-rehearsal
+          <p>In your projects folder, run these commands.</p>
+          <CodeBlock label="Download and prepare — run once">{track === "rehearsal" ? `git clone https://github.com/giolaq/software-refactory-workshop.git software-refactory-rehearsal
 cd software-refactory-rehearsal
 ./setup_demo.sh --scenario recipe-rebrand
-git remote remove origin` : `git clone --branch SESSION_TAG https://github.com/giolaq/software-refactory-workshop.git software-refactory-control
+git remote remove origin` : `git clone https://github.com/giolaq/software-refactory-workshop.git software-refactory-control
 cd software-refactory-control
 ./setup_demo.sh --scenario recipe-rebrand`}</CodeBlock>
           <p>Setup installs dependencies and the starter, not tickets. To restart later, use <strong>Reset run</strong> in the Control Center, not this command.</p>
