@@ -95,19 +95,27 @@ def read_json(path: Path) -> dict:
 
 
 def _extract_json_object(output: str) -> str:
-    """Accept Cursor's requested bare JSON or one conventional JSON code fence."""
+    """Accept bare JSON, one conventional fence, or a JSON object wrapped in Cursor prose."""
     stripped = output.strip()
     candidates = [stripped]
     fenced = re.fullmatch(r"```(?:json)?\s*(.*?)\s*```", stripped, flags=re.DOTALL | re.IGNORECASE)
     if fenced:
         candidates.insert(0, fenced.group(1).strip())
+    decoder = json.JSONDecoder()
     for candidate in candidates:
         try:
             value = json.loads(candidate)
         except json.JSONDecodeError:
-            continue
+            value = None
         if isinstance(value, dict):
             return json.dumps(value, indent=2) + "\n"
+        for match in re.finditer(r"\{", candidate):
+            try:
+                value, _ = decoder.raw_decode(candidate[match.start():])
+            except json.JSONDecodeError:
+                continue
+            if isinstance(value, dict):
+                return json.dumps(value, indent=2) + "\n"
     raise ValueError("Cursor planning response was not one JSON object")
 
 
