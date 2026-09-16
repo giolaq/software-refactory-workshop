@@ -449,10 +449,8 @@ PROJECT_NUMBER=1 # Replace with the number after /projects/ in your board URL.
             inspect={<>Confirm that Pocket Cinema shows films, film details, and a watchlist. This is the baseline, not the recipe product.</>}
             continueWhen={<>The starting repository is correct and the Control Center points to <strong>Plan → Requirements</strong>.</>}
             cliPurpose={<>Open the Pocket Cinema starter application.</>}
-            cliDirectory={track === "live" ? <><code>software-refactory-control</code> with <code>CONTROL</code> and <code>TARGET</code> set</> : <><code>software-refactory-rehearsal</code></>}
-          >{track === "live"
-            ? `"$CONTROL/.factory/venv/bin/python" "$TARGET/demo-app/app.py"`
-            : `.factory/venv/bin/python demo-app/app.py`}</WorkshopPaths>
+            cliDirectory={track === "live" ? <>the factory checkout, <code>software-refactory-control</code></> : <><code>software-refactory-rehearsal</code></>}
+          >{`.factory/venv/bin/python demo-app/app.py`}</WorkshopPaths>
           <WorkshopMedia
             src="/screenshots/pocket-cinema-before.webp"
             alt="Pocket Cinema application before the workshop change"
