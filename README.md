@@ -1,33 +1,30 @@
-# Software (re)-Factory Workshop
+# 🏭 Software (re)-Factory Workshop
+
+> View the site: [software-refactory-workshop.vercel.app]([url](https://software-refactory-workshop.vercel.app))
 
 Release: `workshop-v1.2.4`
 
-Software (re)-Factory helps you use coding agents to turn requirements into
-reviewed changes in a GitHub repository. You describe the result, review the
-plan and tests, and decide what to merge. The factory coordinates the work,
-runs checks, and shows what is happening in a local web Control Center.
+This workshop shows how a Software Factory deploys parallel coding agents to transform product requirements into  reviewed changes in a GitHub repository. You describe the result, review the plan, verify the tests, and decide what to merge. The factory coordinates the work, runs checks, and shows what is happening in a local web Control Center.
 
-This repository includes the factory, the Control Center, a step-by-step
-workshop website, and the Pocket Cinema starting app. The three-hour workshop
+This repository includes the factory, the Control Center, a step-by-step workshop website, and the Pocket Cinema starting app. The three-hour workshop
 transforms Pocket Cinema into TableStory, a recipe app. The factory is generic:
-Live mode can use your own repository and PRD instead of the sample app.
+Live mode can use your own repository and Product Requirements Doc ([PRD](https://www.atlassian.com/agile/product-management/requirements)) instead of the sample app.
 
-Everything needed for the workshop runs locally with GitHub and your chosen
-coding-agent CLI. AWS is optional.
+Everything needed for the workshop runs locally with GitHub and your chosen coding-agent CLI. **Note:** Hosting the project on AWS is optional.
 
 ## Quick configuration and run
 
 ### 1. Install the tools and sign in
 
-Use macOS, Linux, or Windows with WSL2. On Windows, run the commands inside WSL2.
+Use macOS, Linux, or Windows with [WSL2]([url](https://learn.microsoft.com/en-us/windows/wsl/install)). On Windows, run the commands inside WSL2.
 You need:
 
 - Python 3.11+ with `venv`, Node.js 22.13+, Git, and GitHub CLI (`gh`).
 - A modern browser, ports `5000` and `5050` available, and network access to
   GitHub and your agent provider.
-- A GitHub account that can create repositories, issues, branches, pull
-  requests, and GitHub Projects.
-- One installed and authenticated coding CLI: Claude Code, Codex, or Cursor.
+- [Sign up for GitHub]([url](https://github.com/signup)) in order to create repositories, issues, branches, pull
+  requests, and GitHub Projects. 
+- One installed and authenticated coding CLI: [Claude Code]([url](https://claude.com/product/claude-code)), [Codex]([url](https://openai.com/codex/)), or [Cursor]([url](https://cursor.com/)).
   Live use follows your provider's subscription and limits.
 
 Sign in to GitHub and grant Projects access:
