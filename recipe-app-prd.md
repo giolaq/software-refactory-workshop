@@ -1,4 +1,4 @@
-# PRD — TableStory Recipe App Rebrand
+# PRD for TableStory Recipe App Rebrand
 
 **Version:** 1.0  
 **Owner:** Product team, Hearth & Harvest Foods  
